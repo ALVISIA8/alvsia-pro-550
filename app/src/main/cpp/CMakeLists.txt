@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.22.1)
+project(rasp_guard)
+add_library(rasp_guard SHARED rasp_guard.cpp)
+find_library(log-lib log)
+target_link_libraries(rasp_guard ${log-lib})
+target_compile_options(rasp_guard PRIVATE -fvisibility=hidden -O2 -fno-exceptions -fno-rtti)

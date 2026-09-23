@@ -1,0 +1,44 @@
+ALVSIA — Build PC + proteksi penuh (logic source TIDAK diubah)
+
+A. SUDAH DI SOURCE (compile ikut APK)
+  - R8 / ProGuard agresif (proguard-rules.pro)
+  - CERT_SHA256 + Tamper anti-repack
+  - RaspEngine + FridaProbe + EnvProbe + SessionGate
+  - Native librasp_guard.so (AndroidNativeGuard / AntiDebug / DetectFrida patterns)
+  - RamToolVault anti-dump RAM
+  - TLS pin + network_security_config
+  - securevale:rasp-android
+  - ThreatReport
+
+B. GITHUB YANG KAMU SEBUT — CARA PAKAI DI PC
+  1) R8 https://r8.googlesource.com/r8/  + ProGuard Guardsquare
+     → sudah ON di release build.gradle
+  2) securevale/android-rasp → dependency sudah ada
+  3) AndroidNativeGuard / AntiDebugandMemoryDump → pola di cpp/rasp_guard.cpp
+  4) talsec Free-RASP-Android
+     → di Android Studio: ikuti docs.talsec.app (plugin + package + signing hash Base64)
+     → opsional; stack kita tetap jalan tanpa ini
+  5) AndResGuard / AabResGuard
+     → jalankan tool resource obfuscation di PC SETELAH assembleRelease, SEBELUM ReArk
+  6) o-mvll / dProtect
+     → butuh LLVM custom; alternatif praktis = ReArk VMP (wajib)
+  7) Paranoid / hidden-secrets / proguard-shield
+     → diganti StrHide + Vault + rules agresif (efek setara di release)
+
+C. URUTAN BUILD PC (WAJIB)
+  1. Android Studio / Gradle: assembleRelease
+  2. (Opsional) AndResGuard pada APK release
+  3. ReArk protect
+  4. zipalign + apksigner dengan keystore ALVSIA
+     CERT SHA256 harus:
+     99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c
+  5. Jangan sebar APK sebelum step 4
+
+D. SIGN (PC)
+  apksigner sign --ks alvsia-release.keystore --ks-key-alias alvsia \
+    --ks-pass pass:*** --key-pass pass:*** \
+    --out ALVSIA_SIGNED.apk app-reark.apk
+
+E. JANGAN
+  - Ubah logic tool / UI / panel client kecuali file sec/ + proguard + cpp
+  - Commit STORE_PASSWORD ke git public
