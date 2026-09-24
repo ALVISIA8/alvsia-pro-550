@@ -156,6 +156,19 @@ class ToolEngine(private val context: Context) {
         try {
             if (Python.isStarted()) {
                 val py = Python.getInstance()
+                // Bind session into Python process only if gate passed
+                try {
+                    val osMod = py.getModule("os")
+                    val environ = osMod.get("environ")
+                    if (SessionGate.sessionOk) {
+                        environ.callAttr("__setitem__", "ALVSIA_APK_SESSION", "1")
+                        environ.callAttr("__setitem__", "ALVSIA_SESSION_TOKEN", SessionGate.sessionToken)
+                    } else {
+                        environ.callAttr("pop", "ALVSIA_APK_SESSION", null)
+                        environ.callAttr("pop", "ALVSIA_SOFT_AUTH", null)
+                    }
+                } catch (_: Exception) {
+                }
                 val bridge = py.getModule("alvsia_bridge")
                 val log = bridge.callAttr(
                     "run_tool",

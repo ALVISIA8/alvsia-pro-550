@@ -6,13 +6,17 @@ import shutil
 import traceback
 from pathlib import Path
 
-os.environ["ALVSIA_APK_SESSION"] = "1"
-os.environ.setdefault("ALVSIA_SOFT_AUTH", "1")
+# SECURITY: do NOT hardcode ALVSIA_APK_SESSION / ALVSIA_SOFT_AUTH here.
+# Kotlin sets ALVSIA_APK_SESSION=1 only AFTER successful OTP + SessionGate.sessionOk.
+# Soft-auth is for local sandbox builds only (never ship with SOFT_AUTH=1).
 
 
 def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
     lines = []
     try:
+        # Hard gate: refuse engine if no session from host APK
+        if os.environ.get("ALVSIA_APK_SESSION") != "1" and os.environ.get("ALVSIA_SOFT_AUTH") != "1":
+            return "X AUTH: no valid APK session — complete license + OTP first"
         lines.append("ALVSIA PRO 4.6 PREMIUM · engine")
         lines.append("m=%s sub=%s" % (module_id, sub_id))
         import alvsia_core as core
@@ -35,16 +39,23 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
         if mid == 1 or sid.startswith("pak_full") or sid in ("pak_list", "pak_info", "pak_csv"):
             if not need_file():
                 return "\n".join(lines)
-            # Auto-detect: some VIP packs rename LuaS bytecode as .pak
+            # Preflight + auto-detect LuaS / ZIP
             try:
-                head = Path(ip).read_bytes()[:8]
-                if head[:4] == b"\x1bLua":
-                    lines.append("NOTE: file is LuaS bytecode (not PAK) — routing to LUA smart pipeline")
+                raw = Path(ip).read_bytes()
+                lines.append("preflight size=%s head=%s" % (len(raw), raw[:8].hex()))
+                if len(raw) < 64:
+                    lines.append("X File too small for PAK/LuaS")
+                    return "\n".join(lines)
+                if raw[:4] == b"\x1bLua":
+                    lines.append("NOTE: magic LuaS bytecode (NOT a PAK) -> LUA smart")
                     dest = out / "OUT" / "LUA"
                     lines.append(str(feat.run_lua_smart(ip, dest, jars_dir=jars)))
                     return "\n".join(lines)
+                if raw[:2] == b"PK":
+                    lines.append("NOTE: ZIP magic — use OBB Tools")
+                    return "\n".join(lines)
             except Exception as _e:
-                lines.append("detect-skip: %s" % _e)
+                lines.append("preflight-skip: %s" % _e)
             dest = out / "OUT" / "PAK" / Path(ip).stem
             dest.mkdir(parents=True, exist_ok=True)
             if sid == "pak_list":
@@ -149,19 +160,30 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
             if not need_file():
                 return "\n".join(lines)
             dest = out / "OUT" / "LUA"
+            dest.mkdir(parents=True, exist_ok=True)
+            try:
+                head = Path(ip).read_bytes()[:8]
+                lines.append("lua preflight head=%s" % head.hex())
+            except Exception:
+                pass
             if sid == "lua_xor_crypt":
                 lines.append(str(feat.run_lua_xor(ip, dest)))
-            elif sid in ("lua_smart", "lua_constants", "lua_multi_xor"):
-                if sid == "lua_constants":
-                    lines.append(str(feat.extract_lua_constants(ip, dest)))
-                elif sid == "lua_multi_xor":
-                    lines.append(str(feat.run_lua_multi_xor(ip, dest)))
+            elif sid == "lua_constants":
+                lines.append(str(feat.extract_lua_constants(ip, dest)))
+            elif sid == "lua_multi_xor":
+                lines.append(str(feat.run_lua_multi_xor(ip, dest)))
+            elif sid in ("lua_foundation", "lua_universal", "lua_pubg_decrypt"):
+                if sid == "lua_pubg_decrypt":
+                    r = feat.run_pubg_lua_decrypt(ip, dest)
                 else:
-                    lines.append(str(feat.run_lua_smart(ip, dest, jars_dir=jars)))
-            else:
-                # default: full smart pipeline (unluac → constants → strings → multi-xor)
-                r = feat.run_lua_smart(ip, dest, jars_dir=jars)
+                    r = feat.run_lua_universal(ip, dest, jars_dir=jars)
                 lines.append(str(r))
+            else:
+                # default: universal LUA toolkit (detect + PUBG + multi-unluac + smart)
+                r = feat.run_lua_universal(ip, dest, jars_dir=jars)
+                lines.append(str(r))
+                if r.get("note"):
+                    lines.append("NOTE: " + str(r.get("note")))
             return "\n".join(lines)
 
         # --- 6 Scan ---

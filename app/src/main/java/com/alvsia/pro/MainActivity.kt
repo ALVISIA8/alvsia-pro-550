@@ -221,13 +221,21 @@ class MainActivity : ComponentActivity() {
                                         license
                                     )
                                     loading = false
-                                    SessionGate.sessionOk = false
+                                    SessionGate.lock()
                                     error = "Integrity check failed"
                                     screen = "login"
                                     return@launch
                                 }
 
-                                SessionGate.sessionOk = true
+                                val _tok = res.toolTicket.ifBlank { panel.sessionToken }
+                                if (_tok.isBlank()) {
+                                    loading = false
+                                    SessionGate.lock()
+                                    error = "OTP OK but no session token from server"
+                                    screen = "login"
+                                    return@launch
+                                }
+                                SessionGate.unlock(_tok, license)
                                 try {
                                     RaspEngine.start(this@MainActivity, license)
                                 } catch (_: Exception) {
