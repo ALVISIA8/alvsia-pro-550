@@ -160,12 +160,14 @@ class ToolEngine(private val context: Context) {
                 try {
                     val osMod = py.getModule("os")
                     val environ = osMod.get("environ")
-                    if (SessionGate.sessionOk) {
-                        environ.callAttr("__setitem__", "ALVSIA_APK_SESSION", "1")
-                        environ.callAttr("__setitem__", "ALVSIA_SESSION_TOKEN", SessionGate.sessionToken)
-                    } else {
-                        environ.callAttr("pop", "ALVSIA_APK_SESSION", null)
-                        environ.callAttr("pop", "ALVSIA_SOFT_AUTH", null)
+                    if (environ != null) {
+                        if (SessionGate.sessionOk) {
+                            environ.callAttr("__setitem__", "ALVSIA_APK_SESSION", "1")
+                            environ.callAttr("__setitem__", "ALVSIA_SESSION_TOKEN", SessionGate.sessionToken)
+                        } else {
+                            environ.callAttr("pop", "ALVSIA_APK_SESSION", null)
+                            environ.callAttr("pop", "ALVSIA_SOFT_AUTH", null)
+                        }
                     }
                 } catch (_: Exception) {
                 }
