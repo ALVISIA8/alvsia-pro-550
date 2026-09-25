@@ -9,6 +9,11 @@ from pathlib import Path
 
 from lua_engine import detect_lua, analyze_lua, decompile_lua, validate_lua_source, transform_bgmi_lua, unwrap_lua_container
 from lua_engine.engine import clean_lua_source
+try:
+    from lua_output_validator import validate_decompile_text, classify_bytes
+except Exception:
+    validate_decompile_text = None
+    classify_bytes = None
 
 
 def _find_java():
@@ -316,10 +321,45 @@ def run_lua_smart(input_path, out_dir, jars_dir=None):
     xr = run_lua_multi_xor(input_path, out_dir)
     report["steps"].append({"step": "multi_xor", **{k: xr[k] for k in ("ok", "mode", "best") if k in xr}})
 
+    # Honest final status: never SUCCESS decompile without validated source
+    final_status = "PARTIAL"
+    if validate_decompile_text is not None:
+        # scan any .lua written in out_dir
+        for cand in out_dir.glob("*_decompiled.lua"):
+            v = validate_decompile_text(cand.read_text(encoding="utf-8", errors="replace"))
+            report["steps"].append({"step": "validate_source", "file": str(cand), **v})
+            if v.get("is_lua_source"):
+                final_status = "SUCCESS"
+                report["ok"] = True
+                break
+        else:
+            # strings file is recovery only
+            for cand in out_dir.glob("*_strings.txt"):
+                v = validate_decompile_text(cand.read_text(encoding="utf-8", errors="replace"))
+                report["steps"].append({"step": "validate_strings", "file": str(cand), **v})
+            final_status = "PARTIAL"
+
+    stage_path = out_dir / (input_path.stem + "_STAGE_REPORT.txt")
+    lines = [
+        "ALVISIA PRO LUA STAGE REPORT",
+        "file=%s" % input_path,
+        "size=%s" % report.get("size"),
+        "final_status=%s" % final_status,
+        "mode=smart_fallback",
+        "note=unluac failed or source not validated — recovery artifacts only",
+        "",
+    ]
+    for st in report.get("steps") or []:
+        lines.append(str(st))
+    stage_path.write_text("\n".join(lines), encoding="utf-8")
+    report["stage_report"] = str(stage_path)
+    report["final_status"] = final_status
+
     return {
-        "ok": False,
+        "ok": final_status == "SUCCESS",
         "mode": "smart_fallback",
-        "note": "unluac failed (custom opcode / encrypt body) — constants+strings+xor candidates written",
+        "final_status": final_status,
+        "note": "PARTIAL: detect/unpack/strings may exist; decompile source NOT validated",
         **report,
     }
 
