@@ -12,8 +12,8 @@ android {
         applicationId = "com.alvsia.pro"
         minSdk = 26
         targetSdk = 34
-        versionCode = 94
-        versionName = "5.4.0-rebrand"
+        versionCode = 95
+        versionName = "5.5.0-upgrade"
         buildConfigField("int", "PROTO", "2")
         buildConfigField("String", "CERT_SHA256", "\"99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c\"")
         ndk {

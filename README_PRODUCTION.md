@@ -1,6 +1,6 @@
-# ALVSIA PRO 5.4.0 — Production Source
+# ALVSIA PRO 5.5.0 — Production Source
 
-**versionName:** `5.4.0-rebrand`  
+**versionName:** `5.5.0-rebrand`  
 **versionCode:** `94`  
 **applicationId:** `com.alvsia.pro`
 

@@ -5,7 +5,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * ALVSIA PRO 4.6 — focused modules (real engine wired in bridge).
+ * ALVSIA PRO 5.5 — focused modules (real engine wired in bridge).
  */
 object ToolCatalog {
     fun defaults(): List<ToolItem> = listOf(
@@ -13,7 +13,7 @@ object ToolCatalog {
         ToolItem(2, "PAK Rebuild", "Repack · inject · encrypt · decrypt"),
         ToolItem(3, "PAK Compact", "Delete entry · empty · clean"),
         ToolItem(4, "OBB Tools", "Unzip · rezip · info"),
-        ToolItem(5, "LUA Tools", "Unluac · smart · XOR · constants"),
+        ToolItem(5, "LUA Tools", "Detect · analyze · decompile · clean · XOR · constants"),
         ToolItem(6, "File Scan", "Strings · hash · report"),
         ToolItem(7, "Workspace", "Clear WORK/OUT"),
         ToolItem(8, "Export Report", "Session / file summary"),

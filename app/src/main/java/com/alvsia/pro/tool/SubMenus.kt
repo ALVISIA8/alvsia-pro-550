@@ -58,13 +58,17 @@ object SubMenus {
                 "Select .obb/.zip"),
         )
         5 -> listOf(
-            SubTool("lua_decompile", "Smart Decompile", "Unluac + fallback pipeline",
-                "Select .luac/.lua/LuaS. ART unluac or strings+constants+xor."),
-            SubTool("lua_constants", "Extract Constants", "String/number dump",
-                "Select LuaS/bytecode -> OUT/LUA/*_constants.txt"),
-            SubTool("lua_xor_crypt", "XOR Layer", "Body XOR try",
+            SubTool("lua_decompile", "Smart Decompile", "ART UnLuaC + validated fallback",
+                "Select .luac/.lua. Output is reported successful only after Lua validation."),
+            SubTool("lua_analyze", "LUA Analyzer", "Format + obfuscation analysis",
+                "Detect Lua/LuaJIT/source and write a structured analysis report."),
+            SubTool("lua_constants", "Extract Constants", "String/constant dump",
+                "Select Lua bytecode -> OUT/LUA/*_constants.txt"),
+            SubTool("lua_clean_source", "Clean Lua Source", "Safe source cleanup",
+                "Select Lua source -> OUT/LUA/*_clean.lua"),
+            SubTool("lua_xor_crypt", "XOR Layer", "Body XOR probe",
                 "Select file -> OUT/LUA/*.xor"),
-            SubTool("lua_multi_xor", "Multi-XOR Probe", "Common keys scan",
+            SubTool("lua_multi_xor", "Multi-XOR Probe", "Candidate scan",
                 "Select file -> OUT/LUA/*_xor_*.bin"),
         )
         6 -> listOf(
