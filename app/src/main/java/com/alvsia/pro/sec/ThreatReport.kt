@@ -33,7 +33,7 @@ object ThreatReport {
                     .put("sdk", Build.VERSION.SDK_INT)
                     .put("model", "${Build.MANUFACTURER} ${Build.MODEL}".take(80))
                     .put("debuggable", (ctx.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0)
-                    .put("cert", Tamper.signingCertSha256(ctx).take(64))
+                    .put("cert", Tamper.signingCertSha256(ctx).orEmpty().take(64))
                     .put("ts", System.currentTimeMillis() / 1000)
                     .toString()
                 val req = Request.Builder()
