@@ -183,7 +183,18 @@ class ToolEngine(private val context: Context) {
                 ).toString()
                 lines.addAll(log.split("\n").filter { it.isNotBlank() })
                 mirrorMsvToOut(moduleId, lines)
-                lines.add("OK OUT -> ${WorkPaths.moduleOut(moduleId).absolutePath}")
+                // Never report a successful output when the Python engine explicitly
+                // returned a failed operation. This was causing the UI to show
+                // "OK OUT" even when decompilation had failed.
+                val bridgeFailed = log.contains("'ok': False") ||
+                    log.contains("\"ok\": false", ignoreCase = true) ||
+                    log.contains("X AUTH:") ||
+                    log.contains("X input missing")
+                if (bridgeFailed) {
+                    lines.add("X OUT -> operation failed; see engine diagnostics above")
+                } else {
+                    lines.add("OK OUT -> ${WorkPaths.moduleOut(moduleId).absolutePath}")
+                }
                 return lines
             } else {
                 lines.add("... Python runtime not ready ? native fallback")

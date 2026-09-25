@@ -1,24 +1,13 @@
-# Android / Gradle
 .gradle/
 build/
 app/build/
 *.iml
 local.properties
-
-# Python
-__pycache__/
-*.pyc
-
-# Secrets / signing material
 *.jks
 *.keystore
 *.p12
 *.pem
 *.key
 .env
-
-# Local generated work
-LUA_TOOL/
-MSV_WORK/
-WORK/
-OUT/
+__pycache__/
+*.pyc

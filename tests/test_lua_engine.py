@@ -23,5 +23,13 @@ def main():
         assert ji.format=="luajit"
         bad=td/"bad.bin"; bad.write_bytes(b"\\x00\\x01garbage")
         assert not analyze_lua(bad,td)["ok"]
+
+    # Real wrapped Lua regression fixture: chunked 78da/raw-deflate container.
+    real = Path("/mnt/data/CharacterBase.lua")
+    if real.is_file():
+        ri = detect_lua(real)
+        assert ri.wrapped and ri.container == "chunked-raw-deflate" and ri.version == "Lua 5.3"
+        payload, ci = __import__("lua_engine", fromlist=["unwrap_lua_container"]).unwrap_lua_container(real.read_bytes())
+        assert payload.startswith(b"\x1bLuaS") and ci.chunks >= 1
     print("LUA ENGINE TEST: PASS")
 if __name__=="__main__": main()

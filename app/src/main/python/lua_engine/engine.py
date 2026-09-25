@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 from .detector import detect_lua, LuaInfo
+from .container import unwrap_lua_container
 
 def _find_java():
     for name in ("java", "/system/bin/java", "/data/data/com.alvsia.pro/files/java/bin/java"):
@@ -76,18 +77,40 @@ def _xor_candidate(data: bytes, key: bytes, offset: int):
     score=ratio*0.35 + magic*0.65
     return bytes(body), score
 
+def _normalized_input(path: Path, out: Path):
+    """Normalize a wrapped Lua container into a real .luac/.lj input."""
+    raw = path.read_bytes()
+    if not raw.startswith(b"\x78\xda"):
+        return path, None
+    payload, ci = unwrap_lua_container(raw)
+    if not payload.startswith((b"\x1bLua", b"\x1bLJ")):
+        raise ValueError("compressed container recovered, but payload is not Lua/LuaJIT")
+    norm = out / (path.stem + "_unwrapped.luac")
+    norm.write_bytes(payload)
+    return norm, ci
+
 def analyze_lua(path, out_dir=None, keys=None):
-    p=Path(path); data=p.read_bytes(); info=detect_lua(p)
-    result={"ok": True, "file": str(p), "format": info.format,
-            "version": info.version, "size": info.size,
-            "confidence": info.confidence, "notes": list(info.notes),
-            "obfuscation": []}
+    p=Path(path); out=Path(out_dir) if out_dir else p.parent; out.mkdir(parents=True,exist_ok=True)
+    raw=p.read_bytes(); container=None; work=p
+    try:
+        if raw.startswith(b"\x78\xda"):
+            work, container = _normalized_input(p, out)
+    except Exception as exc:
+        return {"ok": False, "file": str(p), "format": "container-unknown",
+                "size": len(raw), "error": str(exc)}
+    info=detect_lua(work)
+    result={"ok": info.kind != "unknown", "file": str(p), "format": info.format,
+            "version": info.version, "size": len(raw), "confidence": info.confidence,
+            "notes": list(info.notes), "obfuscation": []}
+    if container:
+        result["container"] = container.format
+        result["container_chunks"] = container.chunks
+        result["normalized_file"] = str(work)
     if info.kind == "unknown":
-        result["ok"]=False
         result["error"]="not recognized as Lua source or bytecode"
         return result
     if info.kind == "source":
-        text=data.decode("utf-8","replace")
+        text=work.read_text(encoding="utf-8",errors="replace")
         patterns={
             "loadstring": r"\bloadstring\s*\(",
             "load": r"\bload\s*\(",
@@ -101,16 +124,15 @@ def analyze_lua(path, out_dir=None, keys=None):
             if re.search(pat,text): result["obfuscation"].append(name)
         result["source_lines"]=text.count("\n")+1
         return result
-    result["strings_count"]=len(_extract_strings(data))
-    if info.format=="luajit":
-        result["obfuscation"].append("LuaJIT-bytecode")
+    result["strings_count"]=len(_extract_strings(work.read_bytes()))
+    if info.format=="luajit": result["obfuscation"].append("LuaJIT-bytecode")
     if keys:
         candidates=[]
         for key in keys:
             if isinstance(key,str):
                 try:key=bytes.fromhex(key)
                 except ValueError:continue
-            body,score=_xor_candidate(data,key,0)
+            body,score=_xor_candidate(work.read_bytes(),key,0)
             candidates.append({"key":key.hex(),"score":round(score,4),
                                "lua_magic":body.startswith((b"\x1bLua",b"\x1bLJ"))})
         result["xor_candidates"]=sorted(candidates,key=lambda x:-x["score"])[:8]
@@ -119,18 +141,29 @@ def analyze_lua(path, out_dir=None, keys=None):
 def decompile_lua(path, out_dir, jars_dir=None, timeout=120):
     p=Path(path); out=Path(out_dir); out.mkdir(parents=True,exist_ok=True)
     info=detect_lua(p)
+    normalized=p; container=None
+    try:
+        if p.read_bytes().startswith(b"\x78\xda"):
+            normalized, container = _normalized_input(p, out)
+            info=detect_lua(normalized)
+    except Exception as exc:
+        return {"ok":False,"error":str(exc),"format":"container-unknown"}
     if info.kind=="source":
         dest=out/(p.stem+"_decompiled.lua")
-        shutil.copy2(p,dest)
+        shutil.copy2(normalized,dest)
         ok,msg=validate_lua_source(dest)
         return {"ok":ok,"mode":"source-pass-through","out":str(dest),
-                "format":info.format,"validation":msg}
+                "format":info.format,"validation":msg,
+                **({"unwrapped":str(normalized),"container":container.format,
+                    "container_chunks":container.chunks} if container else {})}
     if info.kind!="bytecode":
         return {"ok":False,"error":"input is not recognized Lua bytecode/source",
-                "format":info.format}
+                "format":info.format,
+                **({"unwrapped":str(normalized),"container":container.format} if container else {})}
     if info.format=="luajit":
         return {"ok":False,"error":"LuaJIT bytecode requires a LuaJIT-capable decompiler; no false-success fallback is reported",
-                "format":info.format}
+                "format":info.format,
+                **({"unwrapped":str(normalized),"container":container.format} if container else {})}
     jars=Path(jars_dir) if jars_dir else None
     jar=None
     if jars and jars.is_dir():
@@ -139,29 +172,40 @@ def decompile_lua(path, out_dir, jars_dir=None, timeout=120):
             if q.is_file() and q.stat().st_size>1000:
                 jar=q; break
     if jar is None:
-        return {"ok":False,"error":"unluac jar not found","format":info.format}
+        return {"ok":False,"error":"unluac jar not found","format":info.format,
+                **({"unwrapped":str(normalized)} if container else {})}
     java=_find_java()
     if not java:
-        return {"ok":False,"error":"Java runtime unavailable in this Python environment; Android uses UnluacRunner","format":info.format}
+        return {"ok":False,"error":"Java runtime unavailable in this Python environment; Android uses UnluacRunner",
+                "format":info.format, **({"unwrapped":str(normalized)} if container else {})}
     dest=out/(p.stem+"_decompiled.lua")
     with tempfile.TemporaryDirectory(prefix="alv_lua_") as td:
         safe_in=Path(td)/"input.luac"; safe_jar=Path(td)/"unluac.jar"
-        shutil.copy2(p,safe_in); shutil.copy2(jar,safe_jar)
-        proc=subprocess.run([java,"-jar",str(safe_jar),str(safe_in)],
-                            capture_output=True,text=True,errors="replace",timeout=timeout)
+        shutil.copy2(normalized,safe_in); shutil.copy2(jar,safe_jar)
+        try:
+            proc=subprocess.run([java,"-jar",str(safe_jar),str(safe_in)],
+                                capture_output=True,text=True,errors="replace",timeout=timeout)
+        except subprocess.TimeoutExpired:
+            return {"ok":False,"error":"decompiler timeout","format":info.format,
+                    **({"unwrapped":str(normalized)} if container else {})}
     text=proc.stdout or ""
     stderr=(proc.stderr or "").strip()
     if proc.returncode != 0 or not text.strip():
         return {"ok":False,"error":stderr[:1000] or "decompiler returned no source",
-                "returncode":proc.returncode,"format":info.format}
+                "returncode":proc.returncode,"format":info.format,
+                **({"unwrapped":str(normalized),"container":container.format,
+                    "container_chunks":container.chunks} if container else {})}
     dest.write_text(text,encoding="utf-8")
     valid,msg=validate_lua_source(dest)
     if not valid:
         dest.unlink(missing_ok=True)
         return {"ok":False,"error":"decompiler output failed Lua structural validation: "+msg,
-                "returncode":proc.returncode,"format":info.format}
+                "returncode":proc.returncode,"format":info.format,
+                **({"unwrapped":str(normalized)} if container else {})}
     return {"ok":True,"out":str(dest),"returncode":proc.returncode,
-            "format":info.format,"validation":msg}
+            "format":info.format,"validation":msg,
+            **({"unwrapped":str(normalized),"container":container.format,
+                "container_chunks":container.chunks} if container else {})}
 
 def _safe_fold_numeric(text):
     # Only fold simple numeric-only expressions; never eval arbitrary Lua.

@@ -7,7 +7,7 @@ import subprocess
 import zipfile
 from pathlib import Path
 
-from lua_engine import detect_lua, analyze_lua, decompile_lua, validate_lua_source, transform_bgmi_lua
+from lua_engine import detect_lua, analyze_lua, decompile_lua, validate_lua_source, transform_bgmi_lua, unwrap_lua_container
 from lua_engine.engine import clean_lua_source
 
 
@@ -38,66 +38,72 @@ def _pick_jar(jars_dir, prefer=("unluac_pro.jar", "unluac_patched.jar", "unluac.
     return None
 
 
+def _prepare_lua_input(input_path, out_dir):
+    input_path = Path(input_path); out_dir = Path(out_dir)
+    raw = input_path.read_bytes()
+    if not raw.startswith(b"\x78\xda"):
+        return input_path, None
+    payload, ci = unwrap_lua_container(raw)
+    if not payload.startswith((b"\x1bLua", b"\x1bLJ")):
+        raise ValueError("compressed input did not contain Lua/LuaJIT bytecode")
+    normalized = out_dir / (input_path.stem + "_unwrapped.luac")
+    normalized.write_bytes(payload)
+    return normalized, ci
+
 def run_unluac(input_path, out_dir, jars_dir=None, mode="decompile"):
-    """
-    Decompile .luac/.lua bytecode with unluac jar.
-    Needs Java runtime on device (Termux openjdk or bundled).
-    """
-    input_path = Path(input_path)
-    out_dir = Path(out_dir)
+    """Decompile Lua bytecode with strict exit/output validation and container unwrapping."""
+    input_path = Path(input_path); out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        normalized, ci = _prepare_lua_input(input_path, out_dir)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
     jar = _pick_jar(jars_dir)
     if jar is None:
-        return {
-            "ok": False,
-            "error": "unluac jar missing — place unluac.jar in jars dir",
-        }
+        return {"ok": False, "error": "unluac jar missing — place unluac.jar in jars dir",
+                **({"unwrapped": str(normalized)} if ci else {})}
     java = _find_java()
     if not java:
-        # still stage jar path instruction
         dest = out_dir / (input_path.stem + "_NEED_JAVA.txt")
-        dest.write_text(
-            "Java not found. Termux: pkg install openjdk-21\n"
-            f"Jar ready: {jar}\n"
-            f"Manual: java -jar {jar} {input_path} > out.lua\n",
-            encoding="utf-8",
-        )
-        return {
-            "ok": False,
-            "error": "Java runtime not found on device",
-            "jar": str(jar),
-            "hint": str(dest),
-        }
+        dest.write_text("Java runtime unavailable.\nJar: %s\nInput: %s\n" % (jar, normalized), encoding="utf-8")
+        return {"ok": False, "error": "Java runtime not found on device", "jar": str(jar),
+                "hint": str(dest), **({"unwrapped": str(normalized)} if ci else {})}
     out_lua = out_dir / (input_path.stem + "_decompiled.lua")
     try:
-        proc = subprocess.run(
-            [java, "-jar", str(jar), str(input_path)],
-            capture_output=True,
-            timeout=120,
-        )
-        text = (proc.stdout or b"") + (proc.stderr or b"")
-        out_lua.write_bytes(proc.stdout if proc.stdout else text)
-        return {
-            "ok": proc.returncode == 0,
-            "out": str(out_lua),
-            "code": proc.returncode,
-            "jar": str(jar),
-        }
+        proc = subprocess.run([java, "-jar", str(jar), str(normalized)],
+                              capture_output=True, timeout=120)
+        stdout = (proc.stdout or b"").decode("utf-8", "replace")
+        stderr = (proc.stderr or b"").decode("utf-8", "replace")
+        if proc.returncode != 0 or not stdout.strip():
+            out_lua.unlink(missing_ok=True)
+            return {"ok": False, "error": stderr.strip()[:1200] or "unluac returned no source",
+                    "code": proc.returncode, "jar": str(jar),
+                    **({"unwrapped": str(normalized), "container": ci.format} if ci else {})}
+        out_lua.write_text(stdout, encoding="utf-8")
+        valid, msg = validate_lua_source(out_lua)
+        if not valid:
+            out_lua.unlink(missing_ok=True)
+            return {"ok": False, "error": "Lua validation failed: " + msg, "code": proc.returncode,
+                    "jar": str(jar), **({"unwrapped": str(normalized)} if ci else {})}
+        return {"ok": True, "out": str(out_lua), "code": proc.returncode, "jar": str(jar),
+                "validation": msg, **({"unwrapped": str(normalized), "container": ci.format,
+                "container_chunks": ci.chunks} if ci else {})}
     except Exception as e:
-        return {"ok": False, "error": str(e), "jar": str(jar)}
+        return {"ok": False, "error": str(e), "jar": str(jar),
+                **({"unwrapped": str(normalized)} if ci else {})}
 
 
 def run_lua_xor(input_path, out_dir, key_hex=None):
-    """Simple body XOR try (preview)."""
-    input_path = Path(input_path)
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    data = input_path.read_bytes()
-    key = bytes.fromhex(key_hex) if key_hex else bytes([0x11, 0x21, 0x36, 0x47])
-    out = bytes(data[i] ^ key[i % len(key)] for i in range(len(data)))
-    dest = out_dir / (input_path.name + ".xor")
-    dest.write_bytes(out)
-    return {"ok": True, "out": str(dest), "bytes": len(out)}
+    """XOR preview against normalized Lua payload when a container is present."""
+    input_path=Path(input_path); out_dir=Path(out_dir); out_dir.mkdir(parents=True,exist_ok=True)
+    try: normalized, ci = _prepare_lua_input(input_path,out_dir)
+    except Exception as exc: return {"ok":False,"error":str(exc)}
+    data=normalized.read_bytes()
+    try: key=bytes.fromhex(key_hex) if key_hex else bytes([0x11,0x21,0x36,0x47])
+    except ValueError: return {"ok":False,"error":"invalid XOR key hex"}
+    out=bytes(data[i]^key[i%len(key)] for i in range(len(data)))
+    dest=out_dir/(input_path.name+".xor"); dest.write_bytes(out)
+    return {"ok":True,"out":str(dest),"bytes":len(out),**({"container":ci.format,"normalized":str(normalized)} if ci else {})}
 
 
 def run_zip_tree(src_dir, dest_zip):
@@ -159,40 +165,26 @@ def run_string_scan(path, out_txt=None, min_len=4):
 
 
 def run_lua_bytecode_strings(input_path, out_dir):
-    """Fallback: extract printable strings from Lua bytecode when JVM/ART unluac unavailable."""
-    input_path = Path(input_path)
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    data = input_path.read_bytes()
-    strings = []
-    cur = bytearray()
+    """Extract printable strings from normalized Lua bytecode/container."""
+    input_path=Path(input_path); out_dir=Path(out_dir); out_dir.mkdir(parents=True,exist_ok=True)
+    try: normalized, ci = _prepare_lua_input(input_path,out_dir)
+    except Exception as exc: return {"ok":False,"error":str(exc)}
+    data=normalized.read_bytes(); strings=[]; cur=bytearray()
     for b in data:
-        if 32 <= b < 127:
-            cur.append(b)
+        if 32<=b<127 or b in (9,): cur.append(b)
         else:
-            if len(cur) >= 4:
-                strings.append(cur.decode("ascii", errors="ignore"))
-            cur = bytearray()
-    if len(cur) >= 4:
-        strings.append(cur.decode("ascii", errors="ignore"))
-    # unique keep order
-    seen = set()
-    uniq = []
-    for s in strings:
-        if s not in seen:
-            seen.add(s)
-            uniq.append(s)
-    dest = out_dir / (input_path.stem + "_strings.txt")
-    dest.write_text("\n".join(uniq[:8000]), encoding="utf-8")
-    header_ok = data[:4] == b"\x1bLua"
-    return {
-        "ok": True,
-        "mode": "strings_fallback",
-        "lua_header": header_ok,
-        "count": len(uniq),
-        "out": str(dest),
-        "note": "Full decompile needs ART unluac; this is string dump only",
-    }
+            if len(cur)>=4: strings.append(cur.decode("ascii","ignore"))
+            cur.clear()
+    if len(cur)>=4: strings.append(cur.decode("ascii","ignore"))
+    seen=set(); uniq=[]
+    for value in strings:
+        if value not in seen: seen.add(value); uniq.append(value)
+    dest=out_dir/(input_path.stem+"_strings.txt")
+    dest.write_text("\n".join(uniq[:8000]),encoding="utf-8")
+    return {"ok":True,"mode":"strings_fallback","lua_header":data[:4]==b"\x1bLua",
+            "count":len(uniq),"out":str(dest),
+            "note":"Full decompile requires a compatible Lua decompiler; strings were extracted from normalized payload",
+            **({"container":ci.format,"container_chunks":ci.chunks,"normalized":str(normalized)} if ci else {})}
 
 
 def is_luas_header(data: bytes) -> bool:
@@ -205,64 +197,37 @@ def is_luas_header(data: bytes) -> bool:
 
 
 def extract_lua_constants(input_path, out_dir, max_strings=5000):
-    """
-    Walk Lua 5.3 bytecode after standard header and pull string/number constants.
-    Works on many LuaS samples even when full unluac fails (custom opcodes / partial encrypt).
-    """
-    input_path = Path(input_path)
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    data = input_path.read_bytes()
-    if not is_luas_header(data):
-        return {"ok": False, "error": "not a Lua header", "magic": data[:8].hex()}
-
-    strings = []
-    i = 12
-    n = len(data)
-    while i + 5 < n:
-        ln = int.from_bytes(data[i : i + 4], "little")
-        if 2 <= ln <= 512 and i + 4 + ln <= n:
-            chunk = data[i + 4 : i + 4 + ln]
-            if chunk and chunk[-1] == 0:
-                chunk = chunk[:-1]
-            if chunk and all(32 <= b < 127 or b in (9, 10, 13) for b in chunk):
+    """Extract likely constants from Lua bytecode, including wrapped containers."""
+    input_path=Path(input_path); out_dir=Path(out_dir); out_dir.mkdir(parents=True,exist_ok=True)
+    try: normalized, ci = _prepare_lua_input(input_path,out_dir)
+    except Exception as exc: return {"ok":False,"error":str(exc)}
+    data=normalized.read_bytes()
+    if not is_luas_header(data): return {"ok":False,"error":"not a Lua header","magic":data[:8].hex()}
+    strings=[]; i=12; n=len(data)
+    while i+5<n:
+        ln=int.from_bytes(data[i:i+4],"little")
+        if 2<=ln<=4096 and i+4+ln<=n:
+            chunk=data[i+4:i+4+ln]
+            if chunk and chunk[-1]==0: chunk=chunk[:-1]
+            if chunk and all(32<=b<127 or b in (9,10,13) for b in chunk):
                 try:
-                    s = chunk.decode("utf-8", errors="strict")
-                    if len(s) >= 2:
-                        strings.append(s)
-                    i += 4 + ln
-                    continue
-                except Exception:
-                    pass
-        i += 1
-
-    cur = bytearray()
+                    value=chunk.decode("utf-8","strict")
+                    if len(value)>=2: strings.append(value); i+=4+ln; continue
+                except UnicodeDecodeError: pass
+        i+=1
+    cur=bytearray()
     for b in data:
-        if 32 <= b < 127:
-            cur.append(b)
+        if 32<=b<127: cur.append(b)
         else:
-            if len(cur) >= 4:
-                strings.append(cur.decode("ascii", errors="ignore"))
-            cur = bytearray()
-    if len(cur) >= 4:
-        strings.append(cur.decode("ascii", errors="ignore"))
-
-    seen = set()
-    uniq = []
-    for s in strings:
-        if s not in seen:
-            seen.add(s)
-            uniq.append(s)
-
-    dest = out_dir / (input_path.stem + "_constants.txt")
-    dest.write_text("\n".join(uniq[:max_strings]), encoding="utf-8")
-    return {
-        "ok": True,
-        "mode": "lua_constants",
-        "count": len(uniq),
-        "out": str(dest),
-        "header": data[:16].hex(),
-    }
+            if len(cur)>=4: strings.append(cur.decode("ascii","ignore"))
+            cur.clear()
+    if len(cur)>=4: strings.append(cur.decode("ascii","ignore"))
+    seen=set(); uniq=[]
+    for value in strings:
+        if value not in seen: seen.add(value); uniq.append(value)
+    dest=out_dir/(input_path.stem+"_constants.txt"); dest.write_text("\n".join(uniq[:max_strings]),encoding="utf-8")
+    return {"ok":True,"mode":"lua_constants","count":len(uniq),"out":str(dest),"header":data[:16].hex(),
+            **({"container":ci.format,"container_chunks":ci.chunks,"normalized":str(normalized)} if ci else {})}
 
 
 def run_lua_multi_xor(input_path, out_dir, keys=None):
@@ -273,11 +238,16 @@ def run_lua_multi_xor(input_path, out_dir, keys=None):
     input_path = Path(input_path)
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    data = bytearray(input_path.read_bytes())
+    try:
+        normalized, ci = _prepare_lua_input(input_path, out_dir)
+    except Exception:
+        normalized, ci = input_path, None
+    data = bytearray(normalized.read_bytes())
     if len(data) < 32:
         return {"ok": False, "error": "file too small"}
 
-    header_len = 56 if is_luas_header(data) else 0
+    # Lua 5.1-5.4 headers are followed by the main-function upvalue count.
+    header_len = 34 if is_luas_header(data) else 0
     body = data[header_len:]
 
     if keys is None:
@@ -322,14 +292,15 @@ def run_lua_smart(input_path, out_dir, jars_dir=None):
     out_dir.mkdir(parents=True, exist_ok=True)
     data = input_path.read_bytes()
     report = {"file": str(input_path), "size": len(data), "steps": []}
-
-    if not is_luas_header(data):
-        report["steps"].append({"step": "detect", "ok": False, "note": "not Lua header"})
+    info = detect_lua(input_path)
+    if info.kind == "unknown":
+        report["steps"].append({"step": "detect", "ok": False, "note": "not recognized Lua/source/container"})
         r = run_lua_bytecode_strings(input_path, out_dir)
         report["steps"].append({"step": "strings", **r})
         return {"ok": False, "mode": "smart_nonlua", **report}
-
-    report["steps"].append({"step": "detect", "ok": True, "header": data[:16].hex()})
+    report["steps"].append({"step": "detect", "ok": True, "format": info.format,
+                             "version": info.version, "wrapped": info.wrapped,
+                             "container": info.container, "chunks": info.container_chunks})
 
     ur = run_unluac(input_path, out_dir, jars_dir=jars_dir)
     report["steps"].append({"step": "unluac", **ur})
