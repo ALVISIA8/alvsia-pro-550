@@ -14,7 +14,7 @@ data class TamperResult(val ok: Boolean, val reasons: List<String>)
  */
 object Tamper {
     /** SHA-256 of release signing certificate (hex lowercase, no colons). */
-    val expectedCertSha256: String = "104c449c3a2f2a8b61ef4b5b37adef24b12974a5ae3d7a5952069fa2be85dbe4"
+    val expectedCertSha256: String = "hash_dari_apk"
 
     fun evaluate(ctx: Context): TamperResult {
         val reasons = mutableListOf<String>()
