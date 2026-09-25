@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
-"""ALVSIA PRO 4.6 — features: LUA (unluac jar), helpers."""
+"""ALVSIA PRO 5.5 — features: LUA (unluac jar), helpers."""
 from __future__ import annotations
 import os
 import shutil
 import subprocess
 import zipfile
 from pathlib import Path
+
+from lua_engine import detect_lua, analyze_lua, decompile_lua, validate_lua_source, transform_bgmi_lua
+from lua_engine.engine import clean_lua_source
 
 
 def _find_java():
@@ -324,7 +327,7 @@ def run_lua_smart(input_path, out_dir, jars_dir=None):
         report["steps"].append({"step": "detect", "ok": False, "note": "not Lua header"})
         r = run_lua_bytecode_strings(input_path, out_dir)
         report["steps"].append({"step": "strings", **r})
-        return {"ok": True, "mode": "smart_nonlua", **report}
+        return {"ok": False, "mode": "smart_nonlua", **report}
 
     report["steps"].append({"step": "detect", "ok": True, "header": data[:16].hex()})
 
@@ -343,12 +346,111 @@ def run_lua_smart(input_path, out_dir, jars_dir=None):
     report["steps"].append({"step": "multi_xor", **{k: xr[k] for k in ("ok", "mode", "best") if k in xr}})
 
     return {
-        "ok": True,
+        "ok": False,
         "mode": "smart_fallback",
         "note": "unluac failed (custom opcode / encrypt body) — constants+strings+xor candidates written",
         **report,
     }
 
+
+
+# ---------------------------------------------------------------------------
+# LUA ENGINE v5.5 — unified detection / analysis / fallback
+# ---------------------------------------------------------------------------
+
+def run_lua_universal(input_path, out_dir, jars_dir=None):
+    """Single deterministic LUA entry point used by the Android bridge."""
+    input_path = Path(input_path)
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        analysis = analyze_lua(input_path, out_dir)
+        if not analysis.get("ok"):
+            # Unknown input is not a successful LUA operation.
+            return analysis
+
+        info = detect_lua(input_path)
+        report_path = out_dir / (input_path.stem + "_analysis.json")
+        import json
+        report_path.write_text(json.dumps(analysis, indent=2, ensure_ascii=False), encoding="utf-8")
+
+        result = decompile_lua(input_path, out_dir, jars_dir=jars_dir)
+        result["analysis"] = analysis
+        result["report"] = str(report_path)
+
+        # A successful decompile must have a validated Lua source file.
+        if result.get("ok") and result.get("out"):
+            valid, msg = validate_lua_source(result["out"])
+            result["validation"] = msg
+            if not valid:
+                result["ok"] = False
+                result["error"] = "output validation failed: " + msg
+                try:
+                    Path(result["out"]).unlink()
+                except Exception:
+                    pass
+        if not result.get("ok"):
+            # Static artifacts remain useful even when no decompiler is available.
+            strings = run_lua_bytecode_strings(input_path, out_dir)
+            result["fallback_strings"] = strings
+            result["note"] = (
+                "Decompile unavailable; analysis/report/string artifacts were generated. "
+                "No false SUCCESS was reported."
+            )
+        return result
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "mode": "universal"}
+
+def run_lua_analysis(input_path, out_dir):
+    input_path = Path(input_path); out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    import json
+    try:
+        report = analyze_lua(input_path, out_dir)
+        dest = out_dir / (input_path.stem + "_analysis.json")
+        dest.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+        report["out"] = str(dest)
+        return report
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+def run_lua_clean(input_path, out_dir):
+    input_path = Path(input_path); out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    if detect_lua(input_path).kind != "source":
+        return {"ok": False, "error": "source Lua text is required for cleanup"}
+    dest = out_dir / (input_path.stem + "_clean.lua")
+    try:
+        return clean_lua_source(input_path, dest)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+def run_pubg_lua_decrypt(input_path, out_dir, key_hex=None):
+    """Decode the ALVISIA/BGMI Lua bytecode transform when an explicit key is supplied."""
+    input_path = Path(input_path); out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    key_hex = key_hex or os.environ.get("SERVER_LUA_XOR_KEY_HEX", "").strip()
+    key_file = out_dir.parent.parent / "LUA_TOOL" / "lua_xor_key.txt"
+    if not key_hex and key_file.is_file():
+        key_hex = key_file.read_text(encoding="utf-8", errors="replace").strip()
+    if not key_hex:
+        return {"ok": False, "error": "Lua XOR key is required for BGMI transform"}
+    try:
+        key = bytes.fromhex(key_hex)
+    except ValueError:
+        return {"ok": False, "error": "Lua XOR key is not valid hexadecimal"}
+    try:
+        raw = input_path.read_bytes()
+        out = transform_bgmi_lua(raw, key, decrypt=True)
+        dest = out_dir / (input_path.stem + "_decrypted.luac")
+        dest.write_bytes(out)
+        return {
+            "ok": True, "mode": "bgmi-lua-transform",
+            "out": str(dest), "bytes": len(out),
+            "lua_header": out[:8].hex(),
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
 
 # ---------------------------------------------------------------------------
 # REBRAND — string replace brand/watermark/channel (NO network, NO bot token)

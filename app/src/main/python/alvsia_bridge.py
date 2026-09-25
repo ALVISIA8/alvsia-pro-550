@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""ALVSIA PRO 4.6 — bridge for 9-module catalog (incl. Rebrand)."""
+"""ALVSIA PRO 5.5 — bridge for 9-module catalog (incl. Rebrand)."""
 from __future__ import annotations
 import os
 import shutil
@@ -17,7 +17,7 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
         # Hard gate: refuse engine if no session from host APK
         if os.environ.get("ALVSIA_APK_SESSION") != "1" and os.environ.get("ALVSIA_SOFT_AUTH") != "1":
             return "X AUTH: no valid APK session — complete license + OTP first"
-        lines.append("ALVSIA PRO 4.6 PREMIUM · engine")
+        lines.append("ALVSIA PRO 5.5 PREMIUM · engine")
         lines.append("m=%s sub=%s" % (module_id, sub_id))
         import alvsia_core as core
         import alvsia_features as feat
@@ -138,6 +138,22 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
             if not need_file():
                 return "\n".join(lines)
             p = Path(ip)
+            if sid == "obb_info":
+                dest = out / "OUT" / "OBB" / "info.txt"
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    size = p.stat().st_size
+                    report = ["OBB INFO", f"name={p.name}", f"size={size} bytes"]
+                    if p.is_file() and p.suffix.lower() in (".obb", ".zip"):
+                        import zipfile
+                        with zipfile.ZipFile(p, "r") as z:
+                            report.append(f"entries={len(z.infolist())}")
+                            report.extend("  " + x.filename for x in z.infolist()[:100])
+                    dest.write_text("\n".join(report) + "\n", encoding="utf-8")
+                    lines.append("OK " + str(dest))
+                except Exception as exc:
+                    lines.append("X OBB info: %s" % exc)
+                return "\n".join(lines)
             if sid == "obb_rezip":
                 tree = out / "OUT" / "OBB" / p.stem
                 if not tree.is_dir():
@@ -172,14 +188,14 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                 lines.append(str(feat.extract_lua_constants(ip, dest)))
             elif sid == "lua_multi_xor":
                 lines.append(str(feat.run_lua_multi_xor(ip, dest)))
-            elif sid in ("lua_foundation", "lua_universal", "lua_pubg_decrypt"):
-                if sid == "lua_pubg_decrypt":
-                    r = feat.run_pubg_lua_decrypt(ip, dest)
-                else:
-                    r = feat.run_lua_universal(ip, dest, jars_dir=jars)
-                lines.append(str(r))
+            elif sid == "lua_analyze":
+                lines.append(str(feat.run_lua_analysis(ip, dest)))
+            elif sid == "lua_clean_source":
+                lines.append(str(feat.run_lua_clean(ip, dest)))
+            elif sid == "lua_pubg_decrypt":
+                lines.append(str(feat.run_pubg_lua_decrypt(ip, dest)))
             else:
-                # default: universal LUA toolkit (detect + PUBG + multi-unluac + smart)
+                # Universal path: detect -> analyze -> decompile/fallback.
                 r = feat.run_lua_universal(ip, dest, jars_dir=jars)
                 lines.append(str(r))
                 if r.get("note"):

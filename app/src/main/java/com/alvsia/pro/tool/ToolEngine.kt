@@ -139,7 +139,7 @@ class ToolEngine(private val context: Context) {
         }
 
         // LUA decompile on ART (no external Java)
-        if (moduleId == 5 || subId.contains("lua_decompile") || subId.contains("unluac")) {
+        if (subId == "lua_decompile" || subId.contains("unluac")) {
             if (inputPath.isNotEmpty()) {
                 val inFile = File(inputPath)
                 val outFile = File(WorkPaths.moduleOut(moduleId), inFile.nameWithoutExtension + "_decompiled.lua")

@@ -1,6 +1,6 @@
 workflows:
   alvisia-android:
-    name: ALVISIA PRO 5.4.0
+    name: ALVISIA PRO 5.5.0
     max_build_duration: 120
     instance_type: mac_mini_m2
     environment:
@@ -54,13 +54,13 @@ workflows:
             KEYPASS="${CM_KEY_PASSWORD:-$KSPASS}"
           else
             echo "No keystore — leaving unsigned APK"
-            cp "$UNSIGNED" ALVSIA_PRO_5.4.0_unsigned.apk
+            cp "$UNSIGNED" ALVSIA_PRO_5.5.0_unsigned.apk
             exit 0
           fi
 
           if [ -z "$KSPASS" ]; then
             echo "CM_KEYSTORE_PASSWORD not set — copying unsigned APK"
-            cp "$UNSIGNED" ALVSIA_PRO_5.4.0_unsigned.apk
+            cp "$UNSIGNED" ALVSIA_PRO_5.5.0_unsigned.apk
             exit 0
           fi
 
@@ -69,7 +69,7 @@ workflows:
           ZIPALIGN="$BUILD_TOOLS/zipalign"
           APKSIGNER="$BUILD_TOOLS/apksigner"
           ALIGNED=/tmp/alvsia-aligned.apk
-          SIGNED=ALVSIA_PRO_5.4.0_signed.apk
+          SIGNED=ALVSIA_PRO_5.5.0_signed.apk
 
           "$ZIPALIGN" -f 4 "$UNSIGNED" "$ALIGNED"
           "$APKSIGNER" sign \
@@ -85,6 +85,6 @@ workflows:
 
     artifacts:
       - app/build/outputs/apk/**/*.apk
-      - ALVSIA_PRO_5.4.0_signed.apk
-      - ALVSIA_PRO_5.4.0_unsigned.apk
+      - ALVSIA_PRO_5.5.0_signed.apk
+      - ALVSIA_PRO_5.5.0_unsigned.apk
       - build_full.log

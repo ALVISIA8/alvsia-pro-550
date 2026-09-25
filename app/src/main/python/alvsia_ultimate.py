@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""ULTIMATE ALVSIA PRO 4.6 — unified single-file production build.
+"""ULTIMATE ALVSIA PRO 5.5 — unified single-file production build.
 
 Unified PAK/OBB/LUA/SKIN/ZSDIC/DATA workflows.
 """
@@ -57,6 +57,10 @@ import bisect
 from collections import defaultdict
 import tempfile
 import re
+try:
+    from lua_engine import detect_lua, analyze_lua, decompile_lua, validate_lua_source, transform_bgmi_lua
+except Exception:
+    detect_lua = analyze_lua = decompile_lua = validate_lua_source = transform_bgmi_lua = None
 
 try:
     from rich.console import Console, Group
@@ -176,7 +180,7 @@ except ImportError:
 # if "python" in sys.executable or "qpython" in sys.executable or "pydroid" in sys.executable:
 #     os._exit(0)
 
-APP_VERSION = "4.6" 
+APP_VERSION = "5.5" 
 # ========== PANEL-BASED KEY SYSTEM ==========
 PANEL_API_URL = "https://alvsiapro.cc.cd/api"
 PANEL_PROTO = 2  # v2: no permanent secret
@@ -291,7 +295,7 @@ def get_hwid():
 CURRENT_LANGUAGE = "EN"
 TRANSLATIONS = {
     "EN": {
-        "BANNER_TITLE": to_fancy("ALVSIA ALVSIA PRO 4.6"),
+        "BANNER_TITLE": to_fancy("ALVSIA ALVSIA PRO 5.5"),
         "OPT_UNPACK": to_fancy("UNPACK (ALL FILES)"),
         "OPT_REPACK": to_fancy("REPACK (SMART)"),
         "OPT_ENCRYPT": to_fancy("ENCRYPT (YOUR FILE)"),
@@ -518,7 +522,7 @@ def get_main_banner() -> str:
         except Exception:
             # Agar Android 16 ne block kiya ya binary mein font nahi mila, toh ye MAGIC FALLBACK chalega
             simple_title = f"\n[bold {get_banner_color()}]██████████████████████████████████████████████████[/]\n"
-            simple_title += f"[bold white]            {CURRENT_SESSION_BANNER} ALVSIA PRO 4.6 [/]\n"
+            simple_title += f"[bold white]            {CURRENT_SESSION_BANNER} ALVSIA PRO 5.5 [/]\n"
             simple_title += f"[bold {get_banner_color()}]██████████████████████████████████████████████████[/]\n"
             subtitle = f"              [blink]  𓂃{to_fancy(CURRENT_SESSION_BANNER)} : 𝐒𝐘𝐒𝐓𝐄𝐌 𝐃𝐄𝐕𝐄𝐋𝐎𝐏𝐄𝐑  [/blink]\n"
             subtitle += f"         [bold yellow]𝐆𝐀𝐌𝐄 𝐕𝐄𝐑𝐒𝐈𝐎𝐍: 4.3,4.4 BGMI | PUBG | KR | TW | JP | VNG[/bold yellow]\n"
@@ -894,7 +898,7 @@ def check_password_login():
     
     console.clear()
     console.print(Panel(
-        "[bold cyan]🔐 ALVSIA PRO 4.6[/bold cyan]\n"
+        "[bold cyan]🔐 ALVSIA PRO 5.5[/bold cyan]\n"
         "[dim]Panel-based Authentication[/dim]\n"
         f"[dim]API: {PANEL_API_URL}[/dim]",
         title="[bold white on cyan] 🔑 LICENSE CHECK [/]",
@@ -7580,10 +7584,8 @@ def run_lua_tool():
     if not unluac_path.exists():
         _download_jar(UNLUAC_URL, unluac_path)
 
-    if subprocess.call("command -v luac5.3", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) != 0:
-        console.print(f"[yellow][*] Installing Lua 5.3 Compiler via pkg...[/yellow]")
-        subprocess.call("pkg install lua53 -y", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
+    # Do not install Termux packages from the APK/runtime. The Android app uses
+    # the ART runner and Python bridge; standalone Termux builds may provide luac.
     # Do not abort the whole Lua tool when the server-only key is unavailable.
     # Options 3/4 (PAK repack/custom-file operations) do not need the Lua XOR key.
     # Options 1/2 load a user-supplied local key when available.
@@ -7829,14 +7831,22 @@ def run_lua_tool():
                                     shutil.copy2(str(std_path),  _safe_luac)
                                     _stderr_buf = tempfile.NamedTemporaryFile(mode='w', suffix='.err', delete=False)
                                     with open(out_path, 'w', encoding='utf-8', errors='replace') as out_f:
-                                        subprocess.run(
+                                        _proc = subprocess.run(
                                             ['java', '-jar', _safe_jar, _safe_luac],
-                                            stdout=out_f, stderr=_stderr_buf
+                                            stdout=out_f, stderr=_stderr_buf,
+                                            timeout=120
                                         )
                                     _stderr_buf.close()
-                                    # Validate output — success only if file has real content
-                                    if out_path.exists() and out_path.stat().st_size > 10:
-                                        _decompile_ok = True
+                                    # Success requires zero exit status AND validated Lua source.
+                                    if _proc.returncode == 0 and out_path.exists() and out_path.stat().st_size > 10:
+                                        try:
+                                            _valid, _vmsg = validate_lua_source(out_path) if validate_lua_source else (True, "validator unavailable")
+                                            _decompile_ok = bool(_valid)
+                                            if not _valid:
+                                                _err_detail = "Lua output validation failed: " + _vmsg
+                                        except Exception as _ve:
+                                            _decompile_ok = False
+                                            _err_detail = "Lua output validation error: " + str(_ve)
                                     else:
                                         try:
                                             with open(_stderr_buf.name, 'r') as _ef:
@@ -12030,12 +12040,12 @@ def run_security_check():
 # ======================================================================
 
 def show_main_menu():
-    """Modern ALVSIA PRO 4.6 dashboard. Handler numbering stays backward-compatible."""
+    """Modern ALVSIA PRO 5.5 dashboard. Handler numbering stays backward-compatible."""
     accent = get_banner_color()
     try:
         console.print(Panel(
             Align.center(Text.from_markup(
-                "[bold white]ULTIMATE ALVSIA PRO 4.6[/bold white]\n"
+                "[bold white]ULTIMATE ALVSIA PRO 5.5[/bold white]\n"
                 f"[dim]Unified Asset Engineering Suite[/dim]  •  [bold {accent}]REAL LOGIC[/bold {accent}]  •  [bold green]VALIDATED OUTPUT[/bold green]"
             )), border_style=accent, box=box.DOUBLE, padding=(1,2)))
         grid = Table(show_header=False, box=None, expand=True, padding=(0,1))
@@ -12066,13 +12076,13 @@ def show_main_menu():
         console.print(Panel(grid, title=f"[bold {accent}]ENGINE MATRIX[/bold {accent}]", border_style=accent, box=box.ROUNDED, padding=(1,1)))
         status = Table(show_header=False, box=None, expand=True, padding=(0,1))
         status.add_column(style="dim"); status.add_column(style="bold white")
-        status.add_row("BUILD", "ALVSIA PRO 4.6")
+        status.add_row("BUILD", "ALVSIA PRO 5.5")
         status.add_row("ARCHITECTURE", "Unified canonical PAK core + workflow engines")
         status.add_row("VALIDATION", "Output verification enabled where format allows")
         console.print(Panel(status, title="[bold cyan]RUNTIME STATUS[/bold cyan]", border_style="cyan", box=box.ROUNDED))
     except Exception:
         # Fallback stays functional on minimal terminals.
-        print("ULTIMATE ALVSIA PRO 4.6")
+        print("ULTIMATE ALVSIA PRO 5.5")
         print("1-15: engine matrix | 0: exit")
 
 
@@ -12093,7 +12103,7 @@ def auto_termux_setup():
             + (f"Required missing: {', '.join(missing_required)}\n" if missing_required else "")
             + (f"Optional/engine dependencies missing: {', '.join(missing_optional)}\n" if missing_optional else "")
             + "[dim]Install the missing packages in your environment before using the affected engines.[/dim]",
-            title="ALVSIA PRO 4.6 • PREFLIGHT", border_style="yellow", box=box.ROUNDED))
+            title="ALVSIA PRO 5.5 • PREFLIGHT", border_style="yellow", box=box.ROUNDED))
     return {"required_missing": missing_required, "optional_missing": missing_optional}
 
 def main():   
@@ -12129,7 +12139,7 @@ def main():
     VALID_OPTIONS = {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"}
 
     while True:
-        TRANSLATIONS[CURRENT_LANGUAGE]["BANNER_TITLE"] = to_fancy(get_main_banner().split('\n')[-2].strip().replace('𓂃', '').replace('[blink]', '').replace('[/blink]', '') if '𓂃' in get_main_banner() else "ALVSIA PRO 4.6")
+        TRANSLATIONS[CURRENT_LANGUAGE]["BANNER_TITLE"] = to_fancy(get_main_banner().split('\n')[-2].strip().replace('𓂃', '').replace('[blink]', '').replace('[/blink]', '') if '𓂃' in get_main_banner() else "ALVSIA PRO 5.5")
         
         print_banner_and_header()
         print_user_profile()
@@ -12311,7 +12321,7 @@ def main():
             Prompt.ask("\n[bold white]Press Enter to return to menu...[/bold white]", default="")
             continue  # 🔥 FIX: loop back to menu, don't fall through
 
-# ---- ULTIMATE ALVSIA PRO 4.6 modern launcher ----
+# ---- ULTIMATE ALVSIA PRO 5.5 modern launcher ----
 def _alv_modern_ui():
     """Modern dashboard facade; the canonical workflow dispatch remains in main()."""
     return main()
@@ -12319,10 +12329,10 @@ def _alv_modern_ui():
 def _alv_ultimate_banner():
     try:
         console.print("[bold cyan]╭────────────────────────────────────────────────────────────╮[/]")
-        console.print("[bold cyan]│[/] [bold white]             ULTIMATE ALVSIA PRO 4.6[/] [bold cyan]│[/]")
+        console.print("[bold cyan]│[/] [bold white]             ULTIMATE ALVSIA PRO 5.5[/] [bold cyan]│[/]")
         console.print("[bold cyan]│[/] [dim]          PROFESSIONAL UNIFIED EDITION[/] [bold cyan]│[/]")
         console.print("[bold cyan]╰────────────────────────────────────────────────────────────╯[/]")
-    except Exception: print("ULTIMATE ALVSIA PRO 4.6")
+    except Exception: print("ULTIMATE ALVSIA PRO 5.5")
 
 def run_self_test() -> int:
     """Deterministic offline QA for the canonical logic that does not require game files."""
@@ -12346,6 +12356,14 @@ def run_self_test() -> int:
     for mod in ("Crypto", "zstandard", "gmalg"):
         try: __import__(mod); checks.append((f"dependency:{mod}", True, "available"))
         except Exception: checks.append((f"dependency:{mod}", True, "external dependency required"))
+    try:
+        from lua_engine import detect_lua, validate_lua_source
+        _lua_probe = b"local x=1\\nreturn x\\n"
+        _info = detect_lua(__file__) if False else None
+        _ok, _msg = validate_lua_source(_lua_probe.decode())
+        checks.append(("lua-engine import/validator", _ok, _msg))
+    except Exception as exc:
+        checks.append(("lua-engine import/validator", False, str(exc)))
     bad_names = [
         "".join(map(chr, [75,65,90,85,75,73])),
         "".join(map(chr, [71,79,68,88])),
@@ -12358,7 +12376,7 @@ def run_self_test() -> int:
     for name in bad_names:
         checks.append((f"branding:{name}", name not in source, "clean" if name not in source else "found"))
     failed = [c for c in checks if not c[1]]
-    print("ALVSIA PRO 4.6 SELF-TEST")
+    print("ALVSIA PRO 5.5 SELF-TEST")
     for name, ok, detail in checks:
         print(f"[{'PASS' if ok else 'FAIL'}] {name}: {detail}")
     print(f"RESULT: {'PASS' if not failed else 'FAIL'} ({len(checks)-len(failed)}/{len(checks)})")

@@ -32,13 +32,24 @@ object UnluacRunner {
             psErr.flush()
             val text = buf.toString(Charsets.UTF_8.name())
             val err = errBuf.toString(Charsets.UTF_8.name())
-            if (text.isNotBlank()) {
+            val trimmed = text.trim()
+            val looksLikeLua = trimmed.isNotEmpty() &&
+                (trimmed.contains("function") || trimmed.contains("local ") ||
+                 trimmed.contains("return ") || trimmed.contains("if ") ||
+                 trimmed.contains("while ") || trimmed.contains("for ") ||
+                 trimmed.contains("--"))
+            val looksLikeError = trimmed.startsWith("Error", ignoreCase = true) ||
+                trimmed.startsWith("Exception", ignoreCase = true) ||
+                trimmed.contains("decompil", ignoreCase = true) && trimmed.contains("failed", ignoreCase = true)
+            if (looksLikeLua && !looksLikeError) {
                 output.writeText(text, Charsets.UTF_8)
                 lines.add("OK unluac ART -> ${output.absolutePath}")
                 lines.add("bytes ${output.length()}")
             } else {
-                lines.add("X unluac empty stdout")
+                output.delete()
+                lines.add("X unluac produced no validated Lua source")
                 if (err.isNotBlank()) lines.add(err.take(800))
+                if (trimmed.isNotEmpty() && !looksLikeError) lines.add(trimmed.take(800))
             }
             lines
         } catch (t: Throwable) {
