@@ -117,10 +117,22 @@ class MainActivity : ComponentActivity() {
                         hwidShort = hwid.take(16),
                         loading = loading,
                         error = error,
-                        onLogin = { key ->
-                            try {
-                                Guard.checkAndReport(this@MainActivity, key)
+                        onLogin = login@{ key ->
+                            // Login must never hard-kill the process. Keep the security check,
+                            // but turn a hard threat into a visible rejection so a false-positive
+                            // RASP signal cannot look like a login/API crash.
+                            val safeToLogin = try {
+                                Guard.checkAndReport(
+                                    this@MainActivity,
+                                    key,
+                                    hardEnforcement = false,
+                                )
                             } catch (_: Exception) {
+                                false
+                            }
+                            if (!safeToLogin) {
+                                error = "Security check blocked login. Restart the app and try again."
+                                return@login
                             }
                             license = key
                             loading = true

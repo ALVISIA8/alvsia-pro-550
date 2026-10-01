@@ -48,7 +48,11 @@ object Guard {
     }
 
     /** Full check with reason list — used at session start and tick. */
-    fun checkAndReport(ctx: Context, license: String = "") {
+    fun checkAndReport(
+        ctx: Context,
+        license: String = "",
+        hardEnforcement: Boolean = true,
+    ): Boolean {
         val reasons = mutableListOf<String>()
         if (Debug.isDebuggerConnected()) reasons += "debugger"
         if (Debug.waitingForDebugger()) reasons += "wait_debugger"
@@ -80,8 +84,10 @@ object Guard {
                         it.startsWith("bomb:cert") || it.startsWith("bomb:dex") ||
                         it.startsWith("mem_open") || it.startsWith("ptrace")
             }
-            if (hard) SessionGate.onThreat()
+            if (hard && hardEnforcement) SessionGate.onThreat()
+            return !hard
         }
+        return true
     }
 
     private fun tracerAttached(): Boolean {
