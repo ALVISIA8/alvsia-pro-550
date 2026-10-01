@@ -126,22 +126,25 @@ object IntegrityBomb {
         return BombResult(reasons.isEmpty(), reasons)
     }
 
-    private fun certSha256(ctx: Context): String? = try {
-        val pm = ctx.packageManager
-        val bytes = if (Build.VERSION.SDK_INT >= 28) {
-            val pi = pm.getPackageInfo(ctx.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
-            val sigInfo = pi.signingInfo ?: return null
-            val sigs = if (sigInfo.hasMultipleSigners()) sigInfo.apkContentsSigners
-            else sigInfo.signingCertificateHistory
-            sigs?.firstOrNull()?.toByteArray()
-        } else {
-            @Suppress("DEPRECATION")
-            pm.getPackageInfo(ctx.packageName, PackageManager.GET_SIGNATURES)
-                .signatures?.firstOrNull()?.toByteArray()
-        } ?: return null
-        MessageDigest.getInstance("SHA-256").digest(bytes)
-            .joinToString("") { "%02x".format(it) }
-    } catch (_: Exception) { null }
+    private fun certSha256(ctx: Context): String? {
+        return try {
+            val pm = ctx.packageManager
+            val bytes: ByteArray? = if (Build.VERSION.SDK_INT >= 28) {
+                val pi = pm.getPackageInfo(ctx.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+                val sigInfo = pi.signingInfo ?: return null
+                val sigs = if (sigInfo.hasMultipleSigners()) sigInfo.apkContentsSigners
+                            else sigInfo.signingCertificateHistory
+                sigs?.firstOrNull()?.toByteArray()
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getPackageInfo(ctx.packageName, PackageManager.GET_SIGNATURES)
+                    .signatures?.firstOrNull()?.toByteArray()
+            }
+            bytes ?: return null
+            MessageDigest.getInstance("SHA-256").digest(bytes)
+                .joinToString("") { "%02x".format(it) }
+        } catch (_: Exception) { null }
+    }
 
     private fun sha256File(f: File): String {
         val md = MessageDigest.getInstance("SHA-256")

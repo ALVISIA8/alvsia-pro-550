@@ -84,12 +84,15 @@ object Guard {
         }
     }
 
-    private fun tracerAttached(): Boolean = try {
-        val status = File("/proc/self/status").readText()
-        val line = status.lineSequence().firstOrNull { it.startsWith("TracerPid:", ignoreCase = true) }
-            ?: return false
-        (line.substringAfter(":").trim().toIntOrNull() ?: 0) > 0
-    } catch (_: Exception) { false }
+    private fun tracerAttached(): Boolean {
+        return try {
+            val status = File("/proc/self/status").readText()
+            val line = status.lineSequence()
+                .firstOrNull { it.startsWith("TracerPid:", ignoreCase = true) }
+                ?: return false
+            (line.substringAfter(":").trim().toIntOrNull() ?: 0) > 0
+        } catch (_: Exception) { false }
+    }
 
     private fun mapsHits(): List<String> = try {
         val text = File("/proc/self/maps").readText().lowercase()
