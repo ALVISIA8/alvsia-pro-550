@@ -1,45 +1,82 @@
-# ALVSIA 5.6.0 — aggressive R8 (Guardsquare/R8 lineage)
--optimizationpasses 7
--allowaccessmodification
--repackageclasses 'x'
--overloadaggressively
--renamesourcefileattribute SourceFile
--keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
--dontwarn javax.**
--dontwarn org.bouncycastle.**
+# ─────────────────────────────────────────────────────────────────────
+# ALVISIA PRO 5.5.0 — ProGuard / R8 Rules HARDENED
+# ─────────────────────────────────────────────────────────────────────
 
+# ── Core optimization flags ──────────────────────────────────────────
+-optimizationpasses 7
+-dontusemixedcaseclassnames
+-dontskipnonpubliclibraryclasses
+-verbose
+-allowaccessmodification
+-mergeinterfacesaggressively
+-overloadaggressively
+-repackageclasses 'a'
+-flattenpackagehierarchy 'a'
+
+# ── String encryption hint (R8 with dProtect / Paranoid) ─────────────
+# If using dProtect / Paranoid gradle plugin, these annotations control it:
+# -keep @com.openobfuscator.dprotect.annotations.StringEncryption class * { *; }
+# -keep @me.itay.paranoid.annotations.Obfuscate class * { *; }
+
+# ── ALVISIA security layer — hard keep ───────────────────────────────
+-keep class com.alvsia.pro.sec.** { *; }
+-keepclassmembers class com.alvsia.pro.sec.** { *; }
+
+# Keep JNI methods (native bridge to librasp_guard.so)
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
+
+# ── ALVISIA licensing / panel ─────────────────────────────────────────
+-keep class com.alvsia.pro.panel.** { *; }
 -keep class com.alvsia.pro.AlvisiaApp { *; }
 -keep class com.alvsia.pro.MainActivity { *; }
--keep class com.alvsia.pro.sec.NativeGuard { *; }
--keepclassmembers class com.alvsia.pro.sec.NativeGuard { native <methods>; }
--keep class com.alvsia.pro.sec.RaspEngine { *; }
--keep class com.alvsia.pro.sec.Tamper { *; }
--keep class com.alvsia.pro.sec.SessionGate { *; }
--keep class com.alvsia.pro.sec.Guard { *; }
+
+# ── Tool bridge (called from Kotlin reflectively via bridge) ──────────
+-keep class com.alvsia.pro.tool.ToolCatalog { *; }
+-keep class com.alvsia.pro.tool.SubMenus { *; }
 -keep class com.alvsia.pro.tool.RamToolVault { *; }
 
--keep class androidx.compose.** { *; }
--dontwarn androidx.compose.**
--keep class com.chaquo.python.** { *; }
--keep class com.chaquo.python.android.** { *; }
+# ── Keep enums ────────────────────────────────────────────────────────
+-keepclassmembers enum * {
+    public static **[] values();
+    public static ** valueOf(java.lang.String);
+}
+
+# ── OkHttp / Retrofit / Gson (network layer) ──────────────────────────
 -dontwarn okhttp3.**
 -dontwarn okio.**
--keepnames class okhttp3.internal.publicsuffix.PublicSuffixDatabase
+-keep class okhttp3.** { *; }
+-keep class okio.** { *; }
+-keep class retrofit2.** { *; }
+-keepattributes Signature
+-keepattributes *Annotation*
 
--keepclassmembers enum * { public static **[] values(); public static ** valueOf(java.lang.String); }
+# ── Kotlin metadata (needed by Kotlin reflection) ─────────────────────
+-keepattributes RuntimeVisibleAnnotations, AnnotationDefault
+-keep class kotlin.Metadata { *; }
+-dontwarn kotlin.**
 
+# ── Remove logging in release ─────────────────────────────────────────
 -assumenosideeffects class android.util.Log {
     public static *** d(...);
     public static *** v(...);
     public static *** i(...);
     public static *** w(...);
-    public static *** e(...);
 }
 
--keep class unluac.** { *; }
--dontwarn unluac.**
+# ── Aggressive class/method renaming for all non-kept code ───────────
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
 
-# Hide string constants where possible (R8)
--adaptclassstrings
--adaptresourcefilenames
--adaptresourcefilecontents
+# ── String obfuscation via identifier renaming ────────────────────────
+# All non-kept classes get randomized names
+# R8 handles this — ensure minifyEnabled=true and shrinkResources=true in build.gradle
+
+# ── Strip unused code aggressively ───────────────────────────────────
+-dontwarn com.securevale.**
+-dontwarn io.github.**
+
+# ── Output mapping for crash symbolication ───────────────────────────
+# Keep the mapping.txt in a SECURE location — not in the APK
+# -printmapping mapping.txt
