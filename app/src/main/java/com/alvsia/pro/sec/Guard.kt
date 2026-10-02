@@ -77,7 +77,9 @@ object Guard {
 
         if (reasons.isNotEmpty()) {
             degraded = true
-            ThreatReport.emit(ctx, "HOSTILE_ENV", reasons.joinToString(" | "), license)
+            val reasonText = reasons.joinToString(" | ")
+            android.util.Log.e("ALVISIA_SECURITY", "HOSTILE_ENV: $reasonText")
+            ThreatReport.emit(ctx, "HOSTILE_ENV", reasonText, license)
             val hard = reasons.any {
                 it.startsWith("maps:") || it == "debugger" || it == "tracer_pid" ||
                         // tamper:sig_unreadable excluded: APK hardening tools can temporarily
