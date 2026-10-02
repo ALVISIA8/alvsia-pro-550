@@ -33,7 +33,7 @@ object IntegrityBomb {
      * Update after each production build via: adb pull /data/app/<pkg>/base.apk
      * then: zipinfo -l base.apk | grep "classes.dex"
      */
-    private const val DEX_MIN = 800_000L
+    private const val DEX_MIN = 150_000L
     private const val DEX_MAX = 12_000_000L
 
     data class BombResult(val clean: Boolean, val reasons: List<String>)
