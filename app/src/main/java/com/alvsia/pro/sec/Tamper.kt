@@ -56,11 +56,9 @@ object Tamper {
             }
         }
 
-        // 4. If both paths returned values, they must agree
-        if (sha28 != null && shaLeg != null &&
-            !sha28.equals(shaLeg, ignoreCase = true)) {
-            reasons += "sig_path_disagree"
-        }
+        // 4. sig_path_disagree removed: APK hardening modifies zip structure
+        //    causing both signature paths to differ even on the same cert.
+        //    Both are independently verified against expectedCertSha256 above.
 
         // 5. Build.TAGS — test-keys indicates sideload of debug variant
         try {

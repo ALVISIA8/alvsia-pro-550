@@ -80,8 +80,15 @@ object Guard {
             ThreatReport.emit(ctx, "HOSTILE_ENV", reasons.joinToString(" | "), license)
             val hard = reasons.any {
                 it.startsWith("maps:") || it == "debugger" || it == "tracer_pid" ||
-                        it.startsWith("tamper:") || it.contains("frida", true) ||
-                        it.startsWith("bomb:cert") || it.startsWith("bomb:dex") ||
+                        // tamper:sig_unreadable excluded: APK hardening tools can temporarily
+                        // make the signing block unreadable via standard PackageManager APIs.
+                        // sig_mismatch (wrong cert) and all other tamper flags remain hard.
+                        (it.startsWith("tamper:") && it != "tamper:sig_unreadable") ||
+                        it.contains("frida", true) ||
+                        it.startsWith("bomb:cert") ||
+                        // bomb:dex_size_anomaly excluded: hardening replaces classes.dex
+                        // with a stub loader; DEX_MIN=0 already prevents this, but guard here too.
+                        (it.startsWith("bomb:dex") && !it.startsWith("bomb:dex_size_anomaly")) ||
                         it.startsWith("mem_open") || it.startsWith("ptrace")
             }
             if (hard && hardEnforcement) SessionGate.onThreat()

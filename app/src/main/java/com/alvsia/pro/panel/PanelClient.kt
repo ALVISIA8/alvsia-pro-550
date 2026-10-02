@@ -115,8 +115,8 @@ class PanelClient {
             val r1 = JSONObject(captchaRaw)
             val cid = r1.getString("cid")
             val nonce = r1.getString("nonce")
+            val captchaSeal = r1.optString("seal", "") // forward seal for nonce integrity verification
             val solution = Crypto.solveMechanic(r1.getString("mechanic"))
-            val captchaSeal = r1.optString("seal", "")
             val powNonce = Crypto.solvePow(
                 r1.optString("pow_prefix", ""),
                 r1.optInt("pow_diff", 0)
@@ -136,7 +136,7 @@ class PanelClient {
                 .put("cid", cid)
                 .put("packet", pkt)
                 .put("proto", 2)
-                .put("seal", captchaSeal)
+                .apply { if (captchaSeal.isNotEmpty()) put("seal", captchaSeal) }
                 .toString()
             var raw2 = postJson(base() + Vault.pathS(), loginJson)
             if (raw2.isNullOrBlank() || raw2.trimStart().startsWith("<") || raw2.contains("Update required")) {

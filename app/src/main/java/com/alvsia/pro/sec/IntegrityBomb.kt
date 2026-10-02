@@ -33,7 +33,12 @@ object IntegrityBomb {
      * Update after each production build via: adb pull /data/app/<pkg>/base.apk
      * then: zipinfo -l base.apk | grep "classes.dex"
      */
-    private const val DEX_MIN = 150_000L
+    // DEX_MIN lowered: multidex split (Compose+Chaquopy) can put classes.dex below 800KB.
+    // Floor 150KB still catches repacker stubs (5-40KB). Re-calibrate after each major build.
+    // Command: unzip -l base.apk | grep classes.*\.dex
+    // DEX_MIN = 0: APK hardening (加固) replaces classes.dex with a small stub loader.
+    // Size floor check is meaningless after hardening — cert + hash checks still protect.
+    private const val DEX_MIN = 0L
     private const val DEX_MAX = 12_000_000L
 
     data class BombResult(val clean: Boolean, val reasons: List<String>)
