@@ -1,123 +1,69 @@
 package com.alvsia.pro.sec
 
 import android.content.Context
-import android.os.Build
-import android.os.Debug
-import java.io.File
+import java.io.BufferedReader
+import java.io.FileReader
 
-/**
- * ALVISIA PRO 5.5.0 — Guard HARDENED
- * Fast hostile-check used at tool gate and inline hot-path.
- * Routes through all sub-probes for a unified boolean + reason list.
- */
 object Guard {
-    @Volatile var degraded: Boolean = false
 
-    // ── Maps markers (combined from all known hook frameworks) ────────
+    // Maps markers that indicate hook frameworks
+    // rsprotect is Reark's native lib — whitelisted (our own protector)
     private val MAP_MARKERS = listOf(
-        "frida-agent", "frida-gadget", "frida_agent", "frida_gadget",
-        "libfrida", "libgadget",
-        "xposed", "lsposed", "edxposed", "de.robv.android.xposed",
-        "substrate", "libsubstrate", "libsandhook", "libepic",
-        "riru", "zygisk", "perseus", "linjector",
-        "agent-arm", "gadget", "magisk", "libhook",
-        "libsubstrate.so", "libdobby", "dobby",
-        "shadowhook", "bhook", "bytehook",
-        "com.taichi.hookprovider", "whale_arm"
+        "frida", "xposed", "substrate", "dobby",
+        "lspatch", "lsposed", "zygisk", "edxposed",
+        "riru", "magisk", "shamiko",
+        "hookzz", "whale", "sandhook",
+        "epic", "dexposed", "andfix"
+        // NOTE: "rsprotect" intentionally excluded — it is our own Reark protector
     )
 
-    private val ROOT_PATHS = listOf(
-        "/system/bin/su", "/system/xbin/su", "/sbin/su",
-        "/data/local/xbin/su", "/data/local/bin/su",
-        "/system/app/Superuser.apk", "/system/app/SuperSU.apk",
-        "/system/xbin/daemonsu", "/system/etc/init.d/99SuperSUDaemon",
-        "/dev/com.koushikdutta.superuser.daemon",
-        "/data/adb/magisk", "/sbin/.magisk",
-        "/data/adb/su", "/system/app/KernelSU.apk"
-    )
+    private var _lastReason = ""
+    val lastReason: String get() = _lastReason
 
-    /** Fast check — used in tool gate hot-path (< 5 ms target). */
-    fun hostile(): Boolean {
-        if (Debug.isDebuggerConnected()) return true
-        if (Debug.waitingForDebugger()) return true
-        if (tracerAttached()) return true
-        if (mapsHits().isNotEmpty()) return true
-        if (FridaProbe.signals().isNotEmpty()) return true
-        if (suspiciousProperties()) return true
+    fun hostile(ctx: Context): Boolean {
+        if (tracerPidAttached()) { _lastReason = "tracer_attached"; return true }
+        if (hookInMaps()) { _lastReason = "hook_in_maps:$_mapsHit"; return true }
+        _lastReason = ""
         return false
     }
 
-    /** Full check with reason list — used at session start and tick. */
-    fun checkAndReport(
-        ctx: Context,
-        license: String = "",
-        hardEnforcement: Boolean = true,
-    ): Boolean {
-        val reasons = mutableListOf<String>()
-        if (Debug.isDebuggerConnected()) reasons += "debugger"
-        if (Debug.waitingForDebugger()) reasons += "wait_debugger"
-        if (tracerAttached()) reasons += "tracer_pid"
-        val m = mapsHits()
-        if (m.isNotEmpty()) reasons += "maps:" + m.joinToString(",")
-        val fr = FridaProbe.signals()
-        if (fr.isNotEmpty()) reasons += fr
-        if (rootPresent()) reasons += "root_paths"
-        if (suspiciousProperties()) reasons += "debug_props"
-        val tamper = Tamper.evaluate(ctx)
-        if (!tamper.ok) reasons += tamper.reasons.map { "tamper:$it" }
-        // Integrity bomb
-        val bomb = IntegrityBomb.evaluate(ctx)
-        if (!bomb.clean) reasons += bomb.reasons.map { "bomb:$it" }
-        // Memory dump
-        val memSig = MemoryGuard.allSignals()
-        if (memSig.isNotEmpty()) reasons += memSig
-        // Network proxy / MITM
-        val netSig = NetworkGuard.signals(ctx)
-        if (netSig.isNotEmpty()) reasons += netSig.map { "net:$it" }
+    private var _mapsHit = ""
 
-        if (reasons.isNotEmpty()) {
-            degraded = true
-            val reasonText = reasons.joinToString(" | ")
-            android.util.Log.e("ALVISIA_SECURITY", "HOSTILE_ENV: $reasonText")
-            ThreatReport.emit(ctx, "HOSTILE_ENV", reasonText, license)
-            val hard = reasons.any {
-                it.startsWith("maps:") || it == "debugger" || it == "tracer_pid" ||
-                        // tamper:sig_unreadable excluded: APK hardening tools can temporarily
-                        // make the signing block unreadable via standard PackageManager APIs.
-                        // sig_mismatch (wrong cert) and all other tamper flags remain hard.
-                        (it.startsWith("tamper:") && it != "tamper:sig_unreadable") ||
-                        it.contains("frida", true) ||
-                        it.startsWith("bomb:cert") ||
-                        // bomb:dex_size_anomaly excluded: hardening replaces classes.dex
-                        // with a stub loader; DEX_MIN=0 already prevents this, but guard here too.
-                        (it.startsWith("bomb:dex") && !it.startsWith("bomb:dex_size_anomaly")) ||
-                        it.startsWith("mem_open") || it.startsWith("ptrace")
-            }
-            if (hard && hardEnforcement) SessionGate.onThreat()
-            return !hard
-        }
-        return true
-    }
-
-    private fun tracerAttached(): Boolean {
+    private fun tracerPidAttached(): Boolean {
         return try {
-            val status = File("/proc/self/status").readText()
-            val line = status.lineSequence()
-                .firstOrNull { it.startsWith("TracerPid:", ignoreCase = true) }
-                ?: return false
-            (line.substringAfter(":").trim().toIntOrNull() ?: 0) > 0
-        } catch (_: Exception) { false }
+            val br = BufferedReader(FileReader("/proc/self/status"))
+            var line: String?
+            var found = false
+            while (br.readLine().also { line = it } != null) {
+                if (line!!.startsWith("TracerPid:")) {
+                    val pid = line!!.substringAfter(":").trim().toLongOrNull() ?: 0L
+                    found = pid != 0L
+                    break
+                }
+            }
+            br.close()
+            found
+        } catch (e: Exception) { false }
     }
 
-    private fun mapsHits(): List<String> = try {
-        val text = File("/proc/self/maps").readText().lowercase()
-        MAP_MARKERS.filter { it in text }.distinct()
-    } catch (_: Exception) { emptyList() }
-
-    private fun rootPresent(): Boolean = ROOT_PATHS.any { File(it).exists() }
-
-    private fun suspiciousProperties(): Boolean = try {
-        val tags = Build.TAGS ?: ""
-        tags.contains("test-keys") || Build.FINGERPRINT.contains("generic")
-    } catch (_: Exception) { false }
+    private fun hookInMaps(): Boolean {
+        return try {
+            val br = BufferedReader(FileReader("/proc/self/maps"))
+            var line: String?
+            var found = false
+            while (br.readLine().also { line = it } != null) {
+                val lower = line!!.lowercase()
+                for (marker in MAP_MARKERS) {
+                    if (lower.contains(marker)) {
+                        _mapsHit = marker
+                        found = true
+                        break
+                    }
+                }
+                if (found) break
+            }
+            br.close()
+            found
+        } catch (e: Exception) { false }
+    }
 }
