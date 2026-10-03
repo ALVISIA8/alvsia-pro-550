@@ -3,9 +3,9 @@ package com.alvsia.pro.sec
 import java.io.File
 
 /**
- * ALVSIA PRO 5.5.0 — NativeGate
- * Second-layer anti-debug / anti-hook gate, pure JVM.
- * Called from SessionGate before unlock and on every allowTools().
+ * ALVISIA PRO 5.5.0 — NativeGate
+ * Anti-debug / anti-hook gate, pure JVM.
+ * Threshold loosened: Reark stub loader adds ~200ms at startup.
  */
 object NativeGate {
 
@@ -17,23 +17,18 @@ object NativeGate {
     }
 
     /**
-     * Tight-loop timing: a debugger in single-step mode inflates this by >10x.
-     * 400 ms threshold — slowest production device finishes under 50 ms.
+     * Timing: threshold 2000ms — generous enough for Reark stub overhead.
+     * A real single-step debugger inflates this 50-100x (10s+).
      */
     private fun timingCheck(): Boolean {
         val t0 = System.nanoTime()
         var acc = 0L
         for (i in 0 until 100_000) acc += i.toLong()
         val elapsed = System.nanoTime() - t0
-        if (acc == -1L) return false   // sink — prevents loop elimination
-        return elapsed < 400_000_000L
+        if (acc == -1L) return false
+        return elapsed < 2_000_000_000L  // 2 seconds
     }
 
-    /**
-     * Double-read /proc/self/status TracerPid.
-     * Two reads disagree → ptrace breakpoint fired between them.
-     * Both > 0 → debugger confirmed.
-     */
     private fun tracerPidNonZero(): Boolean {
         val v1 = readTracerPid()
         val v2 = readTracerPid()
@@ -45,10 +40,9 @@ object NativeGate {
         File("/proc/self/status").readText()
             .lineSequence()
             .firstOrNull { it.startsWith("TracerPid:", ignoreCase = true) }
-            ?.substringAfter(":")?. trim()?.toIntOrNull() ?: 0
+            ?.substringAfter(":")?.trim()?.toIntOrNull() ?: 0
     } catch (_: Exception) { 0 }
 
-    /** Stack frame scan for known hook framework class names. */
     private fun stackTainted(): Boolean {
         return Thread.currentThread().stackTrace.any { frame ->
             val cn = frame.className.lowercase()

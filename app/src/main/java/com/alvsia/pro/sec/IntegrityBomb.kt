@@ -44,8 +44,7 @@ object IntegrityBomb {
                         }
                     }
                 }
-                val extraDex = dexEntries.filter { it.name.matches(Regex("classes[4-9]\\.dex")) }
-                if (extraDex.isNotEmpty()) reasons += "extra_dex:${extraDex.map { it.name }}"
+                // extra_dex check removed — Reark legitimately adds stub DEX files
             }
         } catch (_: Exception) {
             reasons += "apk_zip_unreadable"
