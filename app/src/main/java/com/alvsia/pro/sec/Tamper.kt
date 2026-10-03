@@ -36,19 +36,13 @@ object Tamper {
             }
         }
 
-        if (sha28 != null && shaLeg != null &&
-            !sha28.equals(shaLeg, ignoreCase = true)) {
-            reasons += "sig_path_disagree"
-        }
+        // sig_path_disagree removed — Reark stub causes legitimate path divergence
 
         try {
             if (Build.TAGS?.contains("test-keys") == true) reasons += "test_keys"
         } catch (_: Exception) {}
 
-        try {
-            val ai = ctx.packageManager.getApplicationInfo(ctx.packageName, 0)
-            if ((ai.flags and ApplicationInfo.FLAG_ALLOW_BACKUP) != 0) reasons += "allow_backup"
-        } catch (_: Exception) {}
+        // allow_backup check removed — controlled in manifest
 
         return TamperResult(reasons.isEmpty(), reasons)
     }
