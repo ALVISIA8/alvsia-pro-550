@@ -95,6 +95,7 @@ object SessionGate {
     fun unlock(ctx: Context, token: String, license: String) {
         if (token.isBlank()) return
         if (!NativeGate.preCheck()) return
+        NativeGate.sessionUnlocked = true   // bypass timing loop for subsequent tool calls
         prefs(ctx).edit()
             .putBoolean(KEY_GRANTED, true)
             .putString(KEY_TOKEN, token)
