@@ -6,19 +6,37 @@ import java.io.FileReader
 
 object Guard {
 
-    // Maps markers that indicate hook frameworks
-    // rsprotect is Reark's native lib — whitelisted (our own protector)
+    // rsprotect = Reark protector native lib — intentionally whitelisted
     private val MAP_MARKERS = listOf(
         "frida", "xposed", "substrate", "dobby",
         "lspatch", "lsposed", "zygisk", "edxposed",
         "riru", "magisk", "shamiko",
         "hookzz", "whale", "sandhook",
         "epic", "dexposed", "andfix"
-        // NOTE: "rsprotect" intentionally excluded — it is our own Reark protector
     )
+
+    @Volatile var degraded: Boolean = false
 
     private var _lastReason = ""
     val lastReason: String get() = _lastReason
+
+    /**
+     * Full backward-compatible API used by AlvisiaApp, MainActivity, RaspEngine.
+     * hardEnforcement=false → return false on hostile but do NOT crash/kill.
+     */
+    fun checkAndReport(
+        ctx: Context,
+        license: String = "",
+        hardEnforcement: Boolean = true
+    ): Boolean {
+        val hostile = hostile(ctx)
+        if (hostile) {
+            ThreatReport.emit(ctx, "GUARD_HOSTILE", _lastReason, license)
+            degraded = true
+            if (hardEnforcement) return false
+        }
+        return !hostile
+    }
 
     fun hostile(ctx: Context): Boolean {
         if (tracerPidAttached()) { _lastReason = "tracer_attached"; return true }
@@ -43,7 +61,7 @@ object Guard {
             }
             br.close()
             found
-        } catch (e: Exception) { false }
+        } catch (_: Exception) { false }
     }
 
     private fun hookInMaps(): Boolean {
@@ -64,6 +82,6 @@ object Guard {
             }
             br.close()
             found
-        } catch (e: Exception) { false }
+        } catch (_: Exception) { false }
     }
 }
