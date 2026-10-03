@@ -4,17 +4,15 @@ import android.content.Context
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * ALVISIA PRO 5.5.0 — SessionGate HARDENED
+ * ALVISIA PRO 5.5.0 — SessionGate HARDENED v2
  *
  * Hard gate preventing tool access under any threat condition.
  * Session lifetime: 12 h max, must pass every gate check.
  *
- * Extra hardening vs original:
- *  - Threat counter: 3 strikes → process kill.
- *  - Token validation: HMAC-SHA256 structure check (stub — implement in Vault).
- *  - All-zero token explicitly rejected.
- *  - Guard.hostile() called inline on allowTools().
- *  - IntegrityBomb run on every allowTools() call (not just tick).
+ * v2 additions:
+ *  - NativeGate.preCheck() on every allowTools() call.
+ *  - NativeGate.preCheck() inside unlock() — blocks grant under debug.
+ *  - Threat counter: 3 strikes -> process kill.
  */
 object SessionGate {
     @Volatile var sessionOk: Boolean = false
@@ -26,6 +24,12 @@ object SessionGate {
     private const val SESSION_MAX_MS = 12L * 3600_000L
 
     fun allowTools(ctx: Context): Boolean {
+        // 0. Native pre-check: timing + TracerPid + stack taint
+        if (!NativeGate.preCheck()) {
+            ThreatReport.emit(ctx, "GATE_BLOCK", "native_precheck_fail")
+            lock(); return false
+        }
+
         // 1. Basic session state
         if (!sessionOk) {
             ThreatReport.emit(ctx, "GATE_BLOCK", "no_session")
@@ -43,14 +47,14 @@ object SessionGate {
             return false
         }
 
-        // 3. Certificate / tamper check (every call)
+        // 3. Certificate / tamper check
         val t = Tamper.evaluate(ctx)
         if (Tamper.expectedCertSha256.isNotEmpty() && !t.ok) {
             ThreatReport.emit(ctx, "GATE_BLOCK", t.reasons.joinToString("|"))
             lock(); return false
         }
 
-        // 4. Integrity bomb (every call)
+        // 4. Integrity bomb
         val bomb = IntegrityBomb.evaluate(ctx)
         if (!bomb.clean) {
             val hardReasons = bomb.reasons.filter {
@@ -73,6 +77,8 @@ object SessionGate {
 
     fun unlock(token: String, license: String) {
         if (token.isBlank()) return
+        // Block session grant if debug environment detected at unlock time
+        if (!NativeGate.preCheck()) return
         sessionToken = token
         licenseBound = license
         unlockAtMs = System.currentTimeMillis()
@@ -91,7 +97,6 @@ object SessionGate {
         lock()
         val n = threatCount.incrementAndGet()
         if (n >= 3) {
-            // Hard exit — prevent bypass loop
             android.os.Process.killProcess(android.os.Process.myPid())
         }
     }

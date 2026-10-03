@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────
-# ALVISIA PRO 5.5.0 — ProGuard / R8 Rules HARDENED
+# ALVISIA PRO 5.5.0 — ProGuard / R8 Rules HARDENED v2
 # ─────────────────────────────────────────────────────────────────────
 
 # ── Core optimization flags ──────────────────────────────────────────
@@ -12,11 +12,6 @@
 -overloadaggressively
 -repackageclasses 'a'
 -flattenpackagehierarchy 'a'
-
-# ── String encryption hint (R8 with dProtect / Paranoid) ─────────────
-# If using dProtect / Paranoid gradle plugin, these annotations control it:
-# -keep @com.openobfuscator.dprotect.annotations.StringEncryption class * { *; }
-# -keep @me.itay.paranoid.annotations.Obfuscate class * { *; }
 
 # ── ALVISIA security layer — hard keep ───────────────────────────────
 -keep class com.alvsia.pro.sec.** { *; }
@@ -32,7 +27,7 @@
 -keep class com.alvsia.pro.AlvisiaApp { *; }
 -keep class com.alvsia.pro.MainActivity { *; }
 
-# ── Tool bridge (called from Kotlin reflectively via bridge) ──────────
+# ── Tool bridge ───────────────────────────────────────────────────────
 -keep class com.alvsia.pro.tool.ToolCatalog { *; }
 -keep class com.alvsia.pro.tool.SubMenus { *; }
 -keep class com.alvsia.pro.tool.RamToolVault { *; }
@@ -43,7 +38,7 @@
     public static ** valueOf(java.lang.String);
 }
 
-# ── OkHttp / Retrofit / Gson (network layer) ──────────────────────────
+# ── OkHttp / Retrofit / Gson ──────────────────────────────────────────
 -dontwarn okhttp3.**
 -dontwarn okio.**
 -keep class okhttp3.** { *; }
@@ -52,31 +47,36 @@
 -keepattributes Signature
 -keepattributes *Annotation*
 
-# ── Kotlin metadata (needed by Kotlin reflection) ─────────────────────
+# ── Kotlin metadata ───────────────────────────────────────────────────
 -keepattributes RuntimeVisibleAnnotations, AnnotationDefault
 -keep class kotlin.Metadata { *; }
 -dontwarn kotlin.**
 
-# ── Remove logging in release ─────────────────────────────────────────
+# ── Coroutine debug probes — strip from release ───────────────────────
+-assumenosideeffects class kotlinx.coroutines.debug.internal.DebugProbesKt {
+    public static *** probeCoroutineResumed(...);
+    public static *** probeCoroutineSuspended(...);
+    public static *** probeCoroutineCreated(...);
+}
+-dontwarn kotlinx.coroutines.debug.**
+-dontwarn kotlin.coroutines.jvm.internal.DebugProbesKt
+
+# ── Remove ALL logging in release ────────────────────────────────────
 -assumenosideeffects class android.util.Log {
     public static *** d(...);
     public static *** v(...);
     public static *** i(...);
     public static *** w(...);
+    public static *** e(...);
 }
 
-# ── Aggressive class/method renaming for all non-kept code ───────────
+# ── Aggressive renaming ───────────────────────────────────────────────
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
 
-# ── String obfuscation via identifier renaming ────────────────────────
-# All non-kept classes get randomized names
-# R8 handles this — ensure minifyEnabled=true and shrinkResources=true in build.gradle
-
-# ── Strip unused code aggressively ───────────────────────────────────
+# ── Strip unused / known debug libs ──────────────────────────────────
 -dontwarn com.securevale.**
 -dontwarn io.github.**
 
-# ── Output mapping for crash symbolication ───────────────────────────
-# Keep the mapping.txt in a SECURE location — not in the APK
+# ── Output mapping (keep in secure location, NOT in APK) ─────────────
 # -printmapping mapping.txt

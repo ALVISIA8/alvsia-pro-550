@@ -41,6 +41,11 @@ android {
     }
     kotlinOptions {
         jvmTarget = "17"
+        freeCompilerArgs += listOf(
+            "-Xno-call-assertions",
+            "-Xno-receiver-assertions",
+            "-Xno-param-assertions"
+        )
     }
     buildFeatures {
         compose = true
@@ -53,6 +58,11 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
             excludes += "**/kotlin-tooling-metadata.json"
+            excludes += "**/DebugProbesKt.bin"
+            excludes += "**/META-INF/version-control-info.textproto"
+            excludes += "**/META-INF/com.android.tools/**"
+            excludes += "**/META-INF/*.kotlin_module"
+            excludes += "**/*.kotlin_builtins"
         }
     }
 }
@@ -65,13 +75,11 @@ chaquopy {
             install("requests")
             install("rich")
             install("zstandard")
-            // gmalg optional; pure ZUC in core if missing
         }
     }
 }
 
 dependencies {
-    // Unluac runs on ART (no external Java) for LUA decompile
     implementation(files("libs/unluac_pro.jar"))
 
     val composeBom = platform("androidx.compose:compose-bom:2024.06.00")

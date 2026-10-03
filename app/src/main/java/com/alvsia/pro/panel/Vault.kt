@@ -3,11 +3,11 @@ package com.alvsia.pro.panel
 import okhttp3.CertificatePinner
 
 /**
- * Host/paths rebuilt at runtime. TLS pin for api host.
- * Pins may need update if CDN cert rotates ? owner refreshes from openssl.
+ * ALVISIA PRO 5.5.0 — Vault HARDENED
+ * Path decode: enc[i] XOR 0xA7 XOR ((i * 0x13) & 0xFF)
+ * Host split into two halves decoded with independent key+step pairs.
  */
 object Vault {
-    // sha256/... of alvsiapro.cc.cd leaf pubkey (Cloudflare may rotate)
     private const val PIN_SPKI = "sha256/5xvRl/EyzQlZHSgU5dDZKbqmr+rFywWYzvSEEmJgC+Q="
 
     fun certPinner(): CertificatePinner =
@@ -18,47 +18,44 @@ object Vault {
 
     fun apiBase(): String = rebuildBase()
 
-    fun pathG(): String = p(intArrayOf(0x2F, 0x67, 0x2E, 0x70, 0x68, 0x70))
-    fun pathS(): String = p(intArrayOf(0x2F, 0x73, 0x2E, 0x70, 0x68, 0x70))
-    fun pathConnect(): String = p("/connect.php")
-    fun pathCaptcha(): String = p("/captcha.php")
-    fun pathOtp(): String = p("/otp_verify.php")
-    fun pathFetch(): String = p("/tool_fetch.php")
-    fun pathLoaderKey(): String = p("/loader_key.php")
-    fun pathSecurity(): String = p("/security_event.php")
+    fun pathG(): String = p(intArrayOf(0x88, 0xD3, 0xAF, 0xEE, 0x83, 0x88))
+    fun pathS(): String = p(intArrayOf(0x88, 0xC7, 0xAF, 0xEE, 0x83, 0x88))
+    fun pathConnect(): String = p(intArrayOf(0x88, 0xD7, 0xEE, 0xF0, 0x85, 0x9D, 0xB6, 0x56, 0x11, 0x7C, 0x71, 0x06))
+    fun pathCaptcha(): String = p(intArrayOf(0x88, 0xD7, 0xE0, 0xEE, 0x9F, 0x9B, 0xBD, 0x43, 0x11, 0x7C, 0x71, 0x06))
+    fun pathOtp(): String = p(intArrayOf(0x88, 0xDB, 0xF5, 0xEE, 0xB4, 0x8E, 0xB0, 0x50, 0x56, 0x6A, 0x60, 0x58, 0x33, 0x38, 0xDD))
+    fun pathFetch(): String = p(intArrayOf(0x88, 0xC0, 0xEE, 0xF1, 0x87, 0xA7, 0xB3, 0x47, 0x4B, 0x6F, 0x71, 0x58, 0x33, 0x38, 0xDD))
+    fun pathLoaderKey(): String = p(intArrayOf(0x88, 0xD8, 0xEE, 0xFF, 0x8F, 0x9D, 0xA7, 0x7D, 0x54, 0x69, 0x60, 0x58, 0x33, 0x38, 0xDD))
+    fun pathSecurity(): String = p(intArrayOf(0x88, 0xC7, 0xE4, 0xFD, 0x9E, 0x8A, 0xBC, 0x56, 0x46, 0x53, 0x7C, 0x00, 0x26, 0x3E, 0xD9, 0x94, 0xE7, 0x8C, 0x81))
 
     fun ua(): String {
-        val a = intArrayOf(
-            77, 111, 122, 105, 108, 108, 97, 47, 53, 46, 48, 32, 40, 76, 105, 110, 117, 120, 59, 32,
-            65, 110, 100, 114, 111, 105, 100, 32, 49, 52, 59, 32, 77, 111, 98, 105, 108, 101, 41
+        val enc = intArrayOf(
+            0xEA, 0xDB, 0xFB, 0xF7, 0x87, 0x94, 0xB4, 0x0D, 0x0A, 0x22,
+            0x29, 0x56, 0x6B, 0x1C, 0xC4, 0xD4, 0xE2, 0x9C, 0xCA, 0xEE,
+            0x9A, 0x46, 0x61, 0x60, 0x00, 0x15, 0x2D, 0x86, 0x82, 0xB4,
+            0xA6, 0xCA, 0x8A, 0xBB, 0x43, 0x57, 0x67, 0x7D, 0x5C
         )
-        return p(a) + " AppleWebKit/537.36"
+        return p(enc) + " AppleWebKit/537.36"
     }
 
-    private fun p(s: String): String {
-        val b = s.toByteArray()
-        val m = 0x39
-        val x = ByteArray(b.size) { i -> (b[i].toInt() xor m xor (i and 3)).toByte() }
-        return String(ByteArray(x.size) { i -> (x[i].toInt() xor m xor (i and 3)).toByte() })
-    }
-
+    /** Decode: enc[i] XOR 0xA7 XOR ((i * 0x13) & 0xFF) */
     private fun p(enc: IntArray): String {
-        val m = 0x00
-        return String(ByteArray(enc.size) { i -> (enc[i] xor m).toByte() })
+        val K = 0xA7; val S = 0x13
+        return String(ByteArray(enc.size) { i ->
+            ((enc[i] and 0xFF) xor K xor ((i * S) and 0xFF)).toByte()
+        })
     }
 
     private fun rebuildBase(): String {
-        val host = scramble(
-            byteArrayOf(
-                97, 108, 118, 115, 105, 97, 112, 114, 111, 46, 99, 99, 46, 99, 100
-            )
-        )
+        // "alvsia" — key=0x3D step=0x07
+        val aEnc = intArrayOf(0x5C, 0x56, 0x45, 0x5B, 0x48, 0x7F)
+        // "pro.cc.cd" — key=0x71 step=0x0B
+        val bEnc = intArrayOf(0x01, 0x08, 0x08, 0x7E, 0x3E, 0x25, 0x1D, 0x5F, 0x4D)
+        val host = decPart(aEnc, 0x3D, 0x07) + decPart(bEnc, 0x71, 0x0B)
         return "https://$host/api"
     }
 
-    private fun scramble(raw: ByteArray): String {
-        val mask = 0x5A
-        val masked = ByteArray(raw.size) { i -> (raw[i].toInt() xor mask xor (i and 7)).toByte() }
-        return String(ByteArray(masked.size) { i -> (masked[i].toInt() xor mask xor (i and 7)).toByte() })
-    }
+    private fun decPart(enc: IntArray, k: Int, step: Int): String =
+        String(ByteArray(enc.size) { i ->
+            ((enc[i] and 0xFF) xor k xor ((i * step) and 0xFF)).toByte()
+        })
 }
