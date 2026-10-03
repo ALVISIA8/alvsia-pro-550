@@ -104,6 +104,12 @@ object SessionGate {
             .apply()
     }
 
+    /** Legacy 2-arg unlock called by MainActivity (no ctx arg) */
+    fun unlock(token: String, license: String) {
+        val ctx = _appCtx ?: return
+        unlock(ctx, token, license)
+    }
+
     /** Legacy no-arg lock — called by MainActivity / RaspEngine */
     fun lock() {
         val ctx = _appCtx ?: return
