@@ -103,15 +103,21 @@ class ToolEngine(private val context: Context) {
     }
 
     fun run(toolId: Int, inputUri: Uri?, extraName: String?): List<String> {
-        if (!SessionGate.allowTools(context)) {
-            return listOf("X Session / integrity gate ? re-login required")
+        try {
+            SessionGate.allowTools(context)
+        } catch (e: SecurityException) {
+            val reason = e.message?.removePrefix("BLOCKED:") ?: "gate_fail"
+            return listOf("X Session blocked: $reason — re-login required")
         }
         return runSub(toolId, "mod_$toolId", inputUri, extraName)
     }
 
     fun runSub(moduleId: Int, subId: String, inputUri: Uri?, extraName: String?): List<String> {
-        if (!SessionGate.allowTools(context)) {
-            return listOf("X Session / integrity gate ? re-login required")
+        try {
+            SessionGate.allowTools(context)
+        } catch (e: SecurityException) {
+            val reason = e.message?.removePrefix("BLOCKED:") ?: "gate_fail"
+            return listOf("X Session blocked: $reason — re-login required")
         }
         WorkPaths.bindApp(context)
         WorkPaths.readme(context)
