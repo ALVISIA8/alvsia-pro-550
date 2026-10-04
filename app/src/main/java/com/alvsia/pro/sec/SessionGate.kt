@@ -45,28 +45,33 @@ object SessionGate {
     fun allowTools(ctx: Context): Boolean {
         _appCtx = ctx.applicationContext
 
-        // 1. Native anti-debug gate
-        if (!NativeGate.preCheck()) {
-            val reason = "native_precheck_fail"
-            ThreatReport.emit(ctx, "GATE_BLOCK", reason)
-            lock(ctx)
-            throw SecurityException("BLOCKED:$reason")
-        }
+        // After OTP unlock, sessionUnlocked=true — skip heavy re-checks.
+        // Guard.hostile() detects Reark protector maps as a hook and calls
+        // lock(ctx) which erases KEY_GRANTED → no_session on every tool run.
+        if (!NativeGate.sessionUnlocked) {
+            // 1. Native anti-debug gate
+            if (!NativeGate.preCheck()) {
+                val reason = "native_precheck_fail"
+                ThreatReport.emit(ctx, "GATE_BLOCK", reason)
+                lock(ctx)
+                throw SecurityException("BLOCKED:$reason")
+            }
 
-        // 2. Hook / tracer check
-        if (Guard.hostile(ctx)) {
-            val reason = "guard_hostile:${Guard.lastReason}"
-            ThreatReport.emit(ctx, "GATE_BLOCK", reason)
-            lock(ctx)
-            throw SecurityException("BLOCKED:$reason")
-        }
+            // 2. Hook / tracer check
+            if (Guard.hostile(ctx)) {
+                val reason = "guard_hostile:${Guard.lastReason}"
+                ThreatReport.emit(ctx, "GATE_BLOCK", reason)
+                lock(ctx)
+                throw SecurityException("BLOCKED:$reason")
+            }
 
-        // 3. Integrity check
-        if (IntegrityBomb.isCompromised(ctx)) {
-            val reason = "integrity_fail:${IntegrityBomb.lastReason}"
-            ThreatReport.emit(ctx, "GATE_BLOCK", reason)
-            lock(ctx)
-            throw SecurityException("BLOCKED:$reason")
+            // 3. Integrity check
+            if (IntegrityBomb.isCompromised(ctx)) {
+                val reason = "integrity_fail:${IntegrityBomb.lastReason}"
+                ThreatReport.emit(ctx, "GATE_BLOCK", reason)
+                lock(ctx)
+                throw SecurityException("BLOCKED:$reason")
+            }
         }
 
         val p       = prefs(ctx)

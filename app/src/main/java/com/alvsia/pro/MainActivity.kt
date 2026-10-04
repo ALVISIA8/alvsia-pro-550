@@ -247,7 +247,7 @@ class MainActivity : ComponentActivity() {
                                     screen = "login"
                                     return@launch
                                 }
-                                SessionGate.unlock(_tok, license)
+                                SessionGate.unlock(this@MainActivity, _tok, license)
                                 try {
                                     RaspEngine.start(this@MainActivity, license)
                                 } catch (_: Exception) {
