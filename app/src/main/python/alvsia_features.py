@@ -10,6 +10,10 @@ from pathlib import Path
 from lua_engine import detect_lua, analyze_lua, decompile_lua, validate_lua_source, transform_bgmi_lua, unwrap_lua_container
 from lua_engine.engine import clean_lua_source
 try:
+    from lua_engine.decompiler53 import decompile_file as _decompile53_file
+except Exception as _e53:
+    _decompile53_file = None
+try:
     from lua_output_validator import validate_decompile_text, classify_bytes
 except Exception:
     validate_decompile_text = None
@@ -307,7 +311,43 @@ def run_lua_smart(input_path, out_dir, jars_dir=None):
                              "version": info.version, "wrapped": info.wrapped,
                              "container": info.container, "chunks": info.container_chunks})
 
-    ur = run_unluac(input_path, out_dir, jars_dir=jars_dir)
+    # ── Step 1: unwrap container if needed ──────────────────────────────────
+    work_input = input_path
+    if info.wrapped:
+        try:
+            payload, ci = unwrap_lua_container(data)
+            unwrapped_path = out_dir / (input_path.stem + "_unwrapped.luac")
+            unwrapped_path.write_bytes(payload)
+            work_input = unwrapped_path
+            report["steps"].append({"step": "unwrap", "ok": True, "container": ci.format,
+                                     "chunks": ci.chunks, "out": str(unwrapped_path)})
+        except Exception as e:
+            report["steps"].append({"step": "unwrap", "ok": False, "error": str(e)})
+
+    # ── Step 2: pure-Python Lua 5.3 decompiler (primary — no Java) ─────────
+    work_data = work_input.read_bytes()
+    is_lua53 = (len(work_data) > 4 and
+                work_data[:4] == b"\x1bLua" and
+                work_data[4] == 0x53)
+
+    if _decompile53_file is not None and is_lua53:
+        try:
+            out_lua = out_dir / (input_path.stem + "_decompiled.lua")
+            pr = _decompile53_file(work_input, out_lua)
+            report["steps"].append({"step": "py_decompile53", **pr})
+            if pr.get("ok") and out_lua.exists() and out_lua.stat().st_size > 0:
+                import re as _re
+                snippet = out_lua.read_text(encoding="utf-8", errors="replace")[:4096]
+                has_lua = bool(_re.search(r'\b(local|function|return|if|for|while|end)\b', snippet))
+                if has_lua:
+                    report["ok"] = True
+                    return {"ok": True, "mode": "smart_py53",
+                            "out": str(out_lua), "lines": pr.get("lines", 0), **report}
+        except Exception as e:
+            report["steps"].append({"step": "py_decompile53", "ok": False, "error": str(e)})
+
+    # ── Step 3: unluac jar (fallback — needs Java) ───────────────────────────
+    ur = run_unluac(work_input, out_dir, jars_dir=jars_dir)
     report["steps"].append({"step": "unluac", **ur})
     if ur.get("ok"):
         return {"ok": True, "mode": "smart_unluac", **report}
