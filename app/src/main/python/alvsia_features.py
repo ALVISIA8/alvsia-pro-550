@@ -747,3 +747,177 @@ def run_rebrand_auto(input_path, out_dir, out_root=None):
     if p.is_dir():
         return run_rebrand_tree(p, out_dir, out_root=out_root)
     return run_rebrand_file(p, out_dir, out_root=out_root)
+
+
+# ── Missing features added for full 17-module coverage ──────────────────────
+
+def run_lua_analyze(input_path, out_dir):
+    """Analyze Lua/LuaJIT bytecode: format detection + obfuscation report."""
+    from pathlib import Path
+    import hashlib
+    p = Path(input_path); out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    raw = p.read_bytes()
+    lines = ["ALVSIA LUA ANALYZE — %s" % p.name, "size=%d bytes" % len(raw), ""]
+    # Format detection
+    if raw[:4] == b"\x1bLua":
+        ver_byte = raw[4] if len(raw) > 4 else 0
+        ver = {0x51:"Lua 5.1",0x52:"Lua 5.2",0x53:"Lua 5.3",0x54:"Lua 5.4"}.get(ver_byte,"Lua (unknown ver)")
+        lines.append("format=" + ver)
+    elif raw[:4] == b"\x1bLJ\x02" or raw[:4] == b"\x1bLJ\x01":
+        lines.append("format=LuaJIT 2.x")
+    elif raw[:4] == b"\x1bLJ\x00":
+        lines.append("format=LuaJIT 1.x")
+    else:
+        lines.append("format=unknown (not Lua bytecode) head=" + raw[:8].hex())
+    # Entropy / obfuscation density
+    if len(raw) > 0:
+        freq = [0]*256
+        for b in raw: freq[b] += 1
+        import math
+        entropy = -sum((c/len(raw))*math.log2(c/len(raw)) for c in freq if c>0)
+        lines.append("entropy=%.3f/8.0 (%s)" % (entropy, "HIGH(obfuscated?)" if entropy>7.5 else "normal"))
+    # XOR probing — look for repeating patterns suggesting XOR key
+    xor_hints = []
+    window = raw[:min(512, len(raw))]
+    for key in range(1, 256):
+        dec = bytes(b ^ key for b in window)
+        if dec[:4] in (b"\x1bLua", b"\x1bLJ\x02", b"\x1bLJ\x01"):
+            xor_hints.append("0x%02X" % key)
+    if xor_hints:
+        lines.append("xor_candidates=" + ",".join(xor_hints))
+    else:
+        lines.append("xor_candidates=none (raw bytecode or multi-byte key)")
+    # Hash
+    lines.append("md5=" + hashlib.md5(raw).hexdigest())
+    out_file = out_dir / ("lua_analysis_%s.txt" % p.stem)
+    out_file.write_text("\n".join(lines), encoding="utf-8")
+    return {"ok": True, "out": str(out_file)}
+
+
+def run_lua_constants(input_path, out_dir):
+    """Extract string constants embedded in Lua bytecode."""
+    from pathlib import Path
+    p = Path(input_path); out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    raw = p.read_bytes()
+    # Scan for null-terminated printable strings of length >= 4
+    strings = []
+    buf = bytearray()
+    for b in raw:
+        if 32 <= b <= 126:
+            buf.append(b)
+        else:
+            if len(buf) >= 4:
+                strings.append(buf.decode("ascii", errors="replace"))
+            buf = bytearray()
+    if len(buf) >= 4:
+        strings.append(buf.decode("ascii", errors="replace"))
+    # Deduplicate and sort
+    seen = set(); unique = []
+    for s in strings:
+        if s not in seen:
+            seen.add(s); unique.append(s)
+    lines = ["ALVSIA LUA CONSTANTS — %s" % p.name, "total=%d" % len(unique), ""]
+    lines.extend(unique[:500])
+    out_file = out_dir / ("lua_constants_%s.txt" % p.stem)
+    out_file.write_text("\n".join(lines), encoding="utf-8")
+    return {"ok": True, "out": str(out_file), "count": len(unique)}
+
+
+def run_obb_extract(input_path, out_dir):
+    """Extract OBB/ZIP archive to out_dir."""
+    from pathlib import Path
+    import zipfile
+    p = Path(input_path); out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    extracted = []
+    try:
+        with zipfile.ZipFile(str(p), "r") as zf:
+            names = zf.namelist()
+            for name in names:
+                dest = out_dir / name
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                data = zf.read(name)
+                if not name.endswith("/"):
+                    dest.write_bytes(data)
+                    extracted.append(name)
+        return {"ok": True, "extracted": len(extracted), "out": str(out_dir)}
+    except zipfile.BadZipFile as e:
+        return {"ok": False, "error": "Bad ZIP/OBB: %s" % e}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def run_obb_rezip(input_dir, out_file):
+    """Repack a folder back into an OBB/ZIP."""
+    from pathlib import Path
+    import zipfile
+    base = Path(input_dir); out = Path(out_file)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    packed = 0
+    with zipfile.ZipFile(str(out), "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for fp in sorted(base.rglob("*")):
+            if fp.is_file():
+                arcname = fp.relative_to(base).as_posix()
+                zf.write(str(fp), arcname)
+                packed += 1
+    return {"ok": True, "packed": packed, "out": str(out)}
+
+
+def run_strings_scan(input_path, out_dir):
+    """Extract printable ASCII strings >= 6 chars from any binary."""
+    from pathlib import Path
+    p = Path(input_path); out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    raw = p.read_bytes()
+    strings = []; buf = bytearray()
+    for b in raw:
+        if 32 <= b <= 126:
+            buf.append(b)
+        else:
+            if len(buf) >= 6:
+                strings.append(buf.decode("ascii", errors="replace"))
+            buf = bytearray()
+    if len(buf) >= 6:
+        strings.append(buf.decode("ascii", errors="replace"))
+    out_file = out_dir / ("strings_%s.txt" % p.stem)
+    out_file.write_text("\n".join(strings[:2000]), encoding="utf-8")
+    return {"ok": True, "count": len(strings), "out": str(out_file)}
+
+
+def run_export_report(input_path, out_dir):
+    """Generate MD5/SHA1/SHA256 + type detection report."""
+    import hashlib
+    from pathlib import Path
+    p = Path(input_path); out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    raw = p.read_bytes()
+    md5  = hashlib.md5(raw).hexdigest()
+    sha1 = hashlib.sha1(raw).hexdigest()
+    sha256 = hashlib.sha256(raw).hexdigest()
+    lines = [
+        "ALVSIA FILE REPORT",
+        "name=%s" % p.name,
+        "size=%s bytes" % len(raw),
+        "MD5=%s" % md5,
+        "SHA1=%s" % sha1,
+        "SHA256=%s" % sha256,
+        "head_hex=%s" % raw[:16].hex(),
+    ]
+    import zipfile
+    if raw[:2] == b"PK":
+        try:
+            with zipfile.ZipFile(p) as zf:
+                lines.append("type=ZIP/OBB entries=%s" % len(zf.namelist()))
+        except Exception:
+            lines.append("type=ZIP(corrupt)")
+    elif raw[:4] == b"\x1bLua":
+        lines.append("type=Lua bytecode")
+    elif raw[:7] == b"\x04\x22\x4d\x18" or raw[:4] == b"\x28\xb5\x2f\xfd":
+        lines.append("type=Zstd compressed")
+    else:
+        lines.append("type=binary/unknown")
+    out_file = out_dir / ("report_%s.txt" % p.stem)
+    out_file.write_text("\n".join(lines), encoding="utf-8")
+    return {"ok": True, "out": str(out_file), "sha256": sha256}

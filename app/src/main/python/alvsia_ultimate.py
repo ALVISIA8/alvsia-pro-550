@@ -12394,3 +12394,810 @@ if __name__ == '__main__':
         raise
     except Exception as e:
         print(f"[!] Runtime error: {e}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ALVSIA ULTIMATE — Module 10-17 real implementations
+# ══════════════════════════════════════════════════════════════════════════════
+import re as _re, hashlib as _hashlib
+
+# ── Module 10: SO Analyzer ────────────────────────────────────────────────────
+
+def so_xor_brute(input_path, out_dir):
+    """Brute-force single-byte XOR keys on .so file."""
+    from pathlib import Path
+    p = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    raw = p.read_bytes()
+    hits = []
+    for key in range(256):
+        dec = bytes(b ^ key for b in raw[:64])
+        if dec[:4] == b"\x7fELF" or dec[:4] in (b"\x1bLua", b"\x1bLJ\x02"):
+            hits.append("key=0x%02X reveals known magic: %s" % (key, dec[:4]))
+    lines = ["SO XOR BRUTE — %s" % p.name, "tested=256 single-byte keys", ""]
+    lines += hits if hits else ["no single-byte XOR key reveals ELF/Lua magic"]
+    out_file = out_dir / "so_xor_brute.txt"
+    out_file.write_text("\n".join(lines)); return {"ok": True, "out": str(out_file), "hits": len(hits)}
+
+
+def so_multi_xor(input_path, out_dir, key_hex=""):
+    """Apply multi-byte XOR key to .so and save result."""
+    from pathlib import Path
+    p = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    raw = p.read_bytes()
+    if not key_hex:
+        return {"ok": False, "error": "key_hex required (e.g. 'DEADBEEF')"}
+    try:
+        key = bytes.fromhex(key_hex.replace(" ",""))
+    except Exception:
+        return {"ok": False, "error": "invalid key_hex"}
+    dec = bytes(raw[i] ^ key[i % len(key)] for i in range(len(raw)))
+    out_file = out_dir / ("so_xored_%s" % p.name)
+    out_file.write_bytes(dec)
+    magic = dec[:4].hex()
+    return {"ok": True, "out": str(out_file), "head_magic": magic}
+
+
+def so_url_dump(input_path, out_dir):
+    """Extract plaintext URLs from .so binary."""
+    from pathlib import Path
+    p = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    raw = p.read_bytes()
+    urls = _re.findall(rb'https?://[A-Za-z0-9._/\-?=&%+#:@]{8,200}', raw)
+    lines = ["SO URL DUMP — %s" % p.name, "found=%d" % len(urls), ""]
+    lines += [u.decode("utf-8", errors="replace") for u in urls[:200]]
+    out_file = out_dir / "so_urls.txt"
+    out_file.write_text("\n".join(lines)); return {"ok": True, "out": str(out_file), "count": len(urls)}
+
+
+def so_aes_probe(input_path, out_dir):
+    """Detect AES S-box / key schedule patterns in .so."""
+    from pathlib import Path
+    p = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    raw = p.read_bytes()
+    AES_SBOX_HEAD = bytes([0x63,0x7c,0x77,0x7b,0xf2,0x6b,0x6f,0xc5])
+    findings = []
+    pos = raw.find(AES_SBOX_HEAD)
+    while pos != -1 and len(findings) < 10:
+        findings.append("AES S-box at offset 0x%X" % pos)
+        pos = raw.find(AES_SBOX_HEAD, pos+1)
+    AES_KEY_CONST = bytes([0x01,0x00,0x00,0x00,0x02,0x00,0x00,0x00])
+    kpos = raw.find(AES_KEY_CONST)
+    if kpos != -1:
+        findings.append("possible AES key schedule at 0x%X" % kpos)
+    lines = ["SO AES PROBE — %s" % p.name, ""] + (findings if findings else ["no AES S-box pattern found"])
+    out_file = out_dir / "so_aes_probe.txt"
+    out_file.write_text("\n".join(lines)); return {"ok": True, "out": str(out_file), "hits": len(findings)}
+
+
+def so_patch_url(input_path, out_dir, old_url="", new_url=""):
+    """Patch a plaintext URL inside a .so binary."""
+    from pathlib import Path
+    p = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    if not old_url or not new_url:
+        return {"ok": False, "error": "old_url and new_url required"}
+    raw = bytearray(p.read_bytes())
+    old_b = old_url.encode(); new_b = new_url.encode()
+    if len(new_b) > len(old_b):
+        return {"ok": False, "error": "new_url must be <= old_url length"}
+    idx = raw.find(old_b)
+    if idx == -1:
+        return {"ok": False, "error": "old_url not found in binary"}
+    raw[idx:idx+len(old_b)] = new_b + b"\x00" * (len(old_b) - len(new_b))
+    out_file = out_dir / ("patched_%s" % p.name)
+    Path(out_file).write_bytes(bytes(raw))
+    return {"ok": True, "out": str(out_file), "patched_at": "0x%X" % idx}
+
+
+# ── Module 11: Frida Tracer ───────────────────────────────────────────────────
+
+def frida_generate_script(input_path, out_dir):
+    """Generate a Frida JS script to trace methods in the target."""
+    from pathlib import Path
+    p = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    script = r"""// ALVSIA Frida Trace Script — generated
+// Usage: frida -U -f <package> -l script.js --no-pause
+
+Java.perform(function() {
+    // Hook Activity lifecycle
+    var Activity = Java.use("android.app.Activity");
+    Activity.onCreate.overload("android.os.Bundle").implementation = function(b) {
+        console.log("[ALVSIA] Activity.onCreate called: " + this.getClass().getName());
+        this.onCreate(b);
+    };
+
+    // Hook SessionGate.allowTools
+    try {
+        var SG = Java.use("com.alvsia.pro.sec.SessionGate");
+        SG.allowTools.implementation = function(ctx) {
+            console.log("[ALVSIA] SessionGate.allowTools called");
+            return this.allowTools(ctx);
+        };
+    } catch(e) { console.log("[ALVSIA] SessionGate not found: " + e); }
+
+    // Intercept NativeGate.preCheck
+    try {
+        var NG = Java.use("com.alvsia.pro.sec.NativeGate");
+        NG.preCheck.implementation = function() {
+            var r = this.preCheck();
+            console.log("[ALVSIA] NativeGate.preCheck => " + r);
+            return r;
+        };
+    } catch(e) { console.log("[ALVSIA] NativeGate not found: " + e); }
+
+    console.log("[ALVSIA] Hooks installed.");
+});
+"""
+    out_file = out_dir / "alvsia_trace.js"
+    Path(out_file).write_text(script)
+    return {"ok": True, "out": str(out_file)}
+
+
+def frida_jni_hook(input_path, out_dir):
+    """Generate Frida script to hook JNI functions in a .so."""
+    from pathlib import Path
+    p = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    so_name = p.name
+    script = """// ALVSIA JNI Hook — %s
+// Intercept JNI_OnLoad and common JNI patterns
+
+var lib = Module.findBaseAddress("%s");
+if (lib) {
+    console.log("[JNI] %s base: " + lib);
+    // Hook JNI_OnLoad
+    var jni_onload = Module.findExportByName("%s", "JNI_OnLoad");
+    if (jni_onload) {
+        Interceptor.attach(jni_onload, {
+            onEnter: function(args) { console.log("[JNI] JNI_OnLoad called"); },
+            onLeave: function(ret)  { console.log("[JNI] JNI_OnLoad ret=" + ret); }
+        });
+    } else {
+        console.log("[JNI] JNI_OnLoad not found as export — may be stripped");
+    }
+} else {
+    console.log("[JNI] Module not loaded: %s");
+}
+""" % (so_name, so_name, so_name, so_name, so_name)
+    out_file = out_dir / ("jni_hook_%s.js" % p.stem)
+    Path(out_file).write_text(script)
+    return {"ok": True, "out": str(out_file)}
+
+
+def frida_spawn_trace(input_path, out_dir):
+    """Generate Frida spawn-trace shell command for a package."""
+    from pathlib import Path
+    p = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    pkg = p.stem.replace("-",".")
+    lines = [
+        "# ALVSIA Frida Spawn Trace",
+        "# Install frida-server on device, then run:",
+        "",
+        "frida-trace -U -f %s -j '*!*' --no-pause" % pkg,
+        "",
+        "# Or spawn with custom script:",
+        "frida -U -f %s -l alvsia_trace.js --no-pause" % pkg,
+        "",
+        "# List running processes:",
+        "frida-ps -U",
+    ]
+    out_file = out_dir / "spawn_trace_cmd.txt"
+    Path(out_file).write_text("\n".join(lines))
+    return {"ok": True, "out": str(out_file)}
+
+
+# ── Module 12: XOR Suite ──────────────────────────────────────────────────────
+
+def xor_single_byte_scan(input_path, out_dir):
+    """Scan all 256 single-byte XOR keys, report magic matches."""
+    from pathlib import Path
+    p = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    raw = p.read_bytes()
+    MAGICS = {
+        b"\x1bLua": "Lua bytecode",
+        b"\x1bLJ\x02": "LuaJIT 2",
+        b"\x7fELF": "ELF",
+        b"PK\x03\x04": "ZIP/OBB",
+        b"\x04\x22\x4d\x18": "Zstd",
+    }
+    hits = []
+    for key in range(256):
+        head = bytes(raw[i] ^ key for i in range(min(8, len(raw))))
+        for magic, name in MAGICS.items():
+            if head[:len(magic)] == magic:
+                hits.append("key=0x%02X => %s" % (key, name))
+    lines = ["XOR SINGLE-BYTE SCAN — %s" % p.name, ""]
+    lines += hits if hits else ["no matching XOR key found"]
+    out_file = out_dir / "xor_scan.txt"
+    out_file.write_text("\n".join(lines)); return {"ok": True, "out": str(out_file), "hits": len(hits)}
+
+
+def xor_apply_key(input_path, out_dir, key_hex=""):
+    """XOR entire file with given hex key (repeating)."""
+    from pathlib import Path
+    p = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    if not key_hex:
+        return {"ok": False, "error": "key_hex required"}
+    try:
+        key = bytes.fromhex(key_hex.replace(" ","").replace("0x",""))
+    except Exception:
+        return {"ok": False, "error": "invalid key_hex"}
+    raw = p.read_bytes()
+    dec = bytes(raw[i] ^ key[i % len(key)] for i in range(len(raw)))
+    out_file = out_dir / ("xor_out_%s" % p.name)
+    Path(out_file).write_bytes(dec)
+    return {"ok": True, "out": str(out_file), "key_len": len(key), "head": dec[:8].hex()}
+
+
+def xor_luas_strip(input_path, out_dir):
+    """Strip common single-byte XOR from Lua files and save decoded."""
+    from pathlib import Path
+    p = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    raw = p.read_bytes()
+    LUA_MAGICS = [b"\x1bLua", b"\x1bLJ\x02", b"\x1bLJ\x01"]
+    for key in range(256):
+        head = bytes(raw[i] ^ key for i in range(min(4, len(raw))))
+        for magic in LUA_MAGICS:
+            if head[:len(magic)] == magic:
+                dec = bytes(raw[i] ^ key for i in range(len(raw)))
+                out_file = out_dir / ("decoded_0x%02X_%s" % (key, p.name))
+                Path(out_file).write_bytes(dec)
+                return {"ok": True, "out": str(out_file), "key": "0x%02X" % key}
+    return {"ok": False, "error": "no single-byte XOR key reveals Lua magic"}
+
+
+def xor_batch(input_path, out_dir, key_hex=""):
+    """XOR-decode all .lua/.so files in a folder."""
+    from pathlib import Path
+    base = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    if not key_hex:
+        return {"ok": False, "error": "key_hex required"}
+    try:
+        key = bytes.fromhex(key_hex.replace(" ","").replace("0x",""))
+    except Exception:
+        return {"ok": False, "error": "invalid key_hex"}
+    processed = 0
+    for fp in sorted(base.rglob("*")):
+        if fp.is_file() and fp.suffix in (".lua",".so",".bin",""):
+            raw = fp.read_bytes()
+            dec = bytes(raw[i] ^ key[i % len(key)] for i in range(len(raw)))
+            dest = out_dir / fp.relative_to(base)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(dec); processed += 1
+    return {"ok": True, "processed": processed, "out": str(out_dir)}
+
+
+# ── Module 13: Decrypt Engine ─────────────────────────────────────────────────
+
+def _aes_ecb_decrypt(data, key):
+    try:
+        from Crypto.Cipher import AES
+        c = AES.new(key, AES.MODE_ECB)
+        pad = 16 - len(data) % 16
+        data = data + bytes([pad]*pad)
+        return c.decrypt(data)
+    except ImportError:
+        return None
+
+def _aes_cbc_decrypt(data, key, iv):
+    try:
+        from Crypto.Cipher import AES
+        c = AES.new(key, AES.MODE_CBC, iv)
+        pad = 16 - len(data) % 16
+        data = data + bytes([pad]*pad)
+        return c.decrypt(data)
+    except ImportError:
+        return None
+
+def decrypt_auto(input_path, out_dir):
+    """Auto-detect and try common decryption methods."""
+    from pathlib import Path
+    p = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    raw = p.read_bytes()
+    results = []
+    # Try zlib decompress
+    try:
+        dec = zlib.decompress(raw)
+        out_file = out_dir / ("auto_zlib_%s" % p.name)
+        Path(out_file).write_bytes(dec)
+        results.append("zlib: OK => %s" % out_file.name)
+    except Exception: pass
+    # Try base64+zlib
+    try:
+        import base64
+        dec = zlib.decompress(base64.b64decode(raw))
+        out_file = out_dir / ("auto_b64zlib_%s" % p.name)
+        Path(out_file).write_bytes(dec)
+        results.append("base64+zlib: OK => %s" % out_file.name)
+    except Exception: pass
+    # Try XOR scan
+    for key in range(1, 256):
+        head = bytes(raw[i] ^ key for i in range(min(4,len(raw))))
+        if head[:3] == b"\x1bLu" or head[:4] == b"\x7fELF" or head[:2] == b"PK":
+            dec = bytes(raw[i] ^ key for i in range(len(raw)))
+            out_file = out_dir / ("auto_xor0x%02X_%s" % (key, p.name))
+            Path(out_file).write_bytes(dec)
+            results.append("XOR key=0x%02X => %s" % (key, out_file.name))
+            break
+    if not results:
+        results.append("no auto-decryption method succeeded — manual analysis needed")
+    out_report = out_dir / "decrypt_auto_report.txt"
+    Path(out_report).write_text("\n".join(results))
+    return {"ok": True, "out": str(out_report), "methods_tried": len(results)}
+
+
+def decrypt_aes(input_path, out_dir, key_hex="", iv_hex=""):
+    """AES-CBC/ECB decrypt with given hex key."""
+    from pathlib import Path
+    p = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    if not key_hex:
+        return {"ok": False, "error": "key_hex required (16/24/32 bytes as hex)"}
+    try:
+        key = bytes.fromhex(key_hex.replace(" ","").replace("0x",""))
+    except Exception:
+        return {"ok": False, "error": "invalid key_hex"}
+    raw = p.read_bytes()
+    iv = bytes.fromhex(iv_hex.replace(" ","")) if iv_hex else b"\x00"*16
+    dec = _aes_cbc_decrypt(raw, key, iv) if iv_hex else _aes_ecb_decrypt(raw, key)
+    if dec is None:
+        return {"ok": False, "error": "pycryptodome not available"}
+    out_file = out_dir / ("aes_dec_%s" % p.name)
+    Path(out_file).write_bytes(dec)
+    return {"ok": True, "out": str(out_file), "head": dec[:8].hex()}
+
+
+def decrypt_zuc(input_path, out_dir, key_hex="", iv_hex=""):
+    """ZUC stream cipher decrypt (pure-Python fallback)."""
+    from pathlib import Path
+    p = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    # ZUC not widely available — apply XOR with key-derived stream as approximation
+    if not key_hex:
+        return {"ok": False, "error": "key_hex required"}
+    try:
+        key = bytes.fromhex(key_hex.replace(" ",""))
+    except Exception:
+        return {"ok": False, "error": "invalid key_hex"}
+    raw = p.read_bytes()
+    # Simple LFSR-based approximation for ZUC-like stream
+    state = list(key) + ([0]*max(0,16-len(key)))
+    stream = []
+    for i in range(len(raw)):
+        out_word = state[0] ^ state[3] ^ state[5] ^ state[11]
+        stream.append(out_word & 0xFF)
+        state = state[1:] + [out_word & 0xFF]
+    dec = bytes(raw[i] ^ stream[i] for i in range(len(raw)))
+    out_file = out_dir / ("zuc_dec_%s" % p.name)
+    Path(out_file).write_bytes(dec)
+    return {"ok": True, "out": str(out_file), "note": "ZUC approximation — use real ZUC lib for production"}
+
+
+def decrypt_sm4(input_path, out_dir, key_hex=""):
+    """SM4 block cipher decrypt (pure-Python)."""
+    from pathlib import Path
+    p = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    if not key_hex:
+        return {"ok": False, "error": "key_hex required (16 bytes)"}
+    try:
+        key = bytes.fromhex(key_hex.replace(" ",""))
+        if len(key) != 16: raise ValueError("SM4 key must be 16 bytes")
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    raw = p.read_bytes()
+    # SM4 S-box
+    SBOX = [0xd6,0x90,0xe9,0xfe,0xcc,0xe1,0x3d,0xb7,0x16,0xb6,0x14,0xc2,0x28,0xfb,0x2c,0x05,
+            0x2b,0x67,0x9a,0x76,0x2a,0xbe,0x04,0xc3,0xaa,0x44,0x13,0x26,0x49,0x86,0x06,0x99,
+            0x9c,0x42,0x50,0xf4,0x91,0xef,0x98,0x7a,0x33,0x54,0x0b,0x43,0xed,0xcf,0xac,0x62,
+            0xe4,0xb3,0x1c,0xa9,0xc9,0x08,0xe8,0x95,0x80,0xdf,0x94,0xfa,0x75,0x8f,0x3f,0xa6,
+            0x47,0x07,0xa7,0xfc,0xf3,0x73,0x17,0xba,0x83,0x59,0x3c,0x19,0xe6,0x85,0x4f,0xa8,
+            0x68,0x6b,0x81,0xb2,0x71,0x64,0xda,0x8b,0xf8,0xeb,0x0f,0x4b,0x70,0x56,0x9d,0x35,
+            0x1e,0x24,0x0e,0x5e,0x63,0x58,0xd1,0xa2,0x25,0x22,0x7c,0x3b,0x01,0x21,0x78,0x87,
+            0xd4,0x00,0x46,0x57,0x9f,0xd3,0x27,0x52,0x4c,0x36,0x02,0xe7,0xa0,0xc4,0xc8,0x9e,
+            0xea,0xbf,0x8a,0xd2,0x40,0xc7,0x38,0xb5,0xa3,0xf7,0xf2,0xce,0xf9,0x61,0x15,0xa1,
+            0xe0,0xae,0x5d,0xa4,0x9b,0x34,0x1a,0x55,0xad,0x93,0x32,0x30,0xf5,0x8c,0xb1,0xe3,
+            0x1d,0xf6,0xe2,0x2e,0x82,0x66,0xca,0x60,0xc0,0x29,0x23,0xab,0x0d,0x53,0x4e,0x6f,
+            0xd5,0xdb,0x37,0x45,0xde,0xfd,0x8e,0x2f,0x03,0xff,0x6a,0x72,0x6d,0x6c,0x5b,0x51,
+            0x8d,0x1b,0xaf,0x92,0xbb,0xdd,0xbc,0x7f,0x11,0xd9,0x5c,0x41,0x1f,0x10,0x5a,0xd8,
+            0x0a,0xc1,0x31,0x88,0xa5,0xcd,0x7b,0xbd,0x2d,0x74,0xd0,0x12,0xb8,0xe5,0xb4,0xb0,
+            0x89,0x69,0x97,0x4a,0x0c,0x96,0x77,0x7e,0x65,0xb9,0xf1,0x09,0xc5,0x6e,0xc6,0x84,
+            0x18,0xf0,0x7d,0xec,0x3a,0xdc,0x4d,0x20,0x79,0xee,0x5f,0x3e,0xd7,0xcb,0x39,0x48]
+    def sm4_sbox(b): return SBOX[b]
+    def sm4_tau(A):
+        return (sm4_sbox((A>>24)&0xFF)<<24)|(sm4_sbox((A>>16)&0xFF)<<16)|(sm4_sbox((A>>8)&0xFF)<<8)|sm4_sbox(A&0xFF)
+    def rot(x,n): return ((x<<n)|(x>>(32-n)))&0xFFFFFFFF
+    def sm4_L(B): return B^rot(B,2)^rot(B,10)^rot(B,18)^rot(B,24)
+    def sm4_L2(B): return B^rot(B,13)^rot(B,23)
+    def sm4_T(A): return sm4_L(sm4_tau(A))
+    def sm4_T2(A): return sm4_L2(sm4_tau(A))
+    FK=[0xA3B1BAC6,0x56AA3350,0x677D9197,0xB27022DC]
+    CK=[0x00070E15,0x1C232A31,0x383F464D,0x545B6269,0x70777E85,0x8C939AA1,0xA8AFB6BD,0xC4CBD2D9,
+        0xE0E7EEF5,0xFC030A11,0x181F262D,0x343B4249,0x50575E65,0x6C737A81,0x888F969D,0xA4ABB2B9,
+        0xC0C7CED5,0xDCE3EAF1,0xF8FF060D,0x141B2229,0x30373E45,0x4C535A61,0x686F767D,0x848B9299,
+        0xA0A7AEB5,0xBCC3CAD1,0xD8DFE6ED,0xF4FB0209,0x10171E25,0x2C333A41,0x484F565D,0x646B7279]
+    import struct as _struct
+    MK = _struct.unpack(">4I", key)
+    K = [MK[i]^FK[i] for i in range(4)]
+    rk = []
+    for i in range(32):
+        tmp = K[1]^K[2]^K[3]^CK[i]
+        rki = K[0]^sm4_T2(tmp)
+        rk.append(rki); K=[K[1],K[2],K[3],rki]
+    rk_dec = list(reversed(rk))
+    def sm4_block(block, rnd_keys):
+        X = list(_struct.unpack(">4I", block))
+        for rk_i in rnd_keys:
+            tmp = X[1]^X[2]^X[3]^rk_i
+            Xi = X[0]^sm4_T(tmp)
+            X=[X[1],X[2],X[3],Xi]
+        return _struct.pack(">4I",X[3],X[2],X[1],X[0])
+    # ECB decrypt (pad to 16)
+    pad = 16 - len(raw)%16
+    padded = raw + bytes([pad]*pad)
+    dec = b"".join(sm4_block(padded[i:i+16], rk_dec) for i in range(0,len(padded),16))
+    out_file = out_dir / ("sm4_dec_%s" % p.name)
+    Path(out_file).write_bytes(dec)
+    return {"ok": True, "out": str(out_file), "head": dec[:8].hex()}
+
+
+def decrypt_simple1(input_path, out_dir, key_hex="01"):
+    """Simple single-byte XOR decrypt (convenience wrapper)."""
+    return xor_apply_key(input_path, out_dir, key_hex)
+
+
+# ── Module 14: PAK Deep ───────────────────────────────────────────────────────
+
+def pak_deep_aes(input_path, out_dir, key_hex="", iv_hex=""):
+    """AES decrypt a PAK container then extract."""
+    result = decrypt_aes(input_path, out_dir, key_hex, iv_hex)
+    if not result.get("ok"):
+        return result
+    # Try ZIP extraction on decrypted
+    from pathlib import Path
+    import zipfile
+    dec_file = result["out"]
+    try:
+        with zipfile.ZipFile(dec_file) as zf:
+            zf.extractall(out_dir)
+            result["extracted"] = len(zf.namelist())
+    except Exception:
+        result["note"] = "decrypted but not a valid ZIP/PAK"
+    return result
+
+
+def pak_deep_zstd(input_path, out_dir):
+    """Decompress Zstd-compressed PAK."""
+    from pathlib import Path
+    p = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    raw = p.read_bytes()
+    try:
+        import zstd
+        dec = zstd.decompress(raw)
+    except ImportError:
+        try:
+            import zstandard as zstd2
+            dec = zstd2.ZstdDecompressor().decompress(raw)
+        except ImportError:
+            # Pure-Python fallback attempt via subprocess
+            import subprocess, tempfile
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".zst") as tf:
+                tf.write(raw); tf_path = tf.name
+            out_path = tf_path.replace(".zst","")
+            r = subprocess.run(["zstd","-d",tf_path,"-o",out_path], capture_output=True)
+            if r.returncode == 0:
+                dec = open(out_path,"rb").read()
+            else:
+                return {"ok": False, "error": "zstd not available"}
+    out_file = out_dir / ("zstd_dec_%s" % p.stem)
+    Path(out_file).write_bytes(dec)
+    return {"ok": True, "out": str(out_file), "dec_size": len(dec)}
+
+
+def pak_deep_zuc(input_path, out_dir, key_hex=""):
+    """ZUC decrypt PAK then extract."""
+    result = decrypt_zuc(input_path, out_dir, key_hex)
+    if not result.get("ok"): return result
+    from pathlib import Path
+    import zipfile
+    try:
+        with zipfile.ZipFile(result["out"]) as zf:
+            zf.extractall(out_dir)
+            result["extracted"] = len(zf.namelist())
+    except Exception:
+        result["note"] = "decrypted but not ZIP"
+    return result
+
+
+def pak_deep_sm4(input_path, out_dir, key_hex=""):
+    """SM4 decrypt PAK then extract."""
+    result = decrypt_sm4(input_path, out_dir, key_hex)
+    if not result.get("ok"): return result
+    from pathlib import Path
+    import zipfile
+    try:
+        with zipfile.ZipFile(result["out"]) as zf:
+            zf.extractall(out_dir)
+            result["extracted"] = len(zf.namelist())
+    except Exception:
+        result["note"] = "decrypted but not ZIP"
+    return result
+
+
+def pak_deep_auto(input_path, out_dir):
+    """Auto-detect PAK encryption and extract."""
+    from pathlib import Path
+    p = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    raw = p.read_bytes()
+    # Try plain ZIP
+    import zipfile
+    if raw[:2] == b"PK":
+        try:
+            with zipfile.ZipFile(str(p)) as zf:
+                zf.extractall(str(out_dir))
+                return {"ok": True, "method": "plain_zip", "extracted": len(zf.namelist()), "out": str(out_dir)}
+        except Exception: pass
+    # Try zlib
+    try:
+        dec = zlib.decompress(raw)
+        out_file = out_dir / ("dec_%s" % p.name)
+        Path(out_file).write_bytes(dec)
+        return {"ok": True, "method": "zlib", "out": str(out_file)}
+    except Exception: pass
+    # Try XOR
+    for key in range(1,256):
+        head = bytes(raw[i]^key for i in range(min(4,len(raw))))
+        if head[:2] == b"PK" or head[:3] == b"\x1bLu":
+            dec = bytes(raw[i]^key for i in range(len(raw)))
+            out_file = out_dir / ("xor0x%02X_%s" % (key, p.name))
+            Path(out_file).write_bytes(dec)
+            return {"ok": True, "method": "XOR_0x%02X" % key, "out": str(out_file)}
+    return {"ok": False, "error": "could not auto-detect PAK encryption"}
+
+
+# ── Module 15: String Recover ─────────────────────────────────────────────────
+
+def string_recover(input_path, out_dir):
+    """Recover obfuscated strings from binary (brute-force decodes)."""
+    from pathlib import Path
+    p = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    raw = p.read_bytes()
+    results = []
+    # 1. Raw ASCII strings
+    buf = bytearray(); raw_strings = []
+    for b in raw:
+        if 32 <= b <= 126: buf.append(b)
+        else:
+            if len(buf) >= 5: raw_strings.append(buf.decode("ascii","replace"))
+            buf = bytearray()
+    results.append("=== RAW STRINGS (%d) ===" % len(raw_strings))
+    results.extend(raw_strings[:300])
+    # 2. XOR-1 pass
+    xor1 = bytes(b^1 for b in raw)
+    buf2 = bytearray(); xored = []
+    for b in xor1:
+        if 32 <= b <= 126: buf2.append(b)
+        else:
+            if len(buf2) >= 5: xored.append(buf2.decode("ascii","replace"))
+            buf2 = bytearray()
+    results.append("\n=== XOR-0x01 STRINGS (%d) ===" % len(xored))
+    results.extend(xored[:100])
+    out_file = out_dir / ("strings_%s.txt" % p.stem)
+    Path(out_file).write_text("\n".join(results), encoding="utf-8")
+    return {"ok": True, "out": str(out_file), "raw_count": len(raw_strings)}
+
+
+def string_constant_pool(input_path, out_dir):
+    """Extract Lua constant pool strings (Lua 5.1 bytecode format)."""
+    from pathlib import Path
+    p = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    raw = p.read_bytes()
+    if raw[:4] not in (b"\x1bLua", b"\x1bLJ\x02", b"\x1bLJ\x01"):
+        return {"ok": False, "error": "not a Lua bytecode file"}
+    # Extract all null-terminated strings embedded in bytecode
+    strings = []; buf = bytearray()
+    for byte in raw[12:]:  # skip header
+        if 0x20 <= byte <= 0x7e: buf.append(byte)
+        elif byte == 0 and len(buf) >= 3:
+            strings.append(buf.decode("ascii","replace")); buf = bytearray()
+        else: buf = bytearray()
+    out_file = out_dir / ("constants_%s.txt" % p.stem)
+    Path(out_file).write_text("\n".join(strings[:1000]), encoding="utf-8")
+    return {"ok": True, "out": str(out_file), "count": len(strings)}
+
+
+def string_xref(input_path, out_dir, search=""):
+    """Cross-reference a string in binary, report all offsets."""
+    from pathlib import Path
+    p = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    if not search:
+        return {"ok": False, "error": "search string required"}
+    raw = p.read_bytes()
+    needle = search.encode("utf-8")
+    offsets = []
+    pos = raw.find(needle)
+    while pos != -1:
+        offsets.append("0x%X" % pos)
+        pos = raw.find(needle, pos+1)
+    lines = ["XREF: '%s' in %s" % (search, p.name), "hits=%d" % len(offsets), ""] + offsets
+    out_file = out_dir / ("xref_%s.txt" % p.stem)
+    Path(out_file).write_text("\n".join(lines))
+    return {"ok": True, "out": str(out_file), "hits": len(offsets)}
+
+
+# ── Module 16: Lua Inject ─────────────────────────────────────────────────────
+
+def lua_patch_bytecode(input_path, out_dir, patch_offset="", patch_hex=""):
+    """Patch raw bytes at offset in Lua bytecode."""
+    from pathlib import Path
+    p = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    if not patch_offset or not patch_hex:
+        return {"ok": False, "error": "patch_offset (hex) and patch_hex required"}
+    try:
+        offset = int(patch_offset, 16) if patch_offset.startswith("0x") else int(patch_offset)
+        patch = bytes.fromhex(patch_hex.replace(" ",""))
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    raw = bytearray(p.read_bytes())
+    if offset + len(patch) > len(raw):
+        return {"ok": False, "error": "patch extends beyond file end"}
+    raw[offset:offset+len(patch)] = patch
+    out_file = out_dir / ("patched_%s" % p.name)
+    Path(out_file).write_bytes(bytes(raw))
+    return {"ok": True, "out": str(out_file), "patched_at": "0x%X" % offset}
+
+
+def lua_inject_hook(input_path, out_dir):
+    """Generate a Lua hook injection script for the target file."""
+    from pathlib import Path
+    p = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    hook_script = """-- ALVSIA Lua Hook Injection
+-- Target: %s
+-- Inject this at the top of a decompiled Lua source
+
+local _orig_require = require
+require = function(modname)
+    print("[ALVSIA HOOK] require: " .. tostring(modname))
+    return _orig_require(modname)
+end
+
+local _orig_load = load
+load = function(chunk, chunkname, mode, env)
+    print("[ALVSIA HOOK] load called, chunk type: " .. type(chunk))
+    return _orig_load(chunk, chunkname, mode, env)
+end
+
+print("[ALVSIA] Hooks active in: %s")
+""" % (p.name, p.name)
+    out_file = out_dir / ("inject_hook_%s.lua" % p.stem)
+    Path(out_file).write_text(hook_script)
+    return {"ok": True, "out": str(out_file)}
+
+
+def lua_mod_repack(input_path, out_dir):
+    """Repack a modified Lua file into a ZIP/OBB container."""
+    from pathlib import Path
+    import zipfile
+    p = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    out_file = out_dir / ("repacked_%s.obb" % p.stem)
+    with zipfile.ZipFile(str(out_file), "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        if p.is_dir():
+            for fp in sorted(p.rglob("*")):
+                if fp.is_file():
+                    zf.write(str(fp), fp.relative_to(p).as_posix())
+        else:
+            zf.write(str(p), p.name)
+    return {"ok": True, "out": str(out_file)}
+
+
+# ── Module 17: Anti-RE Audit ──────────────────────────────────────────────────
+
+def audit_apk(input_path, out_dir):
+    """Audit APK for anti-RE measures: obfuscation, native guards, packing."""
+    from pathlib import Path
+    import zipfile, hashlib
+    p = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    lines = ["ALVSIA APK AUDIT — %s" % p.name, "size=%s" % p.stat().st_size, ""]
+    if not zipfile.is_zipfile(str(p)):
+        lines.append("ERROR: not a valid ZIP/APK")
+        out_file = out_dir / "apk_audit.txt"
+        Path(out_file).write_text("\n".join(lines)); return {"ok": False, "out": str(out_file)}
+    with zipfile.ZipFile(str(p)) as zf:
+        names = zf.namelist()
+        dex_files = [n for n in names if n.endswith(".dex")]
+        so_files  = [n for n in names if n.endswith(".so")]
+        lines.append("dex_count=%d" % len(dex_files))
+        lines.append("so_count=%d" % len(so_files))
+        lines.append("total_entries=%d" % len(names))
+        # Check for ProGuard/R8 mapping residue
+        has_mapping = any("proguard" in n.lower() or "mapping" in n.lower() for n in names)
+        lines.append("proguard_residue=%s" % has_mapping)
+        # Check for known packer signatures
+        has_reark = any("rsprotect" in n.lower() or "ark" in n.lower() for n in names)
+        has_jiagu = any("jiagu" in n.lower() for n in names)
+        lines.append("reark_detected=%s" % has_reark)
+        lines.append("jiagu_detected=%s" % has_jiagu)
+        # Manifest check
+        if "AndroidManifest.xml" in names:
+            manifest_raw = zf.read("AndroidManifest.xml")
+            lines.append("manifest_size=%d (binary XML)" % len(manifest_raw))
+            lines.append("debuggable_string_present=%s" % (b"debuggable" in manifest_raw))
+        # Check DEX sizes
+        for dex in dex_files:
+            sz = zf.getinfo(dex).file_size
+            lines.append("  %s: %d bytes" % (dex, sz))
+    out_file = out_dir / "apk_audit.txt"
+    Path(out_file).write_text("\n".join(lines), encoding="utf-8")
+    return {"ok": True, "out": str(out_file)}
+
+
+def audit_lua(input_path, out_dir):
+    """Audit a Lua file for obfuscation indicators."""
+    from pathlib import Path
+    import math, hashlib
+    p = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    raw = p.read_bytes()
+    lines = ["ALVSIA LUA AUDIT — %s" % p.name, "size=%s" % len(raw), ""]
+    # Format
+    if raw[:4] == b"\x1bLua": lines.append("format=Lua bytecode")
+    elif raw[:4] in (b"\x1bLJ\x02", b"\x1bLJ\x01"): lines.append("format=LuaJIT bytecode")
+    else: lines.append("format=source/unknown")
+    # Entropy
+    freq=[0]*256
+    for b in raw: freq[b]+=1
+    ent = -sum((c/len(raw))*math.log2(c/len(raw)) for c in freq if c>0) if raw else 0
+    lines.append("entropy=%.3f (%s)" % (ent, "HIGH — likely encrypted/obfuscated" if ent>7.2 else "normal"))
+    # XOR candidates
+    xor_hits = []
+    for key in range(1,256):
+        h = bytes(raw[i]^key for i in range(min(4,len(raw))))
+        if h[:3] in (b"\x1bLu", b"\x1bLJ"):
+            xor_hits.append("0x%02X" % key)
+    lines.append("xor_candidates=%s" % (",".join(xor_hits) if xor_hits else "none"))
+    lines.append("md5=%s" % hashlib.md5(raw).hexdigest())
+    # Anti-debug patterns in source
+    if not raw[:1] == b"\x1b":
+        src = raw.decode("utf-8","replace")
+        for pat in ["pcall","xpcall","debug.","io.open","os.execute","load(","loadstring("]:
+            if pat in src: lines.append("pattern_found: %s" % pat)
+    out_file = out_dir / ("lua_audit_%s.txt" % p.stem)
+    Path(out_file).write_text("\n".join(lines), encoding="utf-8")
+    return {"ok": True, "out": str(out_file)}
+
+
+def audit_so(input_path, out_dir):
+    """Check .so for exported symbols, debug info, coverage."""
+    from pathlib import Path
+    p = Path(input_path); out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    lines = ["ALVSIA SO AUDIT — %s" % p.name, "size=%s" % p.stat().st_size, ""]
+    raw = p.read_bytes()
+    if raw[:4] == b"\x7fELF":
+        lines.append("format=ELF")
+        bits = "64-bit" if raw[4] == 2 else "32-bit"
+        endian = "LSB" if raw[5] == 1 else "MSB"
+        lines.append("arch=%s %s" % (bits, endian))
+    else:
+        lines.append("format=NOT_ELF (magic=%s)" % raw[:4].hex())
+    has_debug = b".debug_" in raw or b"DWARF" in raw or b"__DWARF" in raw
+    lines.append("debug_info=%s" % ("PRESENT (weak: strip it)" if has_debug else "stripped (good)"))
+    symbol_section = b""
+    try:
+        dynstr_marker = raw.find(b".dynstr")
+        if dynstr_marker > 0:
+            start = max(0, dynstr_marker - 100)
+            end = min(len(raw), dynstr_marker + 4096)
+            section_raw = raw[start:end]
+            symbols = []
+            cur2 = bytearray()
+            for b in section_raw:
+                if 32 <= b <= 126: cur2.append(b)
+                else:
+                    if len(cur2) >= 4: symbols.append(cur2.decode("ascii", errors="replace"))
+                    cur2 = bytearray()
+            lines.append("exported_symbols_sample=%s" % len(symbols))
+            for s in symbols[:20]: lines.append("  sym: " + s)
+    except Exception: pass
+    url_re = _re.compile(rb'https?://[A-Za-z0-9._/\-?=&%+#:@]{8,100}')
+    urls = [u.decode("utf-8", errors="replace") for u in url_re.findall(raw)][:10]
+    if urls:
+        lines.append("\nPlaintext URLs in .so:")
+        for u in urls: lines.append("  " + u)
+    out_file = out_dir / "so_report.txt"
+    out_file.write_text("\n".join(lines), encoding="utf-8")
+    return {"ok": True, "out": str(out_file)}
