@@ -292,9 +292,10 @@ def run_lua_multi_xor(input_path, out_dir, keys=None):
 def run_lua_smart(input_path, out_dir, jars_dir=None):
     """
     Unified LUA pipeline:
-    1) detect LuaS header
-    2) try unluac (jar / ART)
-    3) on failure → constants + strings + multi-xor
+    1) detect LuaS header / unwrap container
+    2) pure-Python Lua 5.3 decompiler (no Java needed — works on Android)
+    3) try unluac jar if Java available
+    4) on failure → constants + strings + multi-xor
     """
     input_path = Path(input_path)
     out_dir = Path(out_dir)
@@ -336,8 +337,9 @@ def run_lua_smart(input_path, out_dir, jars_dir=None):
             pr = _decompile53_file(work_input, out_lua)
             report["steps"].append({"step": "py_decompile53", **pr})
             if pr.get("ok") and out_lua.exists() and out_lua.stat().st_size > 0:
-                import re as _re
+                # Quick sanity: file must contain at least one Lua keyword
                 snippet = out_lua.read_text(encoding="utf-8", errors="replace")[:4096]
+                import re as _re
                 has_lua = bool(_re.search(r'\b(local|function|return|if|for|while|end)\b', snippet))
                 if has_lua:
                     report["ok"] = True
@@ -346,12 +348,13 @@ def run_lua_smart(input_path, out_dir, jars_dir=None):
         except Exception as e:
             report["steps"].append({"step": "py_decompile53", "ok": False, "error": str(e)})
 
-    # ── Step 3: unluac jar (fallback — needs Java) ───────────────────────────
+    # ── Step 3: unluac jar (fallback — needs Java, works in Termux) ─────────
     ur = run_unluac(work_input, out_dir, jars_dir=jars_dir)
     report["steps"].append({"step": "unluac", **ur})
     if ur.get("ok"):
         return {"ok": True, "mode": "smart_unluac", **report}
 
+    # ── Step 4: partial recovery ─────────────────────────────────────────────
     cr = extract_lua_constants(input_path, out_dir)
     report["steps"].append({"step": "constants", **cr})
 
@@ -386,7 +389,7 @@ def run_lua_smart(input_path, out_dir, jars_dir=None):
         "size=%s" % report.get("size"),
         "final_status=%s" % final_status,
         "mode=smart_fallback",
-        "note=unluac failed or source not validated — recovery artifacts only",
+        "note=py_decompile53 + unluac both failed — recovery artifacts only",
         "",
     ]
     for st in report.get("steps") or []:
@@ -794,146 +797,137 @@ def run_rebrand_auto(input_path, out_dir, out_root=None):
 def run_lua_analyze(input_path, out_dir):
     """Analyze Lua/LuaJIT bytecode: format detection + obfuscation report."""
     from pathlib import Path
-    import hashlib
     p = Path(input_path); out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     raw = p.read_bytes()
-    lines = ["ALVSIA LUA ANALYZE — %s" % p.name, "size=%d bytes" % len(raw), ""]
-    # Format detection
+    report_lines = ["ALVSIA LUA ANALYZER", "file=%s" % p.name, "size=%s bytes" % len(raw)]
+    # Detect format
     if raw[:4] == b"\x1bLua":
         ver_byte = raw[4] if len(raw) > 4 else 0
-        ver = {0x51:"Lua 5.1",0x52:"Lua 5.2",0x53:"Lua 5.3",0x54:"Lua 5.4"}.get(ver_byte,"Lua (unknown ver)")
-        lines.append("format=" + ver)
-    elif raw[:4] == b"\x1bLJ\x02" or raw[:4] == b"\x1bLJ\x01":
-        lines.append("format=LuaJIT 2.x")
-    elif raw[:4] == b"\x1bLJ\x00":
-        lines.append("format=LuaJIT 1.x")
+        ver = "Lua5.1" if ver_byte == 0x51 else "Lua5.2" if ver_byte == 0x52 else "Lua5.3" if ver_byte == 0x53 else "Lua5.4" if ver_byte == 0x54 else "LuaUnknown(0x%02x)" % ver_byte
+        report_lines.append("format=%s bytecode" % ver)
+    elif raw[:4] == b"\x1bLJs":
+        report_lines.append("format=LuaJIT bytecode")
+    elif len(raw) > 4 and raw[0] == 0x1b and raw[1:4] == b"LJ\x02":
+        report_lines.append("format=LuaJIT2")
+    elif b"function" in raw[:200] or b"local" in raw[:200]:
+        report_lines.append("format=Lua source (plaintext)")
     else:
-        lines.append("format=unknown (not Lua bytecode) head=" + raw[:8].hex())
-    # Entropy / obfuscation density
-    if len(raw) > 0:
-        freq = [0]*256
-        for b in raw: freq[b] += 1
-        import math
-        entropy = -sum((c/len(raw))*math.log2(c/len(raw)) for c in freq if c>0)
-        lines.append("entropy=%.3f/8.0 (%s)" % (entropy, "HIGH(obfuscated?)" if entropy>7.5 else "normal"))
-    # XOR probing — look for repeating patterns suggesting XOR key
-    xor_hints = []
-    window = raw[:min(512, len(raw))]
-    for key in range(1, 256):
-        dec = bytes(b ^ key for b in window)
-        if dec[:4] in (b"\x1bLua", b"\x1bLJ\x02", b"\x1bLJ\x01"):
-            xor_hints.append("0x%02X" % key)
-    if xor_hints:
-        lines.append("xor_candidates=" + ",".join(xor_hints))
+        report_lines.append("format=unknown/binary blob")
+    # XOR probe
+    xor_candidates = []
+    for k in range(1, 256):
+        dec = bytes(b ^ k for b in raw[:64])
+        if dec[:4] in (b"\x1bLua", b"\x1bLJs"):
+            xor_candidates.append("0x%02x" % k)
+    if xor_candidates:
+        report_lines.append("xor_layer_candidates=%s" % ",".join(xor_candidates))
     else:
-        lines.append("xor_candidates=none (raw bytecode or multi-byte key)")
-    # Hash
-    lines.append("md5=" + hashlib.md5(raw).hexdigest())
-    out_file = out_dir / ("lua_analysis_%s.txt" % p.stem)
-    out_file.write_text("\n".join(lines), encoding="utf-8")
-    return {"ok": True, "out": str(out_file)}
+        report_lines.append("xor_layer=none_detected")
+    # String density (obfuscation indicator)
+    printable = sum(1 for b in raw if 32 <= b <= 126)
+    density = printable / max(len(raw), 1)
+    report_lines.append("printable_density=%.2f%%" % (density * 100))
+    if density < 0.15:
+        report_lines.append("obfuscation=HIGH (low string density)")
+    elif density < 0.35:
+        report_lines.append("obfuscation=MEDIUM")
+    else:
+        report_lines.append("obfuscation=LOW (readable)")
+    out_file = out_dir / (p.stem + "_analysis.txt")
+    out_file.write_text("\n".join(report_lines), encoding="utf-8")
+    return {"ok": True, "out": str(out_file), "report": "\n".join(report_lines[:6])}
 
 
 def run_lua_constants(input_path, out_dir):
-    """Extract string constants embedded in Lua bytecode."""
+    """Extract string constants and numbers from Lua bytecode."""
     from pathlib import Path
+    import re
     p = Path(input_path); out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     raw = p.read_bytes()
-    # Scan for null-terminated printable strings of length >= 4
     strings = []
-    buf = bytearray()
+    cur = bytearray()
     for b in raw:
         if 32 <= b <= 126:
-            buf.append(b)
+            cur.append(b)
         else:
-            if len(buf) >= 4:
-                strings.append(buf.decode("ascii", errors="replace"))
-            buf = bytearray()
-    if len(buf) >= 4:
-        strings.append(buf.decode("ascii", errors="replace"))
-    # Deduplicate and sort
-    seen = set(); unique = []
-    for s in strings:
-        if s not in seen:
-            seen.add(s); unique.append(s)
-    lines = ["ALVSIA LUA CONSTANTS — %s" % p.name, "total=%d" % len(unique), ""]
-    lines.extend(unique[:500])
-    out_file = out_dir / ("lua_constants_%s.txt" % p.stem)
-    out_file.write_text("\n".join(lines), encoding="utf-8")
-    return {"ok": True, "out": str(out_file), "count": len(unique)}
+            if len(cur) >= 4:
+                strings.append(cur.decode("ascii", errors="replace"))
+            cur = bytearray()
+    if len(cur) >= 4:
+        strings.append(cur.decode("ascii", errors="replace"))
+    strings = list(dict.fromkeys(strings))  # dedupe preserving order
+    out_file = out_dir / (p.stem + "_constants.txt")
+    out_file.write_text("\n".join(strings), encoding="utf-8")
+    return {"ok": True, "count": len(strings), "out": str(out_file)}
 
 
 def run_obb_extract(input_path, out_dir):
-    """Extract OBB/ZIP archive to out_dir."""
-    from pathlib import Path
+    """Extract OBB/ZIP to out_dir."""
     import zipfile
+    from pathlib import Path
     p = Path(input_path); out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    extracted = []
     try:
-        with zipfile.ZipFile(str(p), "r") as zf:
-            names = zf.namelist()
-            for name in names:
-                dest = out_dir / name
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                data = zf.read(name)
-                if not name.endswith("/"):
-                    dest.write_bytes(data)
-                    extracted.append(name)
-        return {"ok": True, "extracted": len(extracted), "out": str(out_dir)}
-    except zipfile.BadZipFile as e:
-        return {"ok": False, "error": "Bad ZIP/OBB: %s" % e}
+        with zipfile.ZipFile(p, "r") as zf:
+            zf.extractall(out_dir)
+            count = len(zf.namelist())
+        return {"ok": True, "extracted": count, "out": str(out_dir)}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
-def run_obb_rezip(input_dir, out_file):
-    """Repack a folder back into an OBB/ZIP."""
-    from pathlib import Path
+def run_obb_rezip(input_path, out_file):
+    """Repack a folder (or file) into a .obb ZIP."""
     import zipfile
-    base = Path(input_dir); out = Path(out_file)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    packed = 0
-    with zipfile.ZipFile(str(out), "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for fp in sorted(base.rglob("*")):
-            if fp.is_file():
-                arcname = fp.relative_to(base).as_posix()
-                zf.write(str(fp), arcname)
-                packed += 1
-    return {"ok": True, "packed": packed, "out": str(out)}
+    from pathlib import Path
+    p = Path(input_path); out_file = Path(out_file)
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    if p.is_dir():
+        files = [f for f in p.rglob("*") if f.is_file()]
+        with zipfile.ZipFile(out_file, "w", zipfile.ZIP_DEFLATED) as zf:
+            for f in files:
+                zf.write(f, f.relative_to(p))
+        return {"ok": True, "packed": len(files), "out": str(out_file)}
+    elif p.is_file():
+        import shutil
+        shutil.copy2(p, out_file)
+        return {"ok": True, "packed": 1, "out": str(out_file), "note": "single file copied"}
+    return {"ok": False, "error": "input not found"}
 
 
 def run_strings_scan(input_path, out_dir):
-    """Extract printable ASCII strings >= 6 chars from any binary."""
+    """Extract printable ASCII strings from any binary."""
     from pathlib import Path
     p = Path(input_path); out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     raw = p.read_bytes()
-    strings = []; buf = bytearray()
+    strings = []
+    cur = bytearray()
     for b in raw:
         if 32 <= b <= 126:
-            buf.append(b)
+            cur.append(b)
         else:
-            if len(buf) >= 6:
-                strings.append(buf.decode("ascii", errors="replace"))
-            buf = bytearray()
-    if len(buf) >= 6:
-        strings.append(buf.decode("ascii", errors="replace"))
+            if len(cur) >= 4:
+                strings.append(cur.decode("ascii", errors="replace"))
+            cur = bytearray()
+    if len(cur) >= 4:
+        strings.append(cur.decode("ascii", errors="replace"))
+    strings = list(dict.fromkeys(strings))
     out_file = out_dir / ("strings_%s.txt" % p.stem)
-    out_file.write_text("\n".join(strings[:2000]), encoding="utf-8")
+    out_file.write_text("\n".join(strings), encoding="utf-8")
     return {"ok": True, "count": len(strings), "out": str(out_file)}
 
 
 def run_export_report(input_path, out_dir):
-    """Generate MD5/SHA1/SHA256 + type detection report."""
+    """Generate file info summary report."""
     import hashlib
     from pathlib import Path
     p = Path(input_path); out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     raw = p.read_bytes()
-    md5  = hashlib.md5(raw).hexdigest()
+    md5 = hashlib.md5(raw).hexdigest()
     sha1 = hashlib.sha1(raw).hexdigest()
     sha256 = hashlib.sha256(raw).hexdigest()
     lines = [
@@ -945,6 +939,7 @@ def run_export_report(input_path, out_dir):
         "SHA256=%s" % sha256,
         "head_hex=%s" % raw[:16].hex(),
     ]
+    # ZIP/OBB detection
     import zipfile
     if raw[:2] == b"PK":
         try:
