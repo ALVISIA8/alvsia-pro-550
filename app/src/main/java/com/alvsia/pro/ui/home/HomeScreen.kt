@@ -27,7 +27,16 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import kotlinx.coroutines.delay
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.concurrent.TimeUnit
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
@@ -68,6 +77,37 @@ fun HomeScreen(
         try { PulseAudio.start(ctx) } catch (_: Exception) {}
         onDispose { }
     }
+
+    // ── Live countdown to expiry ─────────────────────────────────────
+    var countdownText by remember { mutableStateOf("") }
+    LaunchedEffect(expiry) {
+        val formats = listOf("yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd")
+        var expiryMs = 0L
+        for (fmt in formats) {
+            try {
+                expiryMs = SimpleDateFormat(fmt, Locale.US).parse(expiry.take(19))?.time ?: 0L
+                if (expiryMs > 0) break
+            } catch (_: Exception) {}
+        }
+        if (expiryMs <= 0L) {
+            countdownText = expiry.take(19)
+            return@LaunchedEffect
+        }
+        while (true) {
+            val remaining = expiryMs - System.currentTimeMillis()
+            countdownText = if (remaining <= 0L) {
+                "EXPIRED"
+            } else {
+                val d = TimeUnit.MILLISECONDS.toDays(remaining)
+                val h = TimeUnit.MILLISECONDS.toHours(remaining) % 24
+                val m = TimeUnit.MILLISECONDS.toMinutes(remaining) % 60
+                val s = TimeUnit.MILLISECONDS.toSeconds(remaining) % 60
+                if (d > 0) "%dd %02dh %02dm %02ds".format(d, h, m, s)
+                else "%02dh %02dm %02ds".format(h, m, s)
+            }
+            delay(1000L)
+        }
+    }
     Box(Modifier.fillMaxSize()) {
         NeonPulseBackground(Modifier.fillMaxSize())
         Column(
@@ -83,7 +123,12 @@ fun HomeScreen(
                 fontSize = 20.sp
             )
             Text(product.ifBlank { "PREMIUM" }, color = AlvisiaSilver.copy(alpha = 0.75f), fontSize = 12.sp)
-            Text("Exp: ${expiry.take(19)}", color = AlvisiaSilver.copy(alpha = 0.55f), fontSize = 11.sp)
+            Text(
+                "Exp: $countdownText",
+                color = if (countdownText == "EXPIRED") Color(0xFFFF2D55)
+                        else AlvisiaSilver.copy(alpha = 0.55f),
+                fontSize = 11.sp
+            )
             if (!status.isNullOrBlank()) {
                 Text(status, color = Color(0xFF00E676), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
