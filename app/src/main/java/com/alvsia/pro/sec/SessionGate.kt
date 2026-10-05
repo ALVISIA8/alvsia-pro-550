@@ -172,7 +172,7 @@ object SessionGate {
         }
 
         // Check RASP degraded (root/emulator detected) — tools blocked when degraded
-        if (RaspEngine.degraded) {
+        if (Guard.degraded) {
             // Allow 1 degraded grace; after that, block
             val p = prefs(ctx)
             val grace = p.getInt("degraded_grace", 0)

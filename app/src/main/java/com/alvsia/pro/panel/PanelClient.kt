@@ -104,10 +104,12 @@ class PanelClient {
         }
     }
 
+    // Nullable app context — set on first login() call
+    private var _appCtx: android.content.Context? = null
+
     private fun handlePinFailure(req: Request, reason: String): okhttp3.Response {
         try {
-            val ctx = com.alvsia.pro.AlvsiaApp.appContext
-            com.alvsia.pro.sec.ThreatReport.emit(ctx, "PIN_FAIL", "${req.url.host}:$reason")
+            _appCtx?.let { com.alvsia.pro.sec.ThreatReport.emit(it, "PIN_FAIL", "${req.url.host}:$reason") }
         } catch (_: Exception) {}
         if (_pinGrace < 1) {
             _pinGrace++
