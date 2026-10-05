@@ -18,6 +18,27 @@ try:
 except Exception:
     validate_decompile_text = None
     classify_bytes = None
+try:
+    from lua_engine.vm_deobfuscator import detect_vm_obfuscation, extract_vm_payload
+    _VM_DEOBF = True
+except Exception:
+    _VM_DEOBF = False
+    detect_vm_obfuscation = None
+    extract_vm_payload = None
+try:
+    from lua_engine.luajit_decompiler import disassemble_luajit, detect_luajit
+    _LUAJIT = True
+except Exception:
+    _LUAJIT = False
+    disassemble_luajit = None
+    detect_luajit = None
+try:
+    from lua_engine.multi_format import detect_format, run_universal_smart as _run_universal
+    _MULTI_FORMAT = True
+except Exception:
+    _MULTI_FORMAT = False
+    detect_format = None
+    _run_universal = None
 
 
 def _find_java():
@@ -330,6 +351,22 @@ def run_lua_smart(input_path, out_dir, jars_dir=None):
     is_lua53 = (len(work_data) > 4 and
                 work_data[:4] == b"\x1bLua" and
                 work_data[4] == 0x53)
+    is_luajit = (len(work_data) > 3 and
+                 work_data[:3] == b"\x1bLJ" and
+                 work_data[3] in (0x01, 0x02))
+
+    # ── Step 2a: LuaJIT disassembler ────────────────────────────────────────
+    if _LUAJIT and is_luajit:
+        try:
+            out_lua = out_dir / (input_path.stem + "_ljbc.lua")
+            lr = disassemble_luajit(work_input, out_lua)
+            report["steps"].append({"step": "luajit_disasm", **lr})
+            if lr.get("ok"):
+                report["ok"] = True
+                return {"ok": True, "mode": "smart_luajit", "out": str(out_lua),
+                        "lines": lr.get("lines", 0), **report}
+        except Exception as e:
+            report["steps"].append({"step": "luajit_disasm", "ok": False, "error": str(e)})
 
     if _decompile53_file is not None and is_lua53:
         try:
@@ -342,9 +379,40 @@ def run_lua_smart(input_path, out_dir, jars_dir=None):
                 import re as _re
                 has_lua = bool(_re.search(r'\b(local|function|return|if|for|while|end)\b', snippet))
                 if has_lua:
+                    # ── Step 2b: VM obfuscation check ───────────────────────
+                    vm_info = {}
+                    if _VM_DEOBF:
+                        try:
+                            obf = detect_vm_obfuscation(work_input)
+                            vm_info["vm_obfuscated"] = obf.is_obfuscated
+                            vm_info["vm_confidence"] = obf.confidence
+                            vm_info["vm_notes"] = obf.notes
+                            vm_info["vm_main_proto_instr"] = obf.main_proto_instr
+                            vm_info["vm_max_reg"] = obf.max_reg
+                            if obf.is_obfuscated:
+                                # Attempt payload extraction + re-decompile
+                                vr = extract_vm_payload(work_input, out_dir)
+                                vm_info["vm_extract"] = vr
+                                report["steps"].append({"step": "vm_deobf", **vr})
+                                if vr.get("ok"):
+                                    recovered = Path(vr["out"])
+                                    # Re-decompile recovered payload
+                                    out_recovered = out_dir / (input_path.stem + "_recovered.lua")
+                                    pr2 = _decompile53_file(recovered, out_recovered)
+                                    vm_info["vm_decompiled"] = pr2
+                                    report["steps"].append({"step": "py_decompile53_recovered", **pr2})
+                                    if pr2.get("ok"):
+                                        return {"ok": True, "mode": "smart_py53_vm_recovered",
+                                                "out": str(out_recovered),
+                                                "lines": pr2.get("lines", 0),
+                                                "note": "VM obfuscation detected and payload successfully recovered",
+                                                **vm_info, **report}
+                        except Exception as ve:
+                            vm_info["vm_check_error"] = str(ve)
                     report["ok"] = True
                     return {"ok": True, "mode": "smart_py53",
-                            "out": str(out_lua), "lines": pr.get("lines", 0), **report}
+                            "out": str(out_lua), "lines": pr.get("lines", 0),
+                            **vm_info, **report}
         except Exception as e:
             report["steps"].append({"step": "py_decompile53", "ok": False, "error": str(e)})
 
@@ -505,6 +573,127 @@ def run_pubg_lua_decrypt(input_path, out_dir, key_hex=None):
         }
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
+
+# ---------------------------------------------------------------------------
+# UNIVERSAL — run_any_file: handles ALL formats, not just Lua
+# ---------------------------------------------------------------------------
+
+def run_any_file(input_path, out_dir, jars_dir=None):
+    """
+    ALVSIA PRO universal file handler.
+    Detects the format of ANY file and routes to the best available tool:
+      - Lua 5.1/5.2/5.3/5.4 bytecode → decompile (Python or Java)
+      - LuaJIT bytecode → disassemble
+      - VM-obfuscated Lua → detect + extract + re-decompile
+      - zlib/gzip/lz4/zstd/bz2/xz compressed → decompress then re-process
+      - ZIP/APK/PAK/JAR archives → extract Lua files, decompile each
+      - Unity AssetBundle → scan for embedded Lua
+      - ELF/PE/DEX binaries → scan for embedded Lua bytecode
+      - Plain Lua source → validate + copy
+      - Unknown → extract strings + brute-scan
+
+    Returns {"ok": True/False, "mode": str, "out": str, ...}
+    """
+    input_path = Path(input_path); out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    if _MULTI_FORMAT and _run_universal is not None:
+        # Full universal pipeline
+        return _run_universal(input_path, out_dir, jars_dir=jars_dir)
+
+    # Fallback if multi_format not available: route by extension/magic
+    data = input_path.read_bytes()[:8]
+    if data[:4] == b"\x1bLua":
+        return run_lua_smart(input_path, out_dir, jars_dir=jars_dir)
+    if data[:3] == b"\x1bLJ":
+        return run_lua_smart(input_path, out_dir, jars_dir=jars_dir)
+    if data[:2] in (b"\x78\x9c", b"\x78\xda", b"\x78\x01"):
+        # zlib — decompress and re-run
+        import zlib
+        try:
+            raw = input_path.read_bytes()
+            dec = zlib.decompress(raw)
+            dec_path = out_dir / (input_path.stem + "_decompressed.bin")
+            dec_path.write_bytes(dec)
+            return run_any_file(dec_path, out_dir, jars_dir)
+        except Exception as e:
+            return {"ok": False, "error": f"zlib decompress failed: {e}"}
+    if data[:2] == b"PK":
+        # ZIP-based
+        import zipfile
+        extracted = []
+        try:
+            with zipfile.ZipFile(input_path, "r") as z:
+                for name in z.namelist():
+                    if name.lower().endswith((".lua", ".luac", ".ljbc", ".bytes")):
+                        blob = z.read(name)
+                        p = out_dir / name.replace("/", "__")
+                        p.write_bytes(blob)
+                        extracted.append(p)
+        except Exception:
+            pass
+        if extracted:
+            results = [run_any_file(p, out_dir, jars_dir) for p in extracted[:20]]
+            ok_count = sum(1 for r in results if r.get("ok"))
+            return {"ok": ok_count > 0, "mode": "archive_fallback",
+                    "extracted": len(extracted), "ok_count": ok_count}
+        return {"ok": False, "error": "no Lua files in archive"}
+
+    # Last resort: smart string scan
+    return run_lua_bytecode_strings(input_path, out_dir)
+
+
+def run_vm_deobf(input_path, out_dir):
+    """
+    Dedicated VM-deobfuscation entry point.
+    Detects custom VM obfuscation in a Lua 5.3 file and attempts payload recovery.
+    """
+    input_path = Path(input_path); out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    if not _VM_DEOBF:
+        return {"ok": False, "error": "vm_deobfuscator module not available"}
+
+    det = detect_vm_obfuscation(input_path)
+    if not det.is_obfuscated:
+        return {"ok": False, "error": "file does not appear to be VM-obfuscated",
+                "confidence": det.confidence, "notes": det.notes,
+                "main_proto_instr": det.main_proto_instr}
+
+    # Attempt extraction
+    vr = extract_vm_payload(input_path, out_dir)
+    if not vr.get("ok"):
+        return {"ok": False, "vm_detected": True, "confidence": det.confidence,
+                "notes": det.notes, **vr}
+
+    # Re-decompile recovered payload
+    recovered = Path(vr["out"])
+    if _decompile53_file and recovered.stat().st_size > 32:
+        out_dec = out_dir / (input_path.stem + "_vm_decompiled.lua")
+        pr = _decompile53_file(recovered, out_dec)
+        return {"ok": pr.get("ok", False), "mode": "vm_deobf_decompile",
+                "vm_detected": True, "confidence": det.confidence,
+                "vm_notes": det.notes, "vm_extract": vr,
+                "decompile": pr, "out": str(out_dec) if pr.get("ok") else None}
+
+    return {"ok": True, "mode": "vm_payload_extracted",
+            "vm_detected": True, "confidence": det.confidence,
+            "out": str(recovered), "note": "payload extracted but decompiler unavailable", **vr}
+
+
+def run_format_detect(input_path):
+    """Detect file format and return a detailed FormatInfo dict."""
+    input_path = Path(input_path)
+    if _MULTI_FORMAT and detect_format is not None:
+        fi = detect_format(input_path)
+        return {"ok": True, "fmt": fi.fmt, "category": fi.category,
+                "lua_version": fi.lua_version, "compressed": fi.compressed,
+                "container": fi.container, "notes": fi.notes,
+                "magic_hex": fi.magic_hex, "size": fi.size}
+    # Fallback: just read magic
+    data = input_path.read_bytes()[:16]
+    return {"ok": True, "magic_hex": data.hex(), "size": input_path.stat().st_size}
+
 
 # ---------------------------------------------------------------------------
 # REBRAND — string replace brand/watermark/channel (NO network, NO bot token)
