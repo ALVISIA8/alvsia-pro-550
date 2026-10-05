@@ -171,16 +171,11 @@ object SessionGate {
             }
         }
 
-        // Check RASP degraded (root/emulator detected) — tools blocked when degraded
+        // Degraded state (root/emulator) — log and report but do NOT block tools.
+        // Blocking here causes false-positive lockouts on rooted devices owned by
+        // legitimate users. RASP continues monitoring and reporting in background.
         if (Guard.degraded) {
-            // Allow 1 degraded grace; after that, block
-            val p = prefs(ctx)
-            val grace = p.getInt("degraded_grace", 0)
-            if (grace >= 1) {
-                ThreatReport.emit(ctx, "GATE_BLOCK", "rasp_degraded")
-                throw SecurityException("BLOCKED:rasp_degraded")
-            }
-            p.edit().putInt("degraded_grace", grace + 1).apply()
+            ThreatReport.emit(ctx, "RASP_DEGRADED", "soft_threat")
         }
 
         val p       = prefs(ctx)
