@@ -38,13 +38,38 @@ object IntegrityBomb {
 
     private fun certOk(ctx: Context): Boolean {
         return try {
-            @Suppress("DEPRECATION")
-            val sig = ctx.packageManager
-                .getPackageInfo(ctx.packageName, PackageManager.GET_SIGNATURES)
-                .signatures[0]
+            val pm = ctx.packageManager
             val md = MessageDigest.getInstance("SHA-256")
-            val digest = md.digest(sig.toByteArray())
-            val hex = digest.joinToString("") { "%02x".format(it) }
+
+            // Primary: API 28+ GET_SIGNING_CERTIFICATES — not spoofable via PackageParser
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                val signingInfo = pm.getPackageInfo(
+                    ctx.packageName,
+                    PackageManager.GET_SIGNING_CERTIFICATES
+                ).signingInfo ?: return false
+
+                val sigs = if (signingInfo.hasMultipleSigners())
+                    signingInfo.apkContentsSigners
+                else
+                    signingInfo.signingCertificateHistory
+
+                if (sigs.isNullOrEmpty()) return false
+
+                // All signatures must match — detects cert injection attacks
+                val allMatch = sigs.all { sig ->
+                    val hex = md.digest(sig.toByteArray())
+                        .joinToString("") { "%02x".format(it) }
+                    md.reset()
+                    hex.equals(EXPECTED_CERT_SHA256, ignoreCase = true)
+                }
+                return allMatch
+            }
+
+            // Fallback: API < 28 — deprecated but unavoidable on older devices
+            @Suppress("DEPRECATION")
+            val sig = pm.getPackageInfo(ctx.packageName, PackageManager.GET_SIGNATURES)
+                .signatures?.firstOrNull() ?: return false
+            val hex = md.digest(sig.toByteArray()).joinToString("") { "%02x".format(it) }
             hex.equals(EXPECTED_CERT_SHA256, ignoreCase = true)
         } catch (_: Exception) { false }
     }

@@ -58,7 +58,14 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                 if raw[:4] == b"\x1bLua":
                     lines.append("NOTE: magic LuaS bytecode (NOT a PAK) -> LUA smart")
                     dest = out_dir("LUA")
-                    lines.append(str(feat.run_lua_smart(ip, dest, jars_dir=jars)))
+                    r = feat.run_lua_smart(ip, dest, jars_dir=jars)
+                    if r.get("ok"):
+                        lines.append("OK mode=%s lines=%s" % (r.get("mode","?"), r.get("lines",0)))
+                        lines.append("OUT -> %s" % r.get("out","(see OUT/LUA/)"))
+                        if r.get("vm_obfuscated"):
+                            lines.append("NOTE: VM obfuscation detected — decompiled VM interpreter (not original source)")
+                    else:
+                        lines.append("X OUT -> operation failed")
                     return "\n".join(lines)
                 if raw[:2] == b"PK":
                     lines.append("NOTE: ZIP magic — use OBB Tools")
@@ -171,7 +178,21 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
             if sid == "lua_decompile":
                 if not need_file(): return "\n".join(lines)
                 r = feat.run_lua_smart(ip, dest_lua, jars_dir=jars)
-                lines.append(str(r))
+                if r.get("ok"):
+                    lines.append("OK mode=%s lines=%s" % (r.get("mode","?"), r.get("lines",0)))
+                    lines.append("OUT -> %s" % r.get("out","(see OUT/LUA/)"))
+                    vm_notes = r.get("vm_notes") or []
+                    if r.get("vm_obfuscated"):
+                        lines.append("NOTE: VM obfuscation detected (confidence=%.2f)" % (r.get("vm_confidence",0)))
+                        lines.append("NOTE: File uses runtime VM — decompiled VM interpreter (not original source)")
+                        for n in (vm_notes[:3] if isinstance(vm_notes, list) else []):
+                            lines.append("  · %s" % n)
+                    else:
+                        lines.append("OK decompile complete")
+                else:
+                    lines.append("X OUT -> operation failed")
+                    for s in (r.get("steps") or [])[-3:]:
+                        lines.append("  step=%s ok=%s" % (s.get("step"), s.get("ok")))
                 return "\n".join(lines)
             if sid == "lua_analyze":
                 r = feat.run_lua_analyze(ip, dest_lua)

@@ -89,15 +89,33 @@ class PanelClient {
     var toolTicket: String = ""
         private set
 
-    
+    // Pin-failure counter: at most 1 CDN cert-rotation grace per session.
+    // A MITM attacker triggers the same exception; they cannot know the grace
+    // count and will be blocked on the second attempt. Event is reported regardless.
+    @Volatile private var _pinGrace: Int = 0
+
     private fun callWithPinFallback(req: Request): okhttp3.Response {
         return try {
             clientPinned.newCall(req).execute()
         } catch (e: javax.net.ssl.SSLPeerUnverifiedException) {
-            clientLoose.newCall(req).execute()
+            handlePinFailure(req, "ssl_peer_unverified")
         } catch (e: java.security.cert.CertificateException) {
-            clientLoose.newCall(req).execute()
+            handlePinFailure(req, "cert_exception")
         }
+    }
+
+    private fun handlePinFailure(req: Request, reason: String): okhttp3.Response {
+        try {
+            val ctx = com.alvsia.pro.AlvsiaApp.appContext
+            com.alvsia.pro.sec.ThreatReport.emit(ctx, "PIN_FAIL", "${req.url.host}:$reason")
+        } catch (_: Exception) {}
+        if (_pinGrace < 1) {
+            _pinGrace++
+            return clientLoose.newCall(req).execute()
+        }
+        throw javax.net.ssl.SSLPeerUnverifiedException(
+            "BLOCKED: TLS pin failed twice this session on ${req.url.host}"
+        )
     }
 
     private fun base() = Vault.apiBase()

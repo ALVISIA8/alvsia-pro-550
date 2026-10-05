@@ -3,6 +3,9 @@ package com.alvsia.pro.sec
 import java.io.File
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * ALVSIA PRO 5.5.0 — FridaProbe HARDENED
@@ -70,6 +73,30 @@ object FridaProbe {
     // ── Frida server default ports + common remaps ────────────────────
     private val PROBE_PORTS = intArrayOf(27042, 27043, 27044, 27045, 23946, 27047, 1234, 4444)
 
+    // ── Background port-scan cache ────────────────────────────────────
+    // Port scan (8 ports x 50ms = up to 400ms) must NEVER run on the main thread.
+    // We refresh it on a single-thread executor; signals() merges the cached result.
+    private val _portScanExecutor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "fp-portscan").also { it.isDaemon = true }
+    }
+    @Volatile private var _cachedPortSignals: List<String> = emptyList()
+    private val _lastPortScan = AtomicLong(0L)
+    private const val PORT_SCAN_TTL_MS = 30_000L  // refresh at most every 30 s
+
+    /** Trigger an async port scan refresh — call from RaspEngine tick thread. */
+    fun refreshPortScanAsync() {
+        val now = System.currentTimeMillis()
+        if (now - _lastPortScan.get() < PORT_SCAN_TTL_MS) return
+        _lastPortScan.set(now)
+        _portScanExecutor.submit {
+            val found = mutableListOf<String>()
+            for (port in PROBE_PORTS) {
+                if (portOpen(port)) found += "port:$port"
+            }
+            _cachedPortSignals = found
+        }
+    }
+
     // ── Main entry — returns all detected signal strings ──────────────
     fun signals(): List<String> {
         val out = mutableListOf<String>()
@@ -85,10 +112,8 @@ object FridaProbe {
             MAP_MARKERS.forEach { m -> if (m in maps) out += "maps:$m" }
         } catch (_: Exception) {}
 
-        // 3. Port scan (short timeout to avoid blocking)
-        for (port in PROBE_PORTS) {
-            if (portOpen(port)) out += "port:$port"
-        }
+        // 3. Port scan — use cached result (refreshed async by RaspEngine tick)
+        out += _cachedPortSignals
 
         // 4. /proc/net/unix domain sockets (frida uses abstract sockets)
         try {

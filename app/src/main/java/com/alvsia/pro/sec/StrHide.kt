@@ -47,19 +47,20 @@ object StrHide {
         return "StrHide.d(0x${mask.toString(16).uppercase()}, 0x${salt.toString(16).uppercase()}, intArrayOf(${arr.joinToString(", ") { "0x${it.toString(16).uppercase()}" }}))"
     }
 
-    // ── Pre-encoded critical strings (mask=0x7E, salt=0x33) ──────────
-    // These are the ALVISIA license API endpoints encoded at build time.
-    // Do NOT replace with plaintext — always use StrHide.d().
+    // ── Pre-encoded critical strings (mask=0x7E, salt=0x33) ────────────────
+    // Encoding: encoded[i] = (plain[i] XOR 0x7E XOR (i AND 0x3F) XOR 0x33)
+    // Use encode() at build time if you need to add new strings.
+    // NEVER add .ifBlank{} fallbacks — plaintext must not appear in the binary.
 
-    /** Returns the base API URL — encoded to prevent static string extraction. */
+    /** Returns the base API URL "https://api.alvsia.pro" — XOR-encoded. */
     fun apiBase(): String = d(0x7E, 0x33, intArrayOf(
-        // Placeholder: encode actual URL at build time using encode() above.
-        // Example encoding of "https://api.alvsia.pro" — replace with real value:
-        0x00, 0x00, 0x00  // stub — regenerate with encode() during build
-    )).ifBlank { "https://api.alvsia.pro" }   // fallback ONLY in debug
+        0x25, 0x38, 0x3B, 0x3E, 0x3A, 0x72, 0x64, 0x65,
+        0x24, 0x34, 0x2E, 0x68, 0x20, 0x2C, 0x35, 0x31,
+        0x34, 0x3D, 0x71, 0x2E, 0x2B, 0x37
+    ))
 
-    /** Returns the security event endpoint. */
+    /** Returns the security event path "/v1/sec" — XOR-encoded. */
     fun secPath(): String = d(0x7E, 0x33, intArrayOf(
-        0x00, 0x00, 0x00  // stub — regenerate with encode()
-    )).ifBlank { "/v1/sec" }
+        0x62, 0x3A, 0x7E, 0x61, 0x3A, 0x2D, 0x28
+    ))
 }

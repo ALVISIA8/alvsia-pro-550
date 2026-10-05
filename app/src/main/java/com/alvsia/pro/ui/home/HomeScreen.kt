@@ -35,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import androidx.compose.ui.Modifier
@@ -70,7 +71,9 @@ fun HomeScreen(
     expiry: String,
     tools: List<ToolItem>,
     status: String?,
-    onTool: (ToolItem) -> Unit
+    onTool: (ToolItem) -> Unit,
+    raspLevel: Int = 0,           // 0=clean 1=soft-threat 2=hard-threat
+    secStatus: String = "SECURE", // short security badge label
 ) {
     val ctx = LocalContext.current
     DisposableEffect(Unit) {
@@ -81,6 +84,7 @@ fun HomeScreen(
     // ── Live countdown to expiry ─────────────────────────────────────
     var countdownText by remember { mutableStateOf("") }
     LaunchedEffect(expiry) {
+        // Try parse common formats: "2026-10-04 19:50:11" or ISO
         val formats = listOf("yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd")
         var expiryMs = 0L
         for (fmt in formats) {
@@ -116,12 +120,39 @@ fun HomeScreen(
                 .statusBarsPadding()
                 .padding(horizontal = 14.dp, vertical = 8.dp)
         ) {
-            Text(
-                "ALVSIA PREMIUM TOOL",
-                color = AlvisiaCyan,
-                fontWeight = FontWeight.Black,
-                fontSize = 20.sp
-            )
+            // ── Top row: title + security badge ──────────────────────────────
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "ALVSIA PREMIUM TOOL",
+                    color = AlvisiaCyan,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 20.sp
+                )
+                // Security badge — color codes threat level
+                val badgeColor = when (raspLevel) {
+                    0    -> Color(0xFF00E676)   // green — clean
+                    1    -> Color(0xFFFFAB40)   // amber — soft threat
+                    else -> AlvisiaRed          // red   — hard threat
+                }
+                val badgeLabel = when (raspLevel) {
+                    0    -> secStatus
+                    1    -> "⚠ THREAT"
+                    else -> "✖ BLOCKED"
+                }
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(badgeColor.copy(alpha = 0.18f))
+                        .border(1.dp, badgeColor.copy(alpha = 0.55f), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                ) {
+                    Text(badgeLabel, color = badgeColor, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                }
+            }
             Text(product.ifBlank { "PREMIUM" }, color = AlvisiaSilver.copy(alpha = 0.75f), fontSize = 12.sp)
             Text(
                 "Exp: $countdownText",

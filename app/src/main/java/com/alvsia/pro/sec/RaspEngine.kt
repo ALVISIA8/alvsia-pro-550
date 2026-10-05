@@ -81,7 +81,8 @@ object RaspEngine {
             if (Debug.waitingForDebugger()) hard += "wait_debugger"
         } catch (_: Exception) {}
 
-        // ② Frida / hooks
+        // ② Frida / hooks — trigger async port scan refresh before reading signals
+        FridaProbe.refreshPortScanAsync()
         val fridaHits = FridaProbe.signals()
         hard += fridaHits
 

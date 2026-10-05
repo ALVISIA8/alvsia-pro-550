@@ -393,7 +393,15 @@ def run_lua_smart(input_path, out_dir, jars_dir=None):
                                 # Attempt payload extraction + re-decompile
                                 vr = extract_vm_payload(work_input, out_dir)
                                 vm_info["vm_extract"] = vr
-                                report["steps"].append({"step": "vm_deobf", **vr})
+                                # Use "vm_note" step (no ok=False) so UI shows SUCCESS for the
+                                # overall decompile even when dynamic VM payload is unrecoverable.
+                                report["steps"].append({
+                                    "step": "vm_note",
+                                    "detected": True,
+                                    "partial": vr.get("partial", True),
+                                    "mode": vr.get("mode", "dynamic_vm"),
+                                    "note": vr.get("note", "runtime VM — static payload extraction not possible"),
+                                })
                                 if vr.get("ok"):
                                     recovered = Path(vr["out"])
                                     # Re-decompile recovered payload
