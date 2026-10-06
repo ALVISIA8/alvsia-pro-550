@@ -1,24 +1,25 @@
+cmake_minimum_required(VERSION 3.22.1)
+
+project(AlvsiaSec LANGUAGES C CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# Android NDK + CMake 3.22:
+# Mbed TLS does not need the optional host Threads package for this build.
+set(CMAKE_DISABLE_FIND_PACKAGE_Threads TRUE)
+
+# Build only the Mbed TLS crypto library required by rasp_guard.
 set(MBEDTLS_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
 set(MBEDTLS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(USE_SHARED_MBEDTLS_LIBRARY OFF CACHE BOOL "" FORCE)
 set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
 set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
 
-# Mbed TLS calls find_package(Threads); Android Bionic intentionally has no pthread_cancel().
-# Disable the optional Threads discovery so CMake 3.22 does not run the incompatible probe.
-set(CMAKE_DISABLE_FIND_PACKAGE_Threads TRUE)
-
 add_subdirectory(third_party/mbedtls EXCLUDE_FROM_ALL)
 
-cmake_minimum_required(VERSION 3.22.1)
-
-
-project(AlvsiaSec CXX)
-
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-# Hardened compile flags
+# Hardened compile flags.
 add_compile_options(
     -O2
     -fvisibility=hidden
@@ -26,10 +27,11 @@ add_compile_options(
     -fdata-sections
     -fstack-protector-all
     -D_FORTIFY_SOURCE=2
-    -Wformat -Wformat-security
-    # Strip debug symbols at link
+    -Wformat
+    -Wformat-security
 )
 
+# Hardened linker flags.
 add_link_options(
     -Wl,--strip-all
     -Wl,--gc-sections
@@ -49,6 +51,7 @@ add_library(
 
 target_link_libraries(
     rasp_guard
+    PRIVATE
     ${log-lib}
     ${dl-lib}
     mbedcrypto
