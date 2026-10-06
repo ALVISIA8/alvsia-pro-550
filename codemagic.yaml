@@ -55,6 +55,14 @@ workflows:
           grep -n -B 25 -A 10 -E "Configuring incomplete|CMake Error|CMake Warning|error:|FAILED|What went wrong|Caused by:" build_full.log | tail -180 || true
 
           echo ""
+          echo "========== CMAKE ERROR LOG =========="
+          find app/.cxx -type f \( -name "CMakeError.log" -o -name "CMakeOutput.log" \) -print -exec sh -c 'echo "----- $1 -----"; tail -120 "$1"' _ {} \; 2>/dev/null || true
+
+          echo ""
+          echo "========== CMAKE CONFIG ERRORS =========="
+          grep -Rni -E "CMake Error|CMake Warning|error:|FAILED" app/.cxx 2>/dev/null | tail -120 || true
+
+          echo ""
           echo "========== APK OUTPUT =========="
           find app/build/outputs -name "*.apk" -type f -print 2>/dev/null || true
 
