@@ -38,6 +38,10 @@ workflows:
 
       - name: Build release APK
         script: |
+          set -e
+          export PATH="/opt/homebrew/opt/python@3.14/bin:/usr/local/opt/python@3.14/bin:$PATH"
+          export CHAQUOPY_PYTHON="$((command -v python3.14 || true))"
+          python3.14 --version
           set -o pipefail
           ./gradlew assembleRelease --stacktrace --no-daemon 2>&1 | tee build_full.log
           STATUS=${PIPESTATUS[0]}
