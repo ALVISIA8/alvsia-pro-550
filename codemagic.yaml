@@ -2,6 +2,13 @@ workflows:
   alvisia-android:
     name: ALVISIA PRO 5.5.0
     max_build_duration: 120
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: r5.4-native-rasp
+          include: true
+          source: true
     instance_type: mac_mini_m2
     environment:
       java: 17
@@ -17,6 +24,14 @@ workflows:
         script: |
           chmod +x ./gradlew
           java -version
+
+      - name: Verify R5.4 source
+        script: |
+          set -e
+          echo "===== SOURCE ====="
+          git branch --show-current
+          git rev-parse HEAD
+          test "$(git rev-parse HEAD)" = "f03d139fc9366b1674018f885fee393a76216c81"
 
       - name: Build release APK
         script: |
