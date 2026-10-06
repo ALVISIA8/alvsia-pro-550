@@ -52,7 +52,7 @@ workflows:
 
           echo ""
           echo "========== ACTUAL BUILD ERROR =========="
-          grep -n -B 5 -A 15 -E "What went wrong|Caused by:|FAILED|error:|Exception:" build_full.log | tail -100 || true
+          grep -n -B 25 -A 10 -E "Configuring incomplete|CMake Error|CMake Warning|error:|FAILED|What went wrong|Caused by:" build_full.log | tail -180 || true
 
           echo ""
           echo "========== APK OUTPUT =========="
