@@ -4,15 +4,15 @@ set(USE_SHARED_MBEDTLS_LIBRARY OFF CACHE BOOL "" FORCE)
 set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
 set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
 
+# Mbed TLS calls find_package(Threads); Android Bionic intentionally has no pthread_cancel().
+# Disable the optional Threads discovery so CMake 3.22 does not run the incompatible probe.
+set(CMAKE_DISABLE_FIND_PACKAGE_Threads TRUE)
+
 add_subdirectory(third_party/mbedtls EXCLUDE_FROM_ALL)
 
 cmake_minimum_required(VERSION 3.22.1)
 
 
-# Android NDK: CMake 3.22 pthread probe is incompatible with pthread_cancel().
-set(CMAKE_HAVE_LIBC_PTHREAD 1 CACHE INTERNAL "Android pthread support" FORCE)
-set(CMAKE_USE_PTHREADS_INIT 1 CACHE INTERNAL "Android pthread support" FORCE)
-set(THREADS_PREFER_PTHREAD_FLAG TRUE CACHE BOOL "Prefer pthread flag" FORCE)
 project(AlvsiaSec CXX)
 
 set(CMAKE_CXX_STANDARD 17)
