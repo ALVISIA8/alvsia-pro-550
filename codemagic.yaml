@@ -49,7 +49,7 @@ workflows:
 
           rm -f build_full.log
 
-          ./gradlew assembleRelease --no-daemon --stacktrace --info 2>&1 | tee build_full.log
+          ./gradlew assembleRelease --no-daemon --stacktrace --info --console=plain 2>&1 | tee build_full.log
           STATUS=${PIPESTATUS[0]}
 
           echo ""
@@ -174,8 +174,42 @@ workflows:
           echo "=================================================="
           echo " [14] TOOLCHAIN"
           echo "=================================================="
-          /usr/local/share/android-sdk/cmake/3.22.1/bin/cmake --version || true
-          /usr/local/share/android-sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/darwin-arm64/bin/clang++ --version || true
+          echo "ANDROID_NDK_HOME=${ANDROID_NDK_HOME:-}"
+          echo "ANDROID_NDK_ROOT=${ANDROID_NDK_ROOT:-}"
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-}"
+          cmake --version || true
+          find "${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-$ANDROID_SDK_ROOT/ndk/26.1.10909125}}"             -type f -path "*/toolchains/llvm/prebuilt/*/bin/clang++"             -print -quit 2>/dev/null | while read C; do
+              echo "CLANG++=$C"
+              "$C" --version || true
+            done
+
+          echo ""
+          echo "=================================================="
+          echo " [15] FINAL NATIVE FAILURE REPORT"
+          echo "=================================================="
+
+          {
+            echo "BUILD_STATUS=$STATUS"
+            echo ""
+            echo "=== CMAKE/NATIVE ERRORS ==="
+            grep -niE "CMake Error|FAILED:|fatal error:|error:|undefined reference|cannot find|No such file|ld.lld|clang.*error|ninja: error|subcommand failed|duplicate symbol|multiple definition|unresolved" build_full.log | tail -1000 || true
+            echo ""
+            echo "=== GRADLE CAUSE ==="
+            grep -n -B 50 -A 100 -E "Execution failed for task|What went wrong|Caused by:|ProcessException|ExecException" build_full.log | tail -1000 || true
+            echo ""
+            echo "=== CMAKE ERROR LOGS ==="
+            find app/.cxx -type f -name "CMakeError.log" -exec sh -c 'echo "===== $1 ====="; cat "$1"' _ {} \; 2>/dev/null || true
+            echo ""
+            echo "=== CMAKE OUTPUT LOGS ==="
+            find app/.cxx -type f -name "CMakeOutput.log" -exec sh -c 'echo "===== $1 ====="; tail -1000 "$1"' _ {} \; 2>/dev/null || true
+            echo ""
+            echo "=== NINJA FILES ==="
+            find app/.cxx -type f -name "build.ninja" -exec sh -c 'echo "===== $1 ====="; grep -nE "FAILED:|rasp_guard|mbedcrypto|clang|ld.lld" "$1" | tail -1000' _ {} \; 2>/dev/null || true
+          } > native_failure_report.txt
+
+          echo "native_failure_report.txt generated"
+          wc -l native_failure_report.txt
+          tail -200 native_failure_report.txt || true
 
           echo ""
           echo "=================================================="
@@ -249,3 +283,4 @@ workflows:
       - ALVSIA_PRO_5.5.0_signed.apk
       - ALVSIA_PRO_5.5.0_unsigned.apk
       - build_full.log
+      - native_failure_report.txt
