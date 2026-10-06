@@ -140,7 +140,13 @@ object RaspEngine {
         }
 
         threatLevel = allSignals.size.coerceAtMost(10)
-        Guard.degraded = true
+
+        // Soft RASP signals are telemetry only. They must not make the
+        // release tool authorization gate unusable on a clean device.
+        // Hard signals remain security-blocking through SessionGate.onThreat().
+        if (hard.isNotEmpty()) {
+            Guard.degraded = true
+        }
 
         val detail = "hard=[${hard.joinToString("|")}] soft=[${soft.joinToString("|")}]"
         ThreatReport.emit(ctx, "RASP_TICK", detail, license)
@@ -171,7 +177,6 @@ object RaspEngine {
 
             if (r.isNotEmpty()) {
                 threatLevel = (threatLevel + r.size).coerceAtMost(10)
-                Guard.degraded = true
                 ThreatReport.emit(ctx, "RASP_DEEP", r.joinToString("|"), license)
 
                 val hardDeep = r.filter {
