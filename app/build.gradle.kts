@@ -13,7 +13,7 @@ android {
         minSdk = 26
         targetSdk = 34
         versionCode = 97
-        versionName = "5.5.0-R5.2"
+        versionName = "5.5.0-R5.3"
         buildConfigField("int", "PROTO", "2")
         buildConfigField("String", "CERT_SHA256", "\"99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c\"")
         ndk {
