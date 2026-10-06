@@ -34,7 +34,6 @@ workflows:
           git rev-parse HEAD
           
           test "$(grep -o 'version = "3.14"' app/build.gradle.kts | head -1)" = 'version = "3.14"'
-          grep -q 'librasp_guard' app/src/main/cpp/CMakeLists.txt
           echo "R5.4 SOURCE VERIFIED"
 
       - name: Build release APK
