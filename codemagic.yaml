@@ -36,6 +36,14 @@ workflows:
           test "$(grep -o 'version = "3.14"' app/build.gradle.kts | head -1)" = 'version = "3.14"'
           echo "R5.4 SOURCE VERIFIED"
 
+      - name: Prepare Python 3.14
+        script: |
+          set -e
+          brew install python@3.14 || true
+          PY314="/opt/homebrew/opt/python@3.14/bin/python3.14"
+          test -x "$PY314"
+          "$PY314" --version
+
       - name: Build release APK
         script: |
           set -e
