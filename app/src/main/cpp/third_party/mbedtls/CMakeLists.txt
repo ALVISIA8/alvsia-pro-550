@@ -131,22 +131,9 @@ if(MBEDTLS_PYTHON_EXECUTABLE)
 
 endif()
 
-# We now potentially need to link all executables against PThreads, if available
 # Android NDK/Bionic provides pthread APIs through libc.
-# Do not run CMake 3.22 FindThreads host probing during Android cross-build.
-# The probe checks pthread_cancel(), which is intentionally unavailable in
-# Android Bionic and causes a false-negative configure failure.
-set(CMAKE_THREAD_PREFER_PTHREAD FALSE)
-set(THREADS_PREFER_PTHREAD_FLAG FALSE)
-set(CMAKE_HAVE_LIBC_PTHREAD TRUE CACHE INTERNAL "" FORCE)
-set(CMAKE_THREAD_LIBS_INIT "" CACHE STRING "" FORCE)
-set(CMAKE_USE_PTHREADS_INIT TRUE CACHE INTERNAL "" FORCE)
-set(Threads_FOUND TRUE CACHE BOOL "" FORCE)
-
-if(NOT TARGET Threads::Threads)
-    add_library(Threads::Threads INTERFACE IMPORTED)
-endif()
-
+# Do not override CMake's thread detection here; the Android toolchain
+# already supplies the correct target environment.
 # If this is the root project add longer list of available CMAKE_BUILD_TYPE values
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     set(CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE}

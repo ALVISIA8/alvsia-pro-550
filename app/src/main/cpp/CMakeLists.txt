@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.22.1)
 
+# Android NDK cross-compile:
+# prevent CMake compiler detection from linking a test executable.
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+
 project(AlvsiaSec LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
