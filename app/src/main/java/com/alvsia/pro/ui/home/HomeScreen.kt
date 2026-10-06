@@ -1,0 +1,259 @@
+package com.alvsia.pro.ui.home
+
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import kotlinx.coroutines.delay
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.concurrent.TimeUnit
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.alvsia.pro.media.PulseAudio
+import com.alvsia.pro.ui.fx.NeonPulseBackground
+import com.alvsia.pro.ui.theme.AlvisiaBlue
+import com.alvsia.pro.ui.theme.AlvisiaCyan
+import com.alvsia.pro.ui.theme.AlvisiaRed
+import com.alvsia.pro.ui.theme.AlvisiaSilver
+
+data class ToolItem(val id: Int, val title: String, val desc: String)
+
+private val chipColors = listOf(
+    listOf(Color(0xFF0077CC), Color(0xFF00D4FF)),
+    listOf(Color(0xFF8B1E3F), Color(0xFFFF2D55)),
+    listOf(Color(0xFF0A4D68), Color(0xFF00A3FF)),
+    listOf(Color(0xFF1A3A5C), Color(0xFF7EB6FF)),
+    listOf(Color(0xFF3D0A1A), Color(0xFFFF6B8A)),
+    listOf(Color(0xFF063A4A), Color(0xFF00E5FF))
+)
+
+@Composable
+fun HomeScreen(
+    product: String,
+    expiry: String,
+    tools: List<ToolItem>,
+    status: String?,
+    onTool: (ToolItem) -> Unit,
+    raspLevel: Int = 0,           // 0=clean 1=soft-threat 2=hard-threat
+    secStatus: String = "SECURE", // short security badge label
+) {
+    val ctx = LocalContext.current
+    DisposableEffect(Unit) {
+        try { PulseAudio.start(ctx) } catch (_: Exception) {}
+        onDispose { }
+    }
+
+    // ── Live countdown to expiry ─────────────────────────────────────
+    var countdownText by remember { mutableStateOf("") }
+    LaunchedEffect(expiry) {
+        // Try parse common formats: "2026-10-04 19:50:11" or ISO
+        val formats = listOf("yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd")
+        var expiryMs = 0L
+        for (fmt in formats) {
+            try {
+                expiryMs = SimpleDateFormat(fmt, Locale.US).parse(expiry.take(19))?.time ?: 0L
+                if (expiryMs > 0) break
+            } catch (_: Exception) {}
+        }
+        if (expiryMs <= 0L) {
+            countdownText = expiry.take(19)
+            return@LaunchedEffect
+        }
+        while (true) {
+            val remaining = expiryMs - System.currentTimeMillis()
+            countdownText = if (remaining <= 0L) {
+                "EXPIRED"
+            } else {
+                val d = TimeUnit.MILLISECONDS.toDays(remaining)
+                val h = TimeUnit.MILLISECONDS.toHours(remaining) % 24
+                val m = TimeUnit.MILLISECONDS.toMinutes(remaining) % 60
+                val s = TimeUnit.MILLISECONDS.toSeconds(remaining) % 60
+                if (d > 0) "%dd %02dh %02dm %02ds".format(d, h, m, s)
+                else "%02dh %02dm %02ds".format(h, m, s)
+            }
+            delay(1000L)
+        }
+    }
+    Box(Modifier.fillMaxSize()) {
+        NeonPulseBackground(Modifier.fillMaxSize())
+        Column(
+            Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .padding(horizontal = 14.dp, vertical = 8.dp)
+        ) {
+            // ── Top row: title + security badge ──────────────────────────────
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "ALVSIA PREMIUM TOOL",
+                    color = AlvisiaCyan,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 20.sp
+                )
+                // Security badge — color codes threat level
+                val badgeColor = when (raspLevel) {
+                    0    -> Color(0xFF00E676)   // green — clean
+                    1    -> Color(0xFFFFAB40)   // amber — soft threat
+                    else -> AlvisiaRed          // red   — hard threat
+                }
+                val badgeLabel = when (raspLevel) {
+                    0    -> secStatus
+                    1    -> "⚠ THREAT"
+                    else -> "✖ BLOCKED"
+                }
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(badgeColor.copy(alpha = 0.18f))
+                        .border(1.dp, badgeColor.copy(alpha = 0.55f), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                ) {
+                    Text(badgeLabel, color = badgeColor, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            Text(product.ifBlank { "PREMIUM" }, color = AlvisiaSilver.copy(alpha = 0.75f), fontSize = 12.sp)
+            Text(
+                "Exp: $countdownText",
+                color = if (countdownText == "EXPIRED") Color(0xFFFF2D55)
+                        else AlvisiaSilver.copy(alpha = 0.55f),
+                fontSize = 11.sp
+            )
+            if (!status.isNullOrBlank()) {
+                Text(status, color = Color(0xFF00E676), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = {
+                    ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/ALVSIA_PRO")))
+                }) { Text("Channel", color = AlvisiaCyan, fontWeight = FontWeight.Bold) }
+                TextButton(onClick = {
+                    ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/OriginalOnwerALV")))
+                }) { Text("Owner", color = AlvisiaCyan, fontWeight = FontWeight.Bold) }
+            }
+            Spacer(Modifier.height(4.dp))
+            Text("MODULES", color = AlvisiaSilver.copy(alpha = 0.4f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(3),
+                contentPadding = PaddingValues(2.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                items(tools, key = { it.id }) { tool ->
+                    val colors = chipColors[(tool.id - 1) % chipColors.size]
+                    NeonModuleChip(
+                        id = tool.id,
+                        title = tool.title,
+                        colors = colors,
+                        onClick = { onTool(tool) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NeonModuleChip(
+    id: Int,
+    title: String,
+    colors: List<Color>,
+    onClick: () -> Unit
+) {
+    Box(
+        Modifier
+            .height(78.dp)
+            .fillMaxWidth()
+            .shadow(10.dp, RoundedCornerShape(16.dp), ambientColor = colors[0].copy(alpha = 0.5f), spotColor = colors[1])
+            .clip(RoundedCornerShape(16.dp))
+            .background(
+                Brush.linearGradient(
+                    listOf(
+                        colors[0].copy(alpha = 0.92f),
+                        colors[1].copy(alpha = 0.75f),
+                        Color.White.copy(alpha = 0.08f)
+                    )
+                )
+            )
+            .border(
+                1.dp,
+                Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.4f), Color.Transparent)),
+                RoundedCornerShape(16.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(8.dp)
+    ) {
+        // glass highlight top
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(16.dp)
+                .align(Alignment.TopCenter)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color.White.copy(alpha = 0.22f), Color.Transparent)
+                    )
+                )
+        )
+        Column {
+            Text(
+                "%02d".format(id),
+                color = Color.White,
+                fontWeight = FontWeight.Black,
+                fontSize = 13.sp
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                title,
+                color = Color.White.copy(alpha = 0.95f),
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 10.sp,
+                maxLines = 2,
+                lineHeight = 12.sp
+            )
+        }
+    }
+}
