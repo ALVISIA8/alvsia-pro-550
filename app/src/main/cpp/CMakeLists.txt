@@ -1,3 +1,11 @@
+set(MBEDTLS_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
+set(MBEDTLS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(USE_SHARED_MBEDTLS_LIBRARY OFF CACHE BOOL "" FORCE)
+set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
+set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+
+add_subdirectory(third_party/mbedtls EXCLUDE_FROM_ALL)
+
 cmake_minimum_required(VERSION 3.22.1)
 project(AlvsiaSec CXX)
 
@@ -37,4 +45,5 @@ target_link_libraries(
     rasp_guard
     ${log-lib}
     ${dl-lib}
+    mbedcrypto
 )

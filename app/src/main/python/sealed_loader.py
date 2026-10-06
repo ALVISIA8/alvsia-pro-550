@@ -3,7 +3,6 @@
 from __future__ import annotations
 import os, sys, hashlib, importlib.abc, importlib.util
 from pathlib import Path
-from Crypto.Cipher import AES
 
 _BUILD_ID = 'ALVSIA-20261006-R5.3'
 _CERT_SHA256 = '99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c'
@@ -25,10 +24,22 @@ class _Loader(importlib.abc.Loader):
         if not raw.startswith(_MAGIC): raise ImportError("sealed payload header invalid")
         nonce, ct = raw[len(_MAGIC):len(_MAGIC)+12], raw[len(_MAGIC)+12:]
         try:
-            cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
-            if len(ct) < 16: raise ValueError("short ciphertext")
-            source = cipher.decrypt_and_verify(ct[:-16], ct[-16:])
-        except Exception as e: raise ImportError("sealed payload authentication failed") from e
+            if len(ct) < 16:
+                raise ValueError("short ciphertext")
+
+            # AES-256-GCM decryption is performed by the native RASP layer.
+            # Python receives only the authenticated plaintext bytes.
+            from com.alvsia.pro.sec import NativeGuard
+            source = bytes(
+                NativeGuard.INSTANCE.sealDecrypt(
+                    key,
+                    nonce,
+                    ct[:-16],
+                    ct[-16:]
+                )
+            )
+        except Exception as e:
+            raise ImportError("sealed payload authentication failed") from e
         module.__file__ = "<ALVSIA-SEALED:%s>" % self.fullname
         module.__package__ = self.fullname.rpartition(".")[0]
         if self.fullname in ("lua_engine",):

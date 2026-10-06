@@ -1,3 +1,4 @@
+#include <vector>
 // ALVISIA PRO 5.5.0 — librasp_guard.so
 // Anti-debug / anti-dump / anti-hook native layer
 // Build: CMakeLists.txt target librasp_guard
@@ -6,6 +7,8 @@
 //           -Wl,--strip-all  -ffunction-sections  -fdata-sections  -Wl,--gc-sections
 
 #include <jni.h>
+#include <mbedtls/gcm.h>
+#include <mbedtls/md.h>
 #include <android/log.h>
 #include <sys/ptrace.h>
 #include <sys/uio.h>
@@ -276,3 +279,109 @@ Java_com_alvsia_pro_sec_NativeGuard_nativeSealSeed(JNIEnv* env, jobject) {
     env->SetByteArrayRegion(out, 0, 32, reinterpret_cast<const jbyte*>(seed));
     return out;
 }
+
+// ALVISIA_R54_NATIVE_SEAL_BEGIN
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_com_alvsia_pro_sec_NativeGuard_nativeSealDecrypt(
+        JNIEnv* env,
+        jobject,
+        jbyteArray keyArray,
+        jbyteArray nonceArray,
+        jbyteArray ciphertextArray,
+        jbyteArray tagArray) {
+
+    if (!keyArray || !nonceArray || !ciphertextArray || !tagArray) {
+        return nullptr;
+    }
+
+    const jsize keyLen = env->GetArrayLength(keyArray);
+    const jsize nonceLen = env->GetArrayLength(nonceArray);
+    const jsize cipherLen = env->GetArrayLength(ciphertextArray);
+    const jsize tagLen = env->GetArrayLength(tagArray);
+
+    if (keyLen != 32 || nonceLen != 12 || tagLen != 16 || cipherLen < 0) {
+        return nullptr;
+    }
+
+    std::vector<unsigned char> key(32);
+    std::vector<unsigned char> nonce(12);
+    std::vector<unsigned char> ciphertext(static_cast<size_t>(cipherLen));
+    std::vector<unsigned char> tag(16);
+    std::vector<unsigned char> plaintext(static_cast<size_t>(cipherLen));
+
+    env->GetByteArrayRegion(keyArray, 0, 32,
+                            reinterpret_cast<jbyte*>(key.data()));
+    env->GetByteArrayRegion(nonceArray, 0, 12,
+                            reinterpret_cast<jbyte*>(nonce.data()));
+    if (cipherLen > 0) {
+        env->GetByteArrayRegion(
+            ciphertextArray, 0, cipherLen,
+            reinterpret_cast<jbyte*>(ciphertext.data()));
+    }
+    env->GetByteArrayRegion(tagArray, 0, 16,
+                            reinterpret_cast<jbyte*>(tag.data()));
+
+    mbedtls_gcm_context ctx;
+    mbedtls_gcm_init(&ctx);
+
+    int rc = mbedtls_gcm_setkey(
+        &ctx,
+        MBEDTLS_CIPHER_ID_AES,
+        key.data(),
+        256
+    );
+
+    if (rc == 0) {
+        rc = mbedtls_gcm_auth_decrypt(
+            &ctx,
+            static_cast<size_t>(cipherLen),
+            nonce.data(),
+            12,
+            nullptr,
+            0,
+            tag.data(),
+            16,
+            ciphertext.data(),
+            plaintext.data()
+        );
+    }
+
+    mbedtls_gcm_free(&ctx);
+
+    volatile unsigned char* vk = key.data();
+    for (size_t i = 0; i < key.size(); ++i) vk[i] = 0;
+
+    volatile unsigned char* vt = tag.data();
+    for (size_t i = 0; i < tag.size(); ++i) vt[i] = 0;
+
+    if (rc != 0) {
+        volatile unsigned char* vp = plaintext.data();
+        for (size_t i = 0; i < plaintext.size(); ++i) vp[i] = 0;
+        return nullptr;
+    }
+
+    jbyteArray result = env->NewByteArray(cipherLen);
+    if (!result) {
+        volatile unsigned char* vp = plaintext.data();
+        for (size_t i = 0; i < plaintext.size(); ++i) vp[i] = 0;
+        return nullptr;
+    }
+
+    if (cipherLen > 0) {
+        env->SetByteArrayRegion(
+            result, 0, cipherLen,
+            reinterpret_cast<const jbyte*>(plaintext.data()));
+    }
+
+    volatile unsigned char* vp = plaintext.data();
+    for (size_t i = 0; i < plaintext.size(); ++i) vp[i] = 0;
+
+    volatile unsigned char* vc = ciphertext.data();
+    for (size_t i = 0; i < ciphertext.size(); ++i) vc[i] = 0;
+
+    volatile unsigned char* vn = nonce.data();
+    for (size_t i = 0; i < nonce.size(); ++i) vn[i] = 0;
+
+    return result;
+}
+// ALVISIA_R54_NATIVE_SEAL_END

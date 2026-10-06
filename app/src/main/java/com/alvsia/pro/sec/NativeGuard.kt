@@ -41,6 +41,12 @@ object NativeGuard {
     private external fun nativeWipe(buf: ByteArray)
     private external fun nativeAntiDump(): Int
     private external fun nativeSealSeed(): ByteArray
+    private external fun nativeSealDecrypt(
+        key: ByteArray,
+        nonce: ByteArray,
+        ciphertext: ByteArray,
+        tag: ByteArray
+    ): ByteArray
 
     // ── Public API ────────────────────────────────────────────────────
 
@@ -52,6 +58,19 @@ object NativeGuard {
     fun sealSeedHex(): String {
         if (!nativeLoaded) throw IllegalStateException("native security library unavailable")
         return nativeSealSeed().joinToString("") { "%02x".format(it.toInt() and 0xff) }
+    }
+
+    fun sealDecrypt(
+        key: ByteArray,
+        nonce: ByteArray,
+        ciphertext: ByteArray,
+        tag: ByteArray
+    ): ByteArray {
+        if (!nativeLoaded) {
+            throw IllegalStateException("native security library unavailable")
+        }
+
+        return nativeSealDecrypt(key, nonce, ciphertext, tag)
     }
 
     fun antiDump(): Int {

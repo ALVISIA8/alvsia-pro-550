@@ -5,6 +5,13 @@ plugins {
 }
 
 android {
+    ndkVersion = "26.1.10909125"
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+        }
+    }
+
     namespace = "com.alvsia.pro"
     compileSdk = 34
 
@@ -69,12 +76,10 @@ android {
 
 chaquopy {
     defaultConfig {
-        version = "3.8"
+        version = "3.14"
         pip {
-            install("pycryptodome")
             install("requests")
             install("rich")
-            install("zstandard")
         }
     }
 }
