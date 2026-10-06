@@ -32,24 +32,53 @@ class ToolEngine(private val context: Context) {
 
     fun prepareAuthorization(panel: PanelClient): Boolean {
         return try {
-            SessionGate.allowTools(context)
+            if (!SessionGate.allowTools(context)) return false
             if (!Python.isStarted()) return false
-            val core = Python.getInstance().getModule("alvsia_core")
-            val m = JSONObject(core.callAttr("_alvsia_core_measurement_json").toString())
+
+            // Measurement must happen before operation_grant exists.
+            // The sealed loader gets the native build-bound seed and enters
+            // measurement-only mode. Normal execution remains grant-gated.
+            val py = Python.getInstance()
+            val osMod = py.getModule("os")
+            val environ = osMod.get("environ") ?: return false
+
+            environ.callAttr(
+                "__setitem__",
+                "ALVSIA_SEAL_SEED",
+                NativeGuard.sealSeedHex()
+            )
+            environ.callAttr(
+                "__setitem__",
+                "ALVSIA_MEASUREMENT_ONLY",
+                "1"
+            )
+
+            val core = try {
+                py.getModule("alvsia_core")
+            } finally {
+                environ.callAttr("pop", "ALVSIA_MEASUREMENT_ONLY", null)
+            }
+
+            val m = JSONObject(
+                core.callAttr("_alvsia_core_measurement_json").toString()
+            )
+
             val grant = panel.requestOperationGrant(
                 buildId = "ALVSIA-20261006-R5.3",
                 manifestHash = m.getString("manifest_hash"),
                 toolHash = m.getString("tool_hash")
             ) ?: return false
+
             operationGrant = grant
             operationHwid = panel.lastHwid
             true
         } catch (_: Exception) {
-            operationGrant = ""; operationHwid = ""; false
+            operationGrant = ""
+            operationHwid = ""
+            false
         }
     }
 
-    /** Keep engine in process memory only ? do not write tool source to storage. */
     fun installEngineBytes(engine: ByteArray?) {
         if (engine == null || engine.isEmpty()) return
         ramEngine?.fill(0)

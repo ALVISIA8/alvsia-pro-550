@@ -15,7 +15,14 @@ class _Loader(importlib.abc.Loader):
     def exec_module(self, module):
         seed_hex = os.environ.get("ALVSIA_SEAL_SEED", "")
         grant = os.environ.get("ALVSIA_OPERATION_GRANT", "")
-        if len(seed_hex) != 64 or not grant:
+        measurement_only = os.environ.get("ALVSIA_MEASUREMENT_ONLY", "") == "1"
+
+        # Measurement phase is allowed before the server operation grant.
+        # The native build-bound seal seed is still required to decrypt the
+        # sealed module. Normal tool execution remains grant-gated.
+        if len(seed_hex) != 64:
+            raise ImportError("sealed runtime seed unavailable")
+        if not grant and not measurement_only:
             raise ImportError("sealed runtime authorization missing")
         try: seed = bytes.fromhex(seed_hex)
         except Exception as e: raise ImportError("sealed runtime key invalid") from e
