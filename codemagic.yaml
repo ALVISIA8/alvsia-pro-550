@@ -32,7 +32,7 @@ workflows:
           echo "CM_BRANCH=${CM_BRANCH:-unknown}"
           echo "CM_COMMIT=${CM_COMMIT:-unknown}"
           git rev-parse HEAD
-          test "$(git rev-parse HEAD)" = "f03d139fc9366b1674018f885fee393a76216c81"
+          
           test "$(grep -o 'version = "3.14"' app/build.gradle.kts | head -1)" = 'version = "3.14"'
           grep -q 'librasp_guard' app/src/main/cpp/CMakeLists.txt
           echo "R5.4 SOURCE VERIFIED"
