@@ -54,32 +54,34 @@ workflows:
           git branch --show-current
           echo ""
 
-          ./gradlew assembleRelease --no-daemon --stacktrace --info --console=plain 2>&1 | tee build_full.log
-          STATUS=${PIPESTATUS[0]}
+          set +e
+          ./gradlew assembleRelease --no-daemon --stacktrace --info --console=plain > build_full.log 2>&1
+          STATUS=$?
 
           echo ""
           echo "=================================================="
-          echo "GRADLE FAILURE TASKS"
+          echo "ALVISIA BUILD FAILURE SUMMARY"
           echo "=================================================="
-          grep -nE "^\* What went wrong:|^Execution failed for task|^FAILURE:|^> Task .* FAILED|^Caused by:" build_full.log | tail -80 || true
+          echo "GIT COMMIT:"
+          git rev-parse --short HEAD || true
+          echo "GIT BRANCH:"
+          git branch --show-current || true
 
           echo ""
-          echo "=================================================="
-          echo "NATIVE FAILURE"
-          echo "=================================================="
-          grep -nEi "CMake Error|FAILED:|fatal error:|undefined reference|ld\.lld|clang.*error|ninja: error|subcommand failed" build_full.log | head -100 || true
+          echo "FAILED TASK:"
+          grep -nE "Execution failed for task|> Task .* FAILED" build_full.log | tail -20 || true
 
           echo ""
-          echo "=================================================="
-          echo "GRADLE TASK STATUS"
-          echo "=================================================="
-          grep -nE "^> Task " build_full.log | tail -100 || true
+          echo "GRADLE ERROR:"
+          grep -nE "^FAILURE:|^\* What went wrong:|^Caused by:" build_full.log | tail -30 || true
 
           echo ""
-          echo "=================================================="
-          echo "LAST 200 LINES"
-          echo "=================================================="
-          tail -200 build_full.log
+          echo "NATIVE / CMAKE ERROR:"
+          grep -nEi "CMake Error|fatal error:|undefined reference|ld\.lld|clang.*error|ninja: error|FAILED:" build_full.log | tail -40 || true
+
+          echo ""
+          echo "LAST LOG LINES:"
+          tail -20 build_full.log
 
           echo ""
           echo "=================================================="
