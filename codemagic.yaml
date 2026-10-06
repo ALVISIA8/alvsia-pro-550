@@ -89,6 +89,38 @@ workflows:
           exit "$STATUS"
           STATUS=${PIPESTATUS[0]}
 
+          echo ""
+          echo "=================================================="
+          echo "GRADLE FAILURE TASKS"
+          echo "=================================================="
+          grep -nE "^\* What went wrong:|^Execution failed for task|^FAILURE:|^> Task .* FAILED|^Caused by:" build_full.log | tail -80 || true
+
+          echo ""
+          echo "=================================================="
+          echo "NATIVE FAILURE"
+          echo "=================================================="
+          grep -nEi "CMake Error|FAILED:|fatal error:|undefined reference|ld\.lld|clang.*error|ninja: error|subcommand failed" build_full.log | head -100 || true
+
+          echo ""
+          echo "=================================================="
+          echo "GRADLE TASK STATUS"
+          echo "=================================================="
+          grep -nE "^> Task " build_full.log | tail -100 || true
+
+          echo ""
+          echo "=================================================="
+          echo "LAST 200 LINES"
+          echo "=================================================="
+          tail -200 build_full.log
+
+          echo ""
+          echo "=================================================="
+          echo "FINAL BUILD STATUS = $STATUS"
+          echo "=================================================="
+
+          exit "$STATUS"
+          STATUS=${PIPESTATUS[0]}
+
           {
             echo "===== BUILD STATUS ====="
             echo "STATUS=$STATUS"
