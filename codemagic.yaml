@@ -45,184 +45,52 @@ workflows:
           set +e
           set -o pipefail
 
-          echo "=================================================="
-          echo " ALVISIA R5.4 — FULL NATIVE DIAGNOSTIC BUILD"
-          echo "=================================================="
+          rm -f build_full.log native_failure_report.txt native_error_summary.txt
 
-          rm -f build_full.log
+          echo "===== ALVISIA R5.4 BUILD ====="
+          echo "COMMIT:"
+          git log -1 --oneline
+          echo "BRANCH:"
+          git branch --show-current
+          echo ""
 
           ./gradlew assembleRelease --no-daemon --stacktrace --info --console=plain 2>&1 | tee build_full.log
           STATUS=${PIPESTATUS[0]}
 
-          echo ""
-          echo "=================================================="
-          echo " [1] GRADLE FAILURE"
-          echo "=================================================="
-          grep -n -B 30 -A 50 \
-            -E "Execution failed for task|What went wrong|Caused by:|ProcessException|ExecException" \
-            build_full.log | tail -400 || true
-
-          echo ""
-          echo "=================================================="
-          echo " [2] ALL NATIVE ERRORS"
-          echo "=================================================="
-          grep -niE \
-            "CMake Error|CMake Warning|FAILED:|fatal error:|error:|undefined reference|cannot find|No such file|not found|ld.lld|clang.*error|ninja: error|subcommand failed|duplicate symbol|multiple definition|unresolved" \
-            build_full.log | tail -500 || true
-
-          echo ""
-          echo "=================================================="
-          echo " [3] CMAKE FILES"
-          echo "=================================================="
-          find app/.cxx -type f \
-            \( \
-              -name "CMakeError.log" \
-              -o -name "CMakeOutput.log" \
-              -o -name "CMakeCache.txt" \
-              -o -name "compile_commands.json" \
-              -o -name "build.ninja" \
-            \) \
-            -print 2>/dev/null || true
-
-          echo ""
-          echo "=================================================="
-          echo " [4] CMAKE ERROR LOG"
-          echo "=================================================="
-          find app/.cxx -type f -name "CMakeError.log" \
-            -print \
-            -exec sh -c 'echo "===== $1 ====="; cat "$1"' _ {} \; \
-            2>/dev/null || true
-
-          echo ""
-          echo "=================================================="
-          echo " [5] CMAKE OUTPUT LOG"
-          echo "=================================================="
-          find app/.cxx -type f -name "CMakeOutput.log" \
-            -print \
-            -exec sh -c 'echo "===== $1 ====="; tail -500 "$1"' _ {} \; \
-            2>/dev/null || true
-
-          echo ""
-          echo "=================================================="
-          echo " [6] CMAKE CACHE"
-          echo "=================================================="
-          find app/.cxx -type f -name "CMakeCache.txt" \
-            -print \
-            -exec sh -c '
-              echo "===== $1 ====="
-              grep -E "CMAKE_(C|CXX)_COMPILER|CMAKE_GENERATOR|CMAKE_BUILD_TYPE|ANDROID_|NDK|CMAKE_MAKE_PROGRAM|MBEDTLS|THREADS" "$1" || true
-            ' _ {} \; \
-            2>/dev/null || true
-
-          echo ""
-          echo "=================================================="
-          echo " [7] COMPILE COMMANDS"
-          echo "=================================================="
-          find app/.cxx -type f -name "compile_commands.json" \
-            -print \
-            -exec sh -c 'echo "===== $1 ====="; cat "$1"' _ {} \; \
-            2>/dev/null | head -1200 || true
-
-          echo ""
-          echo "=================================================="
-          echo " [8] NINJA FAILURE DETAILS"
-          echo "=================================================="
-          find app/.cxx -type f -name "build.ninja" \
-            -print \
-            -exec sh -c '
-              echo "===== $1 ====="
-              grep -nE "rasp_guard|mbedcrypto|clang|ld.lld|FAILED" "$1" | head -500 || true
-            ' _ {} \; \
-            2>/dev/null || true
-
-          echo ""
-          echo "=================================================="
-          echo " [9] CMAKE SOURCE"
-          echo "=================================================="
-          sed -n '1,320p' app/src/main/cpp/CMakeLists.txt 2>/dev/null || true
-
-          echo ""
-          echo "=================================================="
-          echo " [10] JNI / MBEDTLS SYMBOLS"
-          echo "=================================================="
-          grep -nE \
-            "JNIEXPORT|Java_com_alvsia|nativeSealDecrypt|nativeSealSeed|mbedtls|target_link_libraries|add_library" \
-            app/src/main/cpp/rasp_guard.cpp \
-            app/src/main/cpp/CMakeLists.txt \
-            2>/dev/null || true
-
-          echo ""
-          echo "=================================================="
-          echo " [11] NATIVE SOURCE TREE"
-          echo "=================================================="
-          find app/src/main/cpp -maxdepth 5 -type f | sort 2>/dev/null | head -600 || true
-
-          echo ""
-          echo "=================================================="
-          echo " [12] NATIVE OUTPUT"
-          echo "=================================================="
-          find app/build -type f \
-            \( -name "*.so" -o -name "*.a" -o -name "*.o" \) \
-            -print 2>/dev/null | head -500 || true
-
-          echo ""
-          echo "=================================================="
-          echo " [13] APK OUTPUT"
-          echo "=================================================="
-          find app/build/outputs -type f -name "*.apk" \
-            -print 2>/dev/null || true
-
-          echo ""
-          echo "=================================================="
-          echo " [14] TOOLCHAIN"
-          echo "=================================================="
-          echo "ANDROID_NDK_HOME=${ANDROID_NDK_HOME:-}"
-          echo "ANDROID_NDK_ROOT=${ANDROID_NDK_ROOT:-}"
-          echo "===== NATIVE TOOLCHAIN PRECHECK ====="
-          echo "NDK candidates:"
-          find "$ANDROID_SDK_ROOT/ndk" -maxdepth 1 -mindepth 1 -type d -print 2>/dev/null || true
-          echo "Selected NDK:"
-          echo "${ANDROID_NDK_HOME:-$ANDROID_SDK_ROOT/ndk/27.3.13750724}"
-          cmake --version || true
-          ninja --version || true
-          test -x "${ANDROID_NDK_HOME:-$ANDROID_SDK_ROOT/ndk/27.3.13750724}/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang++" || true
-          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-}"
-          cmake --version || true
-          find "${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-$ANDROID_SDK_ROOT/ndk/27.3.13750724}}"             -type f -path "*/toolchains/llvm/prebuilt/*/bin/clang++"             -print -quit 2>/dev/null | while read C; do
-              echo "CLANG++=$C"
-              "$C" --version || true
-            done
-
-          echo ""
-          echo "=================================================="
-          echo " [15] FINAL NATIVE FAILURE REPORT"
-          echo "=================================================="
-
           {
-            echo "BUILD_STATUS=$STATUS"
+            echo "===== BUILD STATUS ====="
+            echo "STATUS=$STATUS"
             echo ""
-            echo "=== CMAKE/NATIVE ERRORS ==="
-            grep -niE "CMake Error|FAILED:|fatal error:|error:|undefined reference|cannot find|No such file|ld.lld|clang.*error|ninja: error|subcommand failed|duplicate symbol|multiple definition|unresolved" build_full.log | tail -1000 || true
-            echo ""
-            echo "=== GRADLE CAUSE ==="
-            grep -n -B 50 -A 100 -E "Execution failed for task|What went wrong|Caused by:|ProcessException|ExecException" build_full.log | tail -1000 || true
-            echo ""
-            echo "=== FIRST NATIVE ERRORS ==="
-          grep -nEi "CMake Error|CMake Warning|fatal error:|error:|FAILED|Could NOT find|undefined reference|No such file" build_full.log | head -120 || true
-          echo "=== CMAKE ERROR LOGS ==="
-            find app/.cxx -type f -name "CMakeError.log" -exec sh -c 'echo "===== $1 ====="; cat "$1"' _ {} \; 2>/dev/null || true
-            echo ""
-            echo "=== CMAKE OUTPUT LOGS ==="
-            find app/.cxx -type f -name "CMakeOutput.log" -exec sh -c 'echo "===== $1 ====="; tail -1000 "$1"' _ {} \; 2>/dev/null || true
-            echo ""
-            echo "=== NINJA FILES ==="
-            find app/.cxx -type f -name "build.ninja" -exec sh -c 'echo "===== $1 ====="; grep -nE "FAILED:|rasp_guard|mbedcrypto|clang|ld.lld" "$1" | tail -1000' _ {} \; 2>/dev/null || true
-          } > native_failure_report.txt
 
-          echo "native_failure_report.txt generated"
-          wc -l native_failure_report.txt
-          tail -200 native_failure_report.txt || true
+            echo "===== GRADLE FAILURE ====="
+            grep -n -B 40 -A 80 \
+              -E "Execution failed for task|What went wrong|Caused by:|ProcessException|ExecException|FAILURE: Build failed" \
+              build_full.log | tail -250 || true
 
+            echo ""
+            echo "===== FIRST NATIVE ERRORS ====="
+            grep -nEi \
+              "CMake Error|FAILED:|fatal error:|error:|undefined reference|cannot find|No such file|not found|ld.lld|clang.*error|ninja: error|subcommand failed|duplicate symbol|multiple definition|unresolved|Could NOT find" \
+              build_full.log | head -120 || true
+
+            echo ""
+            echo "===== CMAKE ERROR LOG ====="
+            find app/.cxx -type f -name "CMakeError.log" \
+              -exec sh -c 'echo "===== $1 ====="; cat "$1"' _ {} \; \
+              2>/dev/null || true
+
+            echo ""
+            echo "===== LAST BUILD LINES ====="
+            tail -120 build_full.log || true
+          } > native_error_summary.txt
+
+          cp native_error_summary.txt native_failure_report.txt
+
+          echo ""
+          echo "=================================================="
+          echo " FIRST ERROR / FINAL DIAGNOSTIC"
+          echo "=================================================="
+          cat native_error_summary.txt
           echo ""
           echo "=================================================="
           echo " FINAL BUILD STATUS = $STATUS"
