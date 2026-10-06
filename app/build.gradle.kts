@@ -77,6 +77,7 @@ android {
 chaquopy {
     defaultConfig {
         version = "3.14"
+        buildPython(System.getenv("CHAQUOPY_BUILD_PYTHON") ?: "python3.14")
         pip {
             install("requests")
             install("rich")
