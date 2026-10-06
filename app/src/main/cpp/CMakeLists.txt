@@ -7,6 +7,12 @@ set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
 add_subdirectory(third_party/mbedtls EXCLUDE_FROM_ALL)
 
 cmake_minimum_required(VERSION 3.22.1)
+
+
+# Android NDK: CMake 3.22 pthread probe is incompatible with pthread_cancel().
+set(CMAKE_HAVE_LIBC_PTHREAD 1 CACHE INTERNAL "Android pthread support" FORCE)
+set(CMAKE_USE_PTHREADS_INIT 1 CACHE INTERNAL "Android pthread support" FORCE)
+set(THREADS_PREFER_PTHREAD_FLAG TRUE CACHE BOOL "Prefer pthread flag" FORCE)
 project(AlvsiaSec CXX)
 
 set(CMAKE_CXX_STANDARD 17)
