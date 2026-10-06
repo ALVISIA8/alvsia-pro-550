@@ -2,39 +2,33 @@ workflows:
   alvisia-android:
     name: ALVISIA PRO 5.5.0
     max_build_duration: 120
-    triggering:
-      events:
-        - push
-      branch_patterns:
-        - pattern: r5.4-native-rasp
-          include: true
-          source: true
     instance_type: mac_mini_m2
+
     environment:
       java: 17
       vars:
         PACKAGE_NAME: "com.alvsia.pro"
-      # Optional: set these in Codemagic UI → Environment variables (group "signing")
-      # CM_KEYSTORE  (base64 of alvsia-release.keystore) OR use keystore in repo
-      # CM_KEYSTORE_PASSWORD
-      # CM_KEY_ALIAS: alvsia
-      # CM_KEY_PASSWORD
+
     scripts:
+
       - name: Set gradlew permission
         script: |
+          set -e
           chmod +x ./gradlew
           java -version
 
       - name: Verify R5.4 source
         script: |
           set -e
-          echo "===== CODemagic SOURCE ====="
-          echo "CM_BRANCH=${CM_BRANCH:-unknown}"
-          echo "CM_COMMIT=${CM_COMMIT:-unknown}"
-          git rev-parse HEAD
-          
-          test "$(grep -o 'version = "3.14"' app/build.gradle.kts | head -1)" = 'version = "3.14"'
-          echo "R5.4 SOURCE VERIFIED"
+          echo "===== R5.4 SOURCE CHECK ====="
+          git branch --show-current
+          git log -1 --oneline
+          test -f app/src/main/cpp/rasp_guard.cpp
+          test -f app/src/main/cpp/CMakeLists.txt
+          test -d app/src/main/cpp/third_party/mbedtls
+          grep -q "nativeSealDecrypt" app/src/main/cpp/rasp_guard.cpp
+          grep -q "mbedtls_gcm_auth_decrypt" app/src/main/cpp/rasp_guard.cpp
+          echo "R5.4 native source: OK"
 
       - name: Prepare Python 3.14
         script: |
@@ -46,55 +40,176 @@ workflows:
 
       - name: Build release APK
         script: |
+          set +e
           set -o pipefail
-          ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee build_full.log
+
+          echo "=================================================="
+          echo " ALVISIA R5.4 — FULL NATIVE DIAGNOSTIC BUILD"
+          echo "=================================================="
+
+          rm -f build_full.log
+
+          ./gradlew assembleRelease --no-daemon --stacktrace --info 2>&1 | tee build_full.log
           STATUS=${PIPESTATUS[0]}
 
           echo ""
-          echo "========== ACTUAL BUILD ERROR =========="
-          grep -n -B 25 -A 10 -E "Configuring incomplete|CMake Error|CMake Warning|error:|FAILED|What went wrong|Caused by:" build_full.log | tail -180 || true
+          echo "=================================================="
+          echo " [1] GRADLE FAILURE"
+          echo "=================================================="
+          grep -n -B 30 -A 50 \
+            -E "Execution failed for task|What went wrong|Caused by:|ProcessException|ExecException" \
+            build_full.log | tail -400 || true
 
           echo ""
-          echo "========== CMAKE ERROR LOG =========="
-          find app/.cxx -type f \( -name "CMakeError.log" -o -name "CMakeOutput.log" \) -print -exec sh -c 'echo "----- $1 -----"; tail -120 "$1"' _ {} \; 2>/dev/null || true
+          echo "=================================================="
+          echo " [2] ALL NATIVE ERRORS"
+          echo "=================================================="
+          grep -niE \
+            "CMake Error|CMake Warning|FAILED:|fatal error:|error:|undefined reference|cannot find|No such file|not found|ld.lld|clang.*error|ninja: error|subcommand failed|duplicate symbol|multiple definition|unresolved" \
+            build_full.log | tail -500 || true
 
           echo ""
-          echo "========== NATIVE BUILD ERRORS =========="
-          grep -Rni -E "FAILED:|error:|undefined reference|cannot find|No such file|fatal error|ld.lld|clang.*error" app/.cxx 2>/dev/null | tail -200 || true
+          echo "=================================================="
+          echo " [3] CMAKE FILES"
+          echo "=================================================="
+          find app/.cxx -type f \
+            \( \
+              -name "CMakeError.log" \
+              -o -name "CMakeOutput.log" \
+              -o -name "CMakeCache.txt" \
+              -o -name "compile_commands.json" \
+              -o -name "build.ninja" \
+            \) \
+            -print 2>/dev/null || true
 
           echo ""
-          echo "========== GRADLE FAILURE =========="
-          grep -n -B 10 -A 30 -E "Execution failed for task|What went wrong|Caused by:" build_full.log | tail -200 || true
+          echo "=================================================="
+          echo " [4] CMAKE ERROR LOG"
+          echo "=================================================="
+          find app/.cxx -type f -name "CMakeError.log" \
+            -print \
+            -exec sh -c 'echo "===== $1 ====="; cat "$1"' _ {} \; \
+            2>/dev/null || true
 
           echo ""
-          echo "========== APK OUTPUT =========="
-          find app/build/outputs -name "*.apk" -type f -print 2>/dev/null || true
+          echo "=================================================="
+          echo " [5] CMAKE OUTPUT LOG"
+          echo "=================================================="
+          find app/.cxx -type f -name "CMakeOutput.log" \
+            -print \
+            -exec sh -c 'echo "===== $1 ====="; tail -500 "$1"' _ {} \; \
+            2>/dev/null || true
 
-          exit $STATUS
+          echo ""
+          echo "=================================================="
+          echo " [6] CMAKE CACHE"
+          echo "=================================================="
+          find app/.cxx -type f -name "CMakeCache.txt" \
+            -print \
+            -exec sh -c '
+              echo "===== $1 ====="
+              grep -E "CMAKE_(C|CXX)_COMPILER|CMAKE_GENERATOR|CMAKE_BUILD_TYPE|ANDROID_|NDK|CMAKE_MAKE_PROGRAM|MBEDTLS|THREADS" "$1" || true
+            ' _ {} \; \
+            2>/dev/null || true
+
+          echo ""
+          echo "=================================================="
+          echo " [7] COMPILE COMMANDS"
+          echo "=================================================="
+          find app/.cxx -type f -name "compile_commands.json" \
+            -print \
+            -exec sh -c 'echo "===== $1 ====="; cat "$1"' _ {} \; \
+            2>/dev/null | head -1200 || true
+
+          echo ""
+          echo "=================================================="
+          echo " [8] NINJA FAILURE DETAILS"
+          echo "=================================================="
+          find app/.cxx -type f -name "build.ninja" \
+            -print \
+            -exec sh -c '
+              echo "===== $1 ====="
+              grep -nE "rasp_guard|mbedcrypto|clang|ld.lld|FAILED" "$1" | head -500 || true
+            ' _ {} \; \
+            2>/dev/null || true
+
+          echo ""
+          echo "=================================================="
+          echo " [9] CMAKE SOURCE"
+          echo "=================================================="
+          sed -n '1,320p' app/src/main/cpp/CMakeLists.txt 2>/dev/null || true
+
+          echo ""
+          echo "=================================================="
+          echo " [10] JNI / MBEDTLS SYMBOLS"
+          echo "=================================================="
+          grep -nE \
+            "JNIEXPORT|Java_com_alvsia|nativeSealDecrypt|nativeSealSeed|mbedtls|target_link_libraries|add_library" \
+            app/src/main/cpp/rasp_guard.cpp \
+            app/src/main/cpp/CMakeLists.txt \
+            2>/dev/null || true
+
+          echo ""
+          echo "=================================================="
+          echo " [11] NATIVE SOURCE TREE"
+          echo "=================================================="
+          find app/src/main/cpp -maxdepth 5 -type f | sort 2>/dev/null | head -600 || true
+
+          echo ""
+          echo "=================================================="
+          echo " [12] NATIVE OUTPUT"
+          echo "=================================================="
+          find app/build -type f \
+            \( -name "*.so" -o -name "*.a" -o -name "*.o" \) \
+            -print 2>/dev/null | head -500 || true
+
+          echo ""
+          echo "=================================================="
+          echo " [13] APK OUTPUT"
+          echo "=================================================="
+          find app/build/outputs -type f -name "*.apk" \
+            -print 2>/dev/null || true
+
+          echo ""
+          echo "=================================================="
+          echo " [14] TOOLCHAIN"
+          echo "=================================================="
+          /usr/local/share/android-sdk/cmake/3.22.1/bin/cmake --version || true
+          /usr/local/share/android-sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/darwin-arm64/bin/clang++ --version || true
+
+          echo ""
+          echo "=================================================="
+          echo " FINAL BUILD STATUS = $STATUS"
+          echo "=================================================="
+
+          exit "$STATUS"
 
       - name: Sign APK if keystore present
         script: |
           set -e
+
           UNSIGNED=$(find app/build/outputs/apk -name "*.apk" -type f | head -1)
+
           if [ -z "$UNSIGNED" ]; then
             echo "No APK found — build step failed"
             exit 1
           fi
+
           echo "Found: $UNSIGNED"
 
-          # Prefer Codemagic env keystore; fallback to repo keystore
           if [ -n "${CM_KEYSTORE:-}" ]; then
             echo "$CM_KEYSTORE" | base64 -d > /tmp/alvsia.keystore
-            KS=/tmp/alvsia.keystore
+            KS="/tmp/alvsia.keystore"
             KSPASS="${CM_KEYSTORE_PASSWORD}"
             ALIAS="${CM_KEY_ALIAS:-alvsia}"
             KEYPASS="${CM_KEY_PASSWORD:-$KSPASS}"
+
           elif [ -f alvsia-release.keystore ]; then
-            KS=alvsia-release.keystore
-            # Password: set CM_KEYSTORE_PASSWORD in Codemagic UI (do not hardcode)
+            KS="alvsia-release.keystore"
             KSPASS="${CM_KEYSTORE_PASSWORD:-}"
             ALIAS="${CM_KEY_ALIAS:-alvsia}"
             KEYPASS="${CM_KEY_PASSWORD:-$KSPASS}"
+
           else
             echo "No keystore — leaving unsigned APK"
             cp "$UNSIGNED" ALVSIA_PRO_5.5.0_unsigned.apk
@@ -107,14 +222,15 @@ workflows:
             exit 0
           fi
 
-          # Align + sign
-          BUILD_TOOLS=$(ls -d $ANDROID_SDK_ROOT/build-tools/* 2>/dev/null | sort -V | tail -1)
+          BUILD_TOOLS=$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* 2>/dev/null | sort -V | tail -1)
           ZIPALIGN="$BUILD_TOOLS/zipalign"
           APKSIGNER="$BUILD_TOOLS/apksigner"
-          ALIGNED=/tmp/alvsia-aligned.apk
-          SIGNED=ALVSIA_PRO_5.5.0_signed.apk
+
+          ALIGNED="/tmp/alvsia-aligned.apk"
+          SIGNED="ALVSIA_PRO_5.5.0_signed.apk"
 
           "$ZIPALIGN" -f 4 "$UNSIGNED" "$ALIGNED"
+
           "$APKSIGNER" sign \
             --ks "$KS" \
             --ks-key-alias "$ALIAS" \
@@ -122,7 +238,9 @@ workflows:
             --key-pass "pass:$KEYPASS" \
             --out "$SIGNED" \
             "$ALIGNED"
+
           "$APKSIGNER" verify "$SIGNED"
+
           echo "Signed OK: $SIGNED"
           ls -lh "$SIGNED"
 
