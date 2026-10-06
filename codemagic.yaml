@@ -59,8 +59,12 @@ workflows:
           find app/.cxx -type f \( -name "CMakeError.log" -o -name "CMakeOutput.log" \) -print -exec sh -c 'echo "----- $1 -----"; tail -120 "$1"' _ {} \; 2>/dev/null || true
 
           echo ""
-          echo "========== CMAKE CONFIG ERRORS =========="
-          grep -Rni -E "CMake Error|CMake Warning|error:|FAILED" app/.cxx 2>/dev/null | tail -120 || true
+          echo "========== NATIVE BUILD ERRORS =========="
+          grep -Rni -E "FAILED:|error:|undefined reference|cannot find|No such file|fatal error|ld.lld|clang.*error" app/.cxx 2>/dev/null | tail -200 || true
+
+          echo ""
+          echo "========== GRADLE FAILURE =========="
+          grep -n -B 10 -A 30 -E "Execution failed for task|What went wrong|Caused by:" build_full.log | tail -200 || true
 
           echo ""
           echo "========== APK OUTPUT =========="
