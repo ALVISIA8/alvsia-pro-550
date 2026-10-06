@@ -6,6 +6,8 @@ workflows:
 
     environment:
       java: 17
+      xcode: 26.4
+      ndk: 27.3.13750724
       vars:
         PACKAGE_NAME: "com.alvsia.pro"
 
@@ -176,9 +178,17 @@ workflows:
           echo "=================================================="
           echo "ANDROID_NDK_HOME=${ANDROID_NDK_HOME:-}"
           echo "ANDROID_NDK_ROOT=${ANDROID_NDK_ROOT:-}"
+          echo "===== NATIVE TOOLCHAIN PRECHECK ====="
+          echo "NDK candidates:"
+          find "$ANDROID_SDK_ROOT/ndk" -maxdepth 1 -mindepth 1 -type d -print 2>/dev/null || true
+          echo "Selected NDK:"
+          echo "${ANDROID_NDK_HOME:-$ANDROID_SDK_ROOT/ndk/27.3.13750724}"
+          cmake --version || true
+          ninja --version || true
+          test -x "${ANDROID_NDK_HOME:-$ANDROID_SDK_ROOT/ndk/27.3.13750724}/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang++" || true
           echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-}"
           cmake --version || true
-          find "${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-$ANDROID_SDK_ROOT/ndk/latest}}"             -type f -path "*/toolchains/llvm/prebuilt/*/bin/clang++"             -print -quit 2>/dev/null | while read C; do
+          find "${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-$ANDROID_SDK_ROOT/ndk/27.3.13750724}}"             -type f -path "*/toolchains/llvm/prebuilt/*/bin/clang++"             -print -quit 2>/dev/null | while read C; do
               echo "CLANG++=$C"
               "$C" --version || true
             done
@@ -197,7 +207,9 @@ workflows:
             echo "=== GRADLE CAUSE ==="
             grep -n -B 50 -A 100 -E "Execution failed for task|What went wrong|Caused by:|ProcessException|ExecException" build_full.log | tail -1000 || true
             echo ""
-            echo "=== CMAKE ERROR LOGS ==="
+            echo "=== FIRST NATIVE ERRORS ==="
+          grep -nEi "CMake Error|CMake Warning|fatal error:|error:|FAILED|Could NOT find|undefined reference|No such file" build_full.log | head -120 || true
+          echo "=== CMAKE ERROR LOGS ==="
             find app/.cxx -type f -name "CMakeError.log" -exec sh -c 'echo "===== $1 ====="; cat "$1"' _ {} \; 2>/dev/null || true
             echo ""
             echo "=== CMAKE OUTPUT LOGS ==="
