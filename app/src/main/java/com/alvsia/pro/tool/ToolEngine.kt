@@ -37,7 +37,7 @@ class ToolEngine(private val context: Context) {
             val core = Python.getInstance().getModule("alvsia_core")
             val m = JSONObject(core.callAttr("_alvsia_core_measurement_json").toString())
             val grant = panel.requestOperationGrant(
-                buildId = "ALVSIA-20261006-R5",
+                buildId = "ALVSIA-20261006-R5.3",
                 manifestHash = m.getString("manifest_hash"),
                 toolHash = m.getString("tool_hash")
             ) ?: return false
@@ -69,28 +69,14 @@ class ToolEngine(private val context: Context) {
 
     fun hasRamEngine(): Boolean = ramEngine != null && ramEngine!!.isNotEmpty()
 
+    /**
+     * R5.3: plaintext JAR extraction from APK assets is disabled.
+     *
+     * The sealed runtime is the only supported execution path.
+     * No JAR is copied from assets/unluac into app storage.
+     */
     fun installJarsFromAssets() {
-        try {
-            // Level-A: sealed assets/nx/*.bin ? no plaintext jar names in APK
-            val n = 0
-            if (n > 0) return
-            // legacy fallback (old builds only)
-            val am = context.assets
-            val list = try {
-                am.list("unluac")
-            } catch (_: Exception) {
-                null
-            } ?: return
-            for (name in list) {
-                if (!name.endsWith(".jar")) continue
-                val dest = File(jarsDir, name)
-                if (dest.exists() && dest.length() > 0) continue
-                am.open("unluac/$name").use { ins ->
-                    FileOutputStream(dest).use { outs -> ins.copyTo(outs) }
-                }
-            }
-        } catch (_: Exception) {
-        }
+        return
     }
 
     private fun copyUri(uri: Uri, dest: File): Boolean {

@@ -9,7 +9,7 @@ $session=preg_replace('/[^a-f0-9]/','',strtolower((string)($body['session_token'
 $cert=strtolower(trim((string)($body['cert_sha256']??''))); $manifest=strtolower(trim((string)($body['manifest_hash']??''))); $tool=strtolower(trim((string)($body['tool_hash']??'')));
 $operation=trim((string)($body['operation_id']??''));
 if($license===''||strlen($hwid)<16||strlen($session)!==64) grant_fail('Missing authorization fields',400);
-if($build!=='ALVSIA-20261006-R5'||$cert!=='99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c') grant_fail('Unsupported client build');
+if($build!=='ALVSIA-20261006-R5.3'||$cert!=='99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c') grant_fail('Unsupported client build');
 if(!preg_match('/^[a-f0-9]{64}$/',$manifest)||!preg_match('/^[a-f0-9]{64}$/',$tool)) grant_fail('Invalid measurement',400);
 if($operation!=='tool.session') grant_fail('Operation denied');
 if(function_exists('alvsia_hwid_banned')&&alvsia_hwid_banned($hwid)) grant_fail('Device banned');
