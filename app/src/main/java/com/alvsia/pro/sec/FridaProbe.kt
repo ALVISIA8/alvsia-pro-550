@@ -8,14 +8,18 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * ALVSIA PRO 5.5.0 — FridaProbe HARDENED
- * Detects: Frida server/gadget, Xposed/LSPosed, Substrate, Riru/Zygisk,
- *          linjector, Objection, hluda, ShadowHook, ByteHook, bhook, dobby,
- *          inline hooks via /proc/self/maps and port scan.
+ * ALVISIA PRO 5.5.0 — FridaProbe R5.4 FIX
+ *
+ * R5.4 CHANGE: /sbin/.magisk dan /data/adb/magisk DIHAPUS dari PATHS.
+ * Kedua path ini adalah Magisk root markers, bukan Frida indicators.
+ * Device Magisk tanpa Frida aktif seharusnya TIDAK menghasilkan hard signal.
+ * Root detection sudah di-handle oleh EnvProbe -> soft signals -> telemetry only.
+ * Duplicate-counting root markers sebagai hard signal menyebabkan
+ * Guard.degraded=true pada device user yang legitimate.
  */
 object FridaProbe {
 
-    // ── Filesystem paths ──────────────────────────────────────────────
+    // ── Filesystem paths — FRIDA ONLY, no Magisk markers ─────────────
     private val PATHS = listOf(
         "/data/local/tmp/frida-server",
         "/data/local/tmp/re.frida.server",
@@ -30,8 +34,8 @@ object FridaProbe {
         "/data/local/tmp/objection",
         "/system/bin/frida-server",
         "/system/xbin/frida-server",
-        "/sbin/.magisk",
-        "/data/adb/magisk",
+        // NOTE: /sbin/.magisk dan /data/adb/magisk DIHAPUS — root markers,
+        // bukan Frida. Handled by EnvProbe as soft signals.
         "/proc/net/unix",     // checked via content not existence
     )
 
@@ -74,16 +78,13 @@ object FridaProbe {
     private val PROBE_PORTS = intArrayOf(27042, 27043, 27044, 27045, 23946, 27047, 1234, 4444)
 
     // ── Background port-scan cache ────────────────────────────────────
-    // Port scan (8 ports x 50ms = up to 400ms) must NEVER run on the main thread.
-    // We refresh it on a single-thread executor; signals() merges the cached result.
     private val _portScanExecutor = Executors.newSingleThreadExecutor { r ->
         Thread(r, "fp-portscan").also { it.isDaemon = true }
     }
     @Volatile private var _cachedPortSignals: List<String> = emptyList()
     private val _lastPortScan = AtomicLong(0L)
-    private const val PORT_SCAN_TTL_MS = 30_000L  // refresh at most every 30 s
+    private const val PORT_SCAN_TTL_MS = 30_000L
 
-    /** Trigger an async port scan refresh — call from RaspEngine tick thread. */
     fun refreshPortScanAsync() {
         val now = System.currentTimeMillis()
         if (now - _lastPortScan.get() < PORT_SCAN_TTL_MS) return
@@ -97,11 +98,10 @@ object FridaProbe {
         }
     }
 
-    // ── Main entry — returns all detected signal strings ──────────────
     fun signals(): List<String> {
         val out = mutableListOf<String>()
 
-        // 1. Path probes (timing side-channel resistant via try)
+        // 1. Path probes
         PATHS.filter { it != "/proc/net/unix" }.forEach { p ->
             try { if (File(p).exists()) out += "path:${File(p).name}" } catch (_: Exception) {}
         }
@@ -112,17 +112,17 @@ object FridaProbe {
             MAP_MARKERS.forEach { m -> if (m in maps) out += "maps:$m" }
         } catch (_: Exception) {}
 
-        // 3. Port scan — use cached result (refreshed async by RaspEngine tick)
+        // 3. Port scan — cached
         out += _cachedPortSignals
 
-        // 4. /proc/net/unix domain sockets (frida uses abstract sockets)
+        // 4. /proc/net/unix domain sockets
         try {
             val unix = File("/proc/net/unix").readText().lowercase()
             val fridaAbstract = listOf("frida", "gdbus_frida", "re.frida")
             fridaAbstract.forEach { m -> if (m in unix) out += "unix_sock:$m" }
         } catch (_: Exception) {}
 
-        // 5. Gadget loaded into current process via dlopen signature
+        // 5. Gadget mapped into process
         try {
             val mapsRaw = File("/proc/self/maps").readText()
             if (mapsRaw.contains("libgadget", ignoreCase = true) ||
@@ -130,7 +130,7 @@ object FridaProbe {
                 out += "gadget_mapped"
         } catch (_: Exception) {}
 
-        // 6. TracerPid check (debugger + Frida spawn attach)
+        // 6. TracerPid
         try {
             val status = File("/proc/self/status").readText()
             val tpid = status.lineSequence()
@@ -139,7 +139,7 @@ object FridaProbe {
             if (tpid > 0) out += "tracer_pid:$tpid"
         } catch (_: Exception) {}
 
-        // 7. /proc/self/fd scan for frida pipe fds
+        // 7. /proc/self/fd frida pipes
         try {
             File("/proc/self/fd").listFiles()?.forEach { fd ->
                 val link = fd.canonicalPath.lowercase()
@@ -148,7 +148,7 @@ object FridaProbe {
             }
         } catch (_: Exception) {}
 
-        // 8. Check loaded libraries via /proc/self/smaps for suspicious sizes
+        // 8. smaps
         try {
             val smaps = File("/proc/self/smaps").readText().lowercase()
             if ("frida" in smaps || "gadget" in smaps) out += "smaps_hit"
