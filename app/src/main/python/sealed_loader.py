@@ -1,10 +1,10 @@
-# ALVISIA PRO sealed runtime loader R5.2
+# ALVISIA PRO sealed runtime loader R5.4
 # Protected modules are AES-256-GCM sealed and never shipped as plaintext .py.
 from __future__ import annotations
 import os, sys, hashlib, importlib.abc, importlib.util
 from pathlib import Path
 
-_BUILD_ID = 'ALVSIA-20261006-R5.3'
+_BUILD_ID = 'ALVISIA-20261006-R5.3'
 _CERT_SHA256 = '99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c'
 _MAP = {'alvsia_core': 'alvsia_core.alv', 'alvsia_ultimate': 'alvsia_ultimate.alv', 'alvsia_features': 'alvsia_features.alv', 'lua_output_validator': 'lua_output_validator.alv', 'lua_string_recover': 'lua_string_recover.alv', 'lua_engine.engine': 'lua_engine_engine.alv', 'lua_engine.decompiler53': 'lua_engine_decompiler53.alv', 'lua_engine.bgmi': 'lua_engine_bgmi.alv', 'lua_engine.luajit_decompiler': 'lua_engine_luajit_decompiler.alv', 'lua_engine.container': 'lua_engine_container.alv', 'lua_engine.detector': 'lua_engine_detector.alv', 'lua_engine.multi_format': 'lua_engine_multi_format.alv', 'lua_engine.vm_deobfuscator': 'lua_engine_vm_deobfuscator.alv'}
 _MAGIC = b"ALVSEAL2"
@@ -65,6 +65,15 @@ class _Finder(importlib.abc.MetaPathFinder):
 
 _installed = False
 def install():
+    """
+    R5.4: install() is now called from run_tool() AFTER the operation grant
+    is confirmed present in the environment, never at module-import time.
+    This prevents the RuntimeError that fires when the bridge module is first
+    loaded during the measurement phase (ALVSIA_MEASUREMENT_ONLY=1) before
+    the grant exists.
+
+    install() is idempotent — multiple calls are safe.
+    """
     global _installed
     if _installed: return
     if not os.environ.get("ALVSIA_OPERATION_GRANT"):

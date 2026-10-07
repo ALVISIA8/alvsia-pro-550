@@ -22,7 +22,16 @@ object Guard {
 
     /**
      * Full backward-compatible API used by AlvisiaApp, MainActivity, RaspEngine.
-     * hardEnforcement=false → return false on hostile but do NOT crash/kill.
+     *
+     * R5.4 FIX: Guard.degraded is only set when hardEnforcement=true (i.e. the
+     * caller is treating this as an instrumentation-class hard signal).
+     * When hardEnforcement=false the caller has already decided that hostile()
+     * results are soft / telemetry-only — setting degraded here would block tools
+     * on any rooted or Magisk-hiding device even though the R5.4 intent is to
+     * allow legitimate users on rooted hardware through the session gate.
+     *
+     * Hard instrumentation signals (FridaProbe live hits, debugger, tracerPid)
+     * continue to set degraded=true via RaspEngine.tick() independently.
      */
     fun checkAndReport(
         ctx: Context,
@@ -32,8 +41,13 @@ object Guard {
         val hostile = hostile(ctx)
         if (hostile) {
             ThreatReport.emit(ctx, "GUARD_HOSTILE", _lastReason, license)
-            degraded = true
-            if (hardEnforcement) return false
+            // Only elevate degraded state when the caller treats this as hard.
+            // Soft callers (hardEnforcement=false) report telemetry but must not
+            // pre-poison the SessionGate for what may be a clean user device.
+            if (hardEnforcement) {
+                degraded = true
+                return false
+            }
         }
         return !hostile
     }

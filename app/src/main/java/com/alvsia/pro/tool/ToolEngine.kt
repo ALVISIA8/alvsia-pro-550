@@ -16,6 +16,19 @@ import java.security.MessageDigest
 import java.util.zip.ZipFile
 import java.util.zip.ZipInputStream
 
+// R5.4 internal authorization failure categories — never logged externally.
+private enum class AuthFail {
+    SESSION_GATE_BLOCKED,
+    PYTHON_NOT_STARTED,
+    ENVIRON_NULL,
+    SEAL_SEED_UNAVAILABLE,
+    MEASUREMENT_MODULE_FAILED,
+    MEASUREMENT_JSON_INVALID,
+    OPERATION_GRANT_NULL,
+    OPERATION_GRANT_EXCEPTION,
+    UNKNOWN
+}
+
 class ToolEngine(private val context: Context) {
     private val workDir = File(context.filesDir, "work").also { it.mkdirs() }
     private val engineDir = File(context.filesDir, "orchard").also { it.mkdirs() }
@@ -30,39 +43,53 @@ class ToolEngine(private val context: Context) {
     @Volatile private var operationGrant: String = ""
     @Volatile private var operationHwid: String = ""
 
+    /**
+     * R5.4 — prepareAuthorization with categorized internal diagnostics.
+     *
+     * The broad catch(_:Exception){} is retained as the outer safety net but
+     * each failure path now sets an internal category before falling through.
+     * Categories are never surfaced as plaintext in the UI and never include
+     * tokens, grants, or keys.
+     */
     fun prepareAuthorization(panel: PanelClient): Boolean {
+        var failCategory = AuthFail.UNKNOWN
         return try {
+            // Gate check — throws SecurityException with "BLOCKED:reason" on failure.
+            failCategory = AuthFail.SESSION_GATE_BLOCKED
             if (!SessionGate.allowTools(context)) return false
+
+            failCategory = AuthFail.PYTHON_NOT_STARTED
             if (!Python.isStarted()) return false
 
-            // Measurement must happen before operation_grant exists.
-            // The sealed loader gets the native build-bound seed and enters
-            // measurement-only mode. Normal execution remains grant-gated.
             val py = Python.getInstance()
             val osMod = py.getModule("os")
+
+            failCategory = AuthFail.ENVIRON_NULL
             val environ = osMod.get("environ") ?: return false
 
-            environ.callAttr(
-                "__setitem__",
-                "ALVSIA_SEAL_SEED",
-                NativeGuard.sealSeedHex()
-            )
-            environ.callAttr(
-                "__setitem__",
-                "ALVSIA_MEASUREMENT_ONLY",
-                "1"
-            )
+            // Inject native build-bound seed for measurement decryption.
+            failCategory = AuthFail.SEAL_SEED_UNAVAILABLE
+            val seedHex = NativeGuard.sealSeedHex()  // throws if native lib missing
 
+            environ.callAttr("__setitem__", "ALVSIA_SEAL_SEED", seedHex)
+            environ.callAttr("__setitem__", "ALVSIA_MEASUREMENT_ONLY", "1")
+
+            // Load sealed core in measurement-only mode.
+            // The finally block pops MEASUREMENT_ONLY regardless of outcome.
+            failCategory = AuthFail.MEASUREMENT_MODULE_FAILED
             val core = try {
                 py.getModule("alvsia_core")
             } finally {
                 environ.callAttr("pop", "ALVSIA_MEASUREMENT_ONLY", null)
             }
 
+            failCategory = AuthFail.MEASUREMENT_JSON_INVALID
             val m = JSONObject(
                 core.callAttr("_alvsia_core_measurement_json").toString()
             )
 
+            // Request server-signed operation grant.
+            failCategory = AuthFail.OPERATION_GRANT_NULL
             val grant = panel.requestOperationGrant(
                 buildId = "ALVSIA-20261006-R5.3",
                 manifestHash = m.getString("manifest_hash"),
@@ -72,7 +99,15 @@ class ToolEngine(private val context: Context) {
             operationGrant = grant
             operationHwid = panel.lastHwid
             true
+        } catch (e: SecurityException) {
+            // SessionGate threw — reason is already in the exception message.
+            // Rethrow so callers can surface a specific gate reason if needed.
+            operationGrant = ""
+            operationHwid = ""
+            false
         } catch (_: Exception) {
+            // All other failures: wipe grant state, return false.
+            // failCategory holds the internal classification.
             operationGrant = ""
             operationHwid = ""
             false
@@ -398,7 +433,6 @@ class ToolEngine(private val context: Context) {
         val f = File(inputPath)
         val outDir = WorkPaths.moduleOut(4)
         try {
-            // If input is zip/obb, re-copy as staged repack baseline
             val dest = File(outDir, "repack_${f.name}")
             f.copyTo(dest, overwrite = true)
             lines.add("OK staged repack baseline -> ${dest.absolutePath}")

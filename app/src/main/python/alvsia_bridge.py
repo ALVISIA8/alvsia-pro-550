@@ -1,7 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-ALVSIA PRO 5.5.0 — bridge for 17-module catalog.
+ALVISIA PRO 5.5.0 — bridge for 17-module catalog.
 Modules 1-9: original. Modules 10-17: new in v5.5.0.
+
+R5.4 FIX: sealed_loader.install() is deferred from module-import time
+into run_tool() so it never fires during the prepareAuthorization()
+measurement phase (ALVSIA_MEASUREMENT_ONLY=1) or before the operation
+grant is available. This prevents a RuntimeError that would kill the
+bridge before the session is ready. install() is idempotent.
 """
 from __future__ import annotations
 import os
@@ -10,9 +16,11 @@ import shutil
 import traceback
 from pathlib import Path
 
-# Install sealed protected execution layer before importing protected modules.
 import sealed_loader
-sealed_loader.install()
+# NOTE: do NOT call sealed_loader.install() here at module-import level.
+# install() requires ALVSIA_OPERATION_GRANT which is not set during the
+# measurement phase called by prepareAuthorization(). install() is called
+# inside run_tool() after the grant has been confirmed present.
 
 
 def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
@@ -26,6 +34,11 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
             grant = json.loads(grant_raw)
         except Exception:
             return "X AUTH: invalid operation grant"
+
+        # Install sealed loader now that the grant is confirmed present.
+        # install() is idempotent — safe to call on every run_tool invocation.
+        sealed_loader.install()
+
         import alvsia_core as core
         if not core._alvsia_install_operation_proof(grant):
             return "X AUTH: operation grant rejected"
