@@ -6,13 +6,39 @@ import java.io.FileReader
 
 object Guard {
 
-    // rsprotect = Reark protector native lib — intentionally whitelisted
+    /**
+     * R5.4 FINAL FIX:
+     * MAP_MARKERS hanya berisi ACTIVE HOOK INJECTORS — library yang harus
+     * di-inject ke dalam process untuk berfungsi (Frida agent, Xposed, Substrate,
+     * Dobby, ShadowHook, dll).
+     *
+     * DIHAPUS dari MAP_MARKERS:
+     *   - magisk, shamiko, riru, zygisk  → root framework markers
+     *   - lspatch, lsposed, edxposed     → package managers (tidak inject ke maps)
+     *
+     * Root detection sudah ada di EnvProbe → soft signals → telemetry only.
+     * Double-counting root sebagai hard signal menyebabkan Guard.degraded=true
+     * pada semua device Magisk meskipun tidak ada instrumentation aktif.
+     */
     private val MAP_MARKERS = listOf(
-        "frida", "xposed", "substrate", "dobby",
-        "lspatch", "lsposed", "zygisk", "edxposed",
-        "riru", "magisk", "shamiko",
-        "hookzz", "whale", "sandhook",
-        "epic", "dexposed", "andfix"
+        // Frida
+        "frida-agent", "frida_agent", "frida-gadget", "frida_gadget",
+        "libfrida", "libgadget",
+        // Xposed/Substrate aktif (hanya kalau benar-benar di-inject)
+        "com.saurik.substrate", "libsubstrate", "substrate32", "substrate64",
+        "libsandhook", "libepic", "epic-arm", "epic-arm64",
+        // Hook libraries aktif
+        "libhook", "libdobby", "dobby",
+        "libandroid_inline_hook",
+        "shadowhook", "shadow_hook",
+        "bhook", "bytehook",
+        "linjector",
+        "agent-arm", "agent-arm64",
+        "turbo_trace", "whale_arm",
+        "com.taichi.hookprovider"
+        // NOTE: magisk, shamiko, zygisk, riru, lspatch, lsposed, edxposed DIHAPUS
+        // karena ini root framework markers, bukan active hook injectors.
+        // Root sudah di-handle oleh EnvProbe sebagai soft/telemetry signal.
     )
 
     @Volatile var degraded: Boolean = false
@@ -21,17 +47,8 @@ object Guard {
     val lastReason: String get() = _lastReason
 
     /**
-     * Full backward-compatible API used by AlvisiaApp, MainActivity, RaspEngine.
-     *
-     * R5.4 FIX: Guard.degraded is only set when hardEnforcement=true (i.e. the
-     * caller is treating this as an instrumentation-class hard signal).
-     * When hardEnforcement=false the caller has already decided that hostile()
-     * results are soft / telemetry-only — setting degraded here would block tools
-     * on any rooted or Magisk-hiding device even though the R5.4 intent is to
-     * allow legitimate users on rooted hardware through the session gate.
-     *
-     * Hard instrumentation signals (FridaProbe live hits, debugger, tracerPid)
-     * continue to set degraded=true via RaspEngine.tick() independently.
+     * R5.4: degraded hanya di-set saat hardEnforcement=true (genuine hard call).
+     * Soft callers (hardEnforcement=false) emit telemetry tapi tidak poison gate.
      */
     fun checkAndReport(
         ctx: Context,
@@ -41,9 +58,6 @@ object Guard {
         val hostile = hostile(ctx)
         if (hostile) {
             ThreatReport.emit(ctx, "GUARD_HOSTILE", _lastReason, license)
-            // Only elevate degraded state when the caller treats this as hard.
-            // Soft callers (hardEnforcement=false) report telemetry but must not
-            // pre-poison the SessionGate for what may be a clean user device.
             if (hardEnforcement) {
                 degraded = true
                 return false
