@@ -189,9 +189,6 @@ def _alvsia_require_operation(allowed_operations):
         return True
     p = _ALVSIA_CORE_ACTIVE_PROOF
     if not isinstance(p, dict):
-        # soft allow when no proof installed (local dev)
-        if _os.environ.get('ALVSIA_SOFT_AUTH') == '1':
-            return True
         raise RuntimeError('Operation authorization failed')
     allowed = {str(x) for x in allowed_operations}
     if str(p.get('operation_id','')) not in allowed:

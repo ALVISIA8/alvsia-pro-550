@@ -162,21 +162,37 @@ class ToolEngine(private val context: Context) {
         try {
             if (Python.isStarted()) {
                 val py = Python.getInstance()
-                // Bind session into Python process only if gate passed
+
+                // Bind the verified native session into the Python process.
+                // Fail closed: Python must never run without a valid native session.
+                if (!SessionGate.sessionOk) {
+                    lines.add("X AUTH: native session expired before Python binding")
+                    return lines
+                }
+
                 try {
                     val osMod = py.getModule("os")
                     val environ = osMod.get("environ")
-                    if (environ != null) {
-                        if (SessionGate.sessionOk) {
-                            environ.callAttr("__setitem__", "ALVSIA_APK_SESSION", "1")
-                            environ.callAttr("__setitem__", "ALVSIA_SESSION_TOKEN", SessionGate.sessionToken)
-                        } else {
-                            environ.callAttr("pop", "ALVSIA_APK_SESSION", null)
-                            environ.callAttr("pop", "ALVSIA_SOFT_AUTH", null)
-                        }
+                        ?: throw SecurityException("Python os.environ unavailable")
+
+                    val token = SessionGate.sessionToken.trim()
+                    if (!token.matches(Regex("^[0-9A-Fa-f]{64}$"))) {
+                        throw SecurityException("native session token invalid")
                     }
-                } catch (_: Exception) {
+
+                    environ.callAttr("__setitem__", "ALVSIA_APK_SESSION", "1")
+                    environ.callAttr("__setitem__", "ALVSIA_SESSION_TOKEN", token)
+
+                    val bound = environ.callAttr("get", "ALVSIA_APK_SESSION")?.toString()
+                    if (bound != "1") {
+                        throw SecurityException("Python session binding failed")
+                    }
+                } catch (e: Exception) {
+                    lines.add("X AUTH: Python session binding failed")
+                    lines.add("  reason=${e.message ?: "unknown"}")
+                    return lines
                 }
+
                 val bridge = py.getModule("alvsia_bridge")
                 val log = bridge.callAttr(
                     "run_tool",
@@ -189,6 +205,7 @@ class ToolEngine(private val context: Context) {
                 ).toString()
                 lines.addAll(log.split("\n").filter { it.isNotBlank() })
                 mirrorMsvToOut(moduleId, lines)
+
                 // Never report a successful output when the Python engine explicitly
                 // returned a failed operation. This was causing the UI to show
                 // "OK OUT" even when decompilation had failed.

@@ -9,14 +9,14 @@ import shutil
 import traceback
 from pathlib import Path
 
-# SECURITY: do NOT hardcode ALVSIA_APK_SESSION / ALVSIA_SOFT_AUTH here.
+# SECURITY: do NOT hardcode ALVSIA_APK_SESSION here.
 # Kotlin sets ALVSIA_APK_SESSION=1 only AFTER successful OTP + SessionGate.sessionOk.
 
 def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
     lines = []
     try:
         # Hard gate
-        if os.environ.get("ALVSIA_APK_SESSION") != "1" and os.environ.get("ALVSIA_SOFT_AUTH") != "1":
+        if os.environ.get("ALVSIA_APK_SESSION") != "1":
             return "X AUTH: no valid APK session — complete license + OTP first"
         lines.append("ALVSIA PRO 5.5.0 PREMIUM · engine")
         lines.append("m=%s sub=%s" % (module_id, sub_id))

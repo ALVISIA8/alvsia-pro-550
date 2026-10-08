@@ -239,11 +239,11 @@ class MainActivity : ComponentActivity() {
                                     return@launch
                                 }
 
-                                val _tok = res.toolTicket.ifBlank { panel.sessionToken }
-                                if (_tok.isBlank()) {
+                                val _tok = panel.sessionToken.trim()
+                                if (!_tok.matches(Regex("^[0-9A-Fa-f]{64}$"))) {
                                     loading = false
                                     SessionGate.lock()
-                                    error = "OTP OK but no session token from server"
+                                    error = "OTP OK but invalid session token from server"
                                     screen = "login"
                                     return@launch
                                 }

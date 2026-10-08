@@ -12032,7 +12032,9 @@ def reset_license():
 # ==================== MASTER SECURITY CHECK ====================
 
 def run_security_check():
-    """PATCHED: bypass all checks, always returns True."""
+    """Fail-closed master gate for the APK session."""
+    if os.environ.get("ALVSIA_APK_SESSION") != "1":
+        return False
     return True
 
 # ======================================================================

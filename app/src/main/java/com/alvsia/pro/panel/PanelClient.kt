@@ -229,8 +229,24 @@ class PanelClient {
             if (raw.trimStart().startsWith("<")) return OtpResult(false, "Gateway blocked OTP")
             val j = JSONObject(raw)
             val ok = j.optString("status") == "ok"
-            toolTicket = j.optString("tool_ticket", "")
-            OtpResult(ok, j.optString("msg", if (ok) "OTP OK" else "Invalid OTP"), toolTicket)
+            if (!ok) {
+                toolTicket = ""
+                return OtpResult(false, j.optString("msg", "Invalid OTP"), "")
+            }
+
+            // OTP may rotate the authenticated session.  Keep the session
+            // token and tool ticket as two completely separate credentials.
+            val rotatedSession = j.optString("session_token", "").trim()
+            if (rotatedSession.isNotEmpty()) {
+                if (!rotatedSession.matches(Regex("^[0-9A-Fa-f]{64}$"))) {
+                    toolTicket = ""
+                    return OtpResult(false, "Invalid session token from server", "")
+                }
+                sessionToken = rotatedSession
+            }
+
+            toolTicket = j.optString("tool_ticket", "").trim()
+            OtpResult(true, j.optString("msg", "OTP OK"), toolTicket)
         } catch (e: Exception) {
             OtpResult(false, e.message ?: "otp verify error")
         }

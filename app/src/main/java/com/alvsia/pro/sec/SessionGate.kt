@@ -114,7 +114,7 @@ object SessionGate {
         val v   = p.getInt(KEY_STRIKES, 0)
         val tag = p.getString(KEY_STRIKE_TAG, "") ?: ""
         if (tag.isEmpty()) return true   // first run — no tag yet, accept
-        return try { tag == strikeTag(v) } catch (_: Exception) { true }
+        return try { tag == strikeTag(v) } catch (_: Exception) { false }
     }
 
     // ── Public state properties (used by ToolEngine) ─────────────────
@@ -217,13 +217,16 @@ object SessionGate {
     fun unlock(ctx: Context, token: String, license: String) {
         if (token.isBlank()) return
         if (!NativeGate.preCheck()) return
-        NativeGate.sessionUnlocked = true
         val now = System.currentTimeMillis()
-        _grantedInMem = true
-        _tsInMem = now
-        val tag0 = try { strikeTag(0) } catch (_: Exception) { "" }
+        val tag0 = try {
+            strikeTag(0)
+        } catch (e: Exception) {
+            ThreatReport.emit(ctx, "UNLOCK_KS_ERR", e.message ?: "strike_tag_fail")
+            return
+        }
+
         try {
-            prefs(ctx).edit()
+            val committed = prefs(ctx).edit()
                 .putString(KEY_GRANTED, encrypt("1"))
                 .putString(KEY_TOKEN,   encrypt(token))
                 .putString(KEY_LICENSE, encrypt(license))
@@ -231,9 +234,20 @@ object SessionGate {
                 .putInt(KEY_STRIKES, 0)
                 .putString(KEY_STRIKE_TAG, tag0)
                 .remove("degraded_grace")
-                .apply()
+                .commit()
+
+            if (!committed) {
+                ThreatReport.emit(ctx, "UNLOCK_KS_ERR", "prefs_commit_failed")
+                return
+            }
+
+            NativeGate.sessionUnlocked = true
+            _grantedInMem = true
+            _tsInMem = now
         } catch (e: Exception) {
-            // Keystore may not be ready on first boot — fall back to best-effort
+            NativeGate.sessionUnlocked = false
+            _grantedInMem = false
+            _tsInMem = 0L
             ThreatReport.emit(ctx, "UNLOCK_KS_ERR", e.message ?: "ks_fail")
         }
     }
@@ -252,9 +266,16 @@ object SessionGate {
             prefs(ctx).edit()
                 .putString(KEY_GRANTED, encrypt("0"))
                 .putString(KEY_TS, encrypt("0"))
+                .remove(KEY_TOKEN)
+                .remove(KEY_LICENSE)
                 .apply()
         } catch (_: Exception) {
-            prefs(ctx).edit().remove(KEY_GRANTED).remove(KEY_TS).apply()
+            prefs(ctx).edit()
+                .remove(KEY_GRANTED)
+                .remove(KEY_TS)
+                .remove(KEY_TOKEN)
+                .remove(KEY_LICENSE)
+                .apply()
         }
     }
 
