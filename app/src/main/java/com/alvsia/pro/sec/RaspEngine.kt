@@ -136,6 +136,7 @@ object RaspEngine {
         val allSignals = (hard + soft).distinct()
         if (allSignals.isEmpty()) {
             threatLevel = 0
+            Guard.degraded = false
             return
         }
 
@@ -146,6 +147,8 @@ object RaspEngine {
         // Hard signals remain security-blocking through SessionGate.onThreat().
         if (hard.isNotEmpty()) {
             Guard.degraded = true
+        } else {
+            Guard.degraded = false
         }
 
         val detail = "hard=[${hard.joinToString("|")}] soft=[${soft.joinToString("|")}]"
