@@ -268,8 +268,11 @@ class ToolEngine(private val context: Context) {
     }
 
     private fun needsInput(moduleId: Int, subId: String): Boolean {
-        if (subId.contains("session") || subId.contains("local") || subId.contains("report") || subId.contains("clear")) return false
-        return moduleId !in listOf(7, 13, 15) && !subId.contains("clear")
+        // Keep runtime input handling aligned with the submenu's declared contract.
+        // Only explicitly file-free actions (currently Clear Workspace) may run without input.
+        return SubMenus.forModule(moduleId)
+            .firstOrNull { it.id == subId }
+            ?.needsFile ?: true
     }
 
     private fun mirrorMsvToOut(moduleId: Int, lines: MutableList<String>) {

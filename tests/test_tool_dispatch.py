@@ -40,6 +40,18 @@ def test_catalog_contains_all_seventeen_modules():
     assert ids == list(range(1, 18)), f"Expected module IDs 1..17 in order, got {ids}"
 
 
+def test_input_requirement_matches_submenu_contract():
+    engine = ENGINE.read_text(encoding="utf-8")
+    menus = MENUS.read_text(encoding="utf-8")
+    assert "SubMenus.forModule(moduleId)" in engine
+    assert "?.needsFile ?: true" in engine
+    assert "moduleId !in listOf(7, 13, 15)" not in engine
+    assert 'subId.contains("report")' not in engine
+    assert 'SubTool("export_report"' in menus
+    assert 'SubTool("dec_auto"' in menus
+    assert 'SubTool("str_recover"' in menus
+
+
 def test_engine_surfaces_bridge_failures():
     engine = ENGINE.read_text(encoding="utf-8")
     bridge = BRIDGE.read_text(encoding="utf-8")
@@ -54,6 +66,7 @@ if __name__ == "__main__":
     tests = (
         test_menu_ids_are_unique_and_reachable,
         test_catalog_contains_all_seventeen_modules,
+        test_input_requirement_matches_submenu_contract,
         test_engine_surfaces_bridge_failures,
     )
     for test in tests:
