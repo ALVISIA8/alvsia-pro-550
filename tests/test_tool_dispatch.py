@@ -72,4 +72,4 @@ if __name__ == "__main__":
     for test in tests:
         test()
         print("PASS", test.__name__)
-    print("TOOL DISPATCH TEST: PASS (3/3)")
+    print(f"TOOL DISPATCH TEST: PASS ({len(tests)}/{len(tests)})")
