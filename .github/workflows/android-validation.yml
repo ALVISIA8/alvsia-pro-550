@@ -53,6 +53,9 @@ jobs:
       - name: Run Lua engine regression tests
         run: python tests/test_lua_engine.py
 
+      - name: Validate all tool menu routes
+        run: python -m pytest -q tests/test_tool_dispatch.py
+
       - name: Compile and test
         run: ./gradlew testDebugUnitTest assembleRelease --stacktrace --no-daemon
 
