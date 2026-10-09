@@ -42,9 +42,12 @@ def test_catalog_contains_all_seventeen_modules():
 
 def test_engine_surfaces_bridge_failures():
     engine = ENGINE.read_text(encoding="utf-8")
+    bridge = BRIDGE.read_text(encoding="utf-8")
     assert "X OUT -> operation failed" in engine
     assert "'ok': False" in engine
     assert 'startsWith("X ")' in engine
+    assert "target filename(s) are not present in this PAK index" in bridge
+    assert "Lua filenames sample ->" in bridge
 
 
 if __name__ == "__main__":
