@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import tempfile
 from .detector import detect_lua, LuaInfo
-from .container import unwrap_lua_container, is_zlib_header, is_zlib_header
+from .container import unwrap_lua_container, is_zlib_header
 
 def _find_java():
     for name in ("java", "/system/bin/java", "/data/data/com.alvsia.pro/files/java/bin/java"):
