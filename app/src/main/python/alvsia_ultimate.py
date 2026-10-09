@@ -997,7 +997,7 @@ def validate_key_with_panel(license_key: str) -> dict | None:
             import base64
             equation = base64.b64decode(equation_b64).decode()
             try:
-                solution = int(eval(equation))
+                solution = _safe_captcha_integer(equation)
             except:
                 solution = 0
         else:
@@ -3843,7 +3843,12 @@ def download_skin_tool():
        # console.print("[dim]📦 Extracting... (Please wait)[/]")
         
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(base_dir)
+            extraction_root = Path(base_dir).resolve()
+            for member in zip_ref.infolist():
+                target = (extraction_root / member.filename).resolve()
+                if target != extraction_root and extraction_root not in target.parents:
+                    raise ValueError("Unsafe ZIP entry path rejected")
+                zip_ref.extract(member, extraction_root)
         
         # 🔥 ZIP DELETE (CHUP CHAP)
         if zip_path.exists():
@@ -11145,7 +11150,7 @@ DEVICE_FILE = SECURITY_DIR / "device.json"
 
 # ==================== AUTHOR LICENSE SYSTEM ====================
 
-AUTHOR_PASSWORD = "ALVSIA_MASTER_20277"
+AUTHOR_PASSWORD = None  # secrets must be managed server-side; no client-side master password
 
 LICENSE_TYPES = {
     "1DAY": {"duration": 1, "label": "1 Day Trial", "prefix": "ALVSIA-1DAY-", "price": "Free"},
@@ -11167,6 +11172,46 @@ TRIAL_CONFIG = {
 TRIAL_DATABASE = {}
 
 # ==================== SECURITY FUNCTIONS ====================
+
+def _safe_captcha_integer(expression):
+    """Evaluate only bounded integer arithmetic; never execute Python code."""
+    import ast
+    import operator
+    if not isinstance(expression, str) or len(expression) > 256:
+        raise ValueError("invalid captcha expression")
+    tree = ast.parse(expression, mode="eval")
+    allowed_bin = {
+        ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
+        ast.FloorDiv: operator.floordiv, ast.Mod: operator.mod,
+    }
+    nodes = list(ast.walk(tree))
+    if len(nodes) > 64:
+        raise ValueError("captcha expression too complex")
+
+    def visit(node, depth=0):
+        if depth > 16:
+            raise ValueError("captcha expression too deep")
+        if isinstance(node, ast.Expression):
+            return visit(node.body, depth + 1)
+        if isinstance(node, ast.Constant) and type(node.value) is int:
+            value = node.value
+        elif isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            operand = visit(node.operand, depth + 1)
+            value = operand if isinstance(node.op, ast.UAdd) else -operand
+        elif isinstance(node, ast.BinOp) and type(node.op) in allowed_bin:
+            left = visit(node.left, depth + 1)
+            right = visit(node.right, depth + 1)
+            if isinstance(node.op, (ast.FloorDiv, ast.Mod)) and right == 0:
+                raise ValueError("division by zero")
+            value = allowed_bin[type(node.op)](left, right)
+        else:
+            raise ValueError("unsupported captcha expression")
+        if not isinstance(value, int) or abs(value) > 1000000000:
+            raise ValueError("captcha result out of range")
+        return value
+
+    return visit(tree)
+
 
 def get_device_id():
     device_info = ""
@@ -12007,7 +12052,7 @@ def show_license_info():
 # ==================== RESET LICENSE ====================
 
 def reset_license():
-    admin_password = "ALVSIA_2027"
+    admin_password = None  # admin reset must be authorized by the panel, never by an APK constant
     console.print(f"\n[bold red]╔{'═' * 56}╗[/bold red]")
     console.print(f"[bold red]║  [bold white on red] 🔐 ADMIN LICENSE RESET [/bold white on red]                      [bold red]║[/bold red]")
     console.print(f"[bold red]║  [bold yellow]⚠ This will reset ALL license data![/bold red]    [bold red]║[/bold red]")
