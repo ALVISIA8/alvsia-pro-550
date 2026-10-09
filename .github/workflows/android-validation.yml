@@ -7,6 +7,7 @@ on:
     branches:
       - main
       - fix/session-gate-otp-20261009
+      - fix/autonomous-release-hardening-20261009
   workflow_dispatch:
 
 permissions:
