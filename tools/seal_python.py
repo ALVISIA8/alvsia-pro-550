@@ -60,8 +60,6 @@ def restore() -> None:
     if OUT.exists():
         for item in OUT.glob("*.alv"):
             item.unlink()
-        # Keep the generated resources package out of the developer source tree.
-        (OUT / "__init__.py").unlink(missing_ok=True)
         try:
             OUT.rmdir()
         except OSError:
@@ -83,9 +81,6 @@ def seal() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     for stale_blob in OUT.glob("*.alv"):
         stale_blob.unlink()
-    # pkgutil.get_data() requires a real package loader; an implicit namespace
-    # package may not expose resource reads in Chaquopy's import system.
-    (OUT / "__init__.py").write_text('"""Generated package for sealed ALVISIA resources."""\n', encoding="utf-8")
     aes = AESGCM(_key())
     try:
         for rel, source in zip(MODULES, sources):
