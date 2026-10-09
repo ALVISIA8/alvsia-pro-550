@@ -79,18 +79,13 @@ static int check_maps_frida() {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// 3. ptrace(PTRACE_TRACEME) — fails if already traced
+// 3. Non-invasive ptrace state check
+// Never call PTRACE_TRACEME from the app itself: it changes the process
+// tracing state and PTRACE_DETACH from the tracee is not a valid rollback.
+// /proc/self/status is already checked by check_tracer_pid() above.
 // ─────────────────────────────────────────────────────────────────────
 static int check_ptrace_traceme() {
-    long ret = ptrace(PTRACE_TRACEME, 0, nullptr, nullptr);
-    if (ret == -1L && errno == EPERM) {
-        return FLAG_PTRACE_ERROR;
-    }
-    // Undo TRACEME immediately if it succeeded (don't leave ourselves traced)
-    if (ret == 0) {
-        ptrace(PTRACE_DETACH, 0, nullptr, nullptr);
-    }
-    return 0;
+    return check_tracer_pid() ? FLAG_PTRACE_ERROR : 0;
 }
 
 // ─────────────────────────────────────────────────────────────────────
