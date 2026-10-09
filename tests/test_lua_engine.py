@@ -31,6 +31,10 @@ def main():
             assert wrapped.startswith(expected_header), (level, wrapped[:2].hex())
             unwrapped, ci = unwrap_lua_container(wrapped)
             assert unwrapped == lua_payload and ci.wrapped and ci.format == "zlib"
+            sample_path = td / ("sample_" + str(level) + ".bin")
+            sample_path.write_bytes(wrapped)
+            detected = detect_lua(sample_path)
+            assert detected.wrapped and detected.format == "luac", detected
         plain, ci = unwrap_lua_container(lua_payload)
         assert plain == lua_payload and not ci.wrapped
 
