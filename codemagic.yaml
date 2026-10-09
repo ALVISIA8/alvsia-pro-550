@@ -7,11 +7,11 @@ workflows:
       java: 17
       vars:
         PACKAGE_NAME: "com.alvsia.pro"
-      # Optional: set these in Codemagic UI → Environment variables (group "signing")
-      # CM_KEYSTORE  (base64 of alvsia-release.keystore) OR use keystore in repo
+      # REQUIRED in Codemagic UI → Environment variables (group "signing"):
+      # CM_KEYSTORE: base64-encoded alvsia release JKS (keep secret; never commit it)
       # CM_KEYSTORE_PASSWORD
       # CM_KEY_ALIAS: alvsia
-      # CM_KEY_PASSWORD
+      # CM_KEY_PASSWORD (may equal CM_KEYSTORE_PASSWORD if the key uses the same password)
     scripts:
       - name: Set gradlew permission
         script: |
