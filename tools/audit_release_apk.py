@@ -86,7 +86,7 @@ def main() -> int:
                             source_match = (
                                 base == leaf + ".py"
                                 or base == leaf + ".pyc"
-                                or re.fullmatch(re.escape(leaf) + r"\\.[a-z0-9_]+\\.pyc", base) is not None
+                                or re.fullmatch(re.escape(leaf) + r"\.[a-z0-9_]+\.pyc", base) is not None
                             )
                             parent_match = not parent or ("/" + parent + "/") in ("/" + normalized + "/")
                             if source_match and parent_match:
