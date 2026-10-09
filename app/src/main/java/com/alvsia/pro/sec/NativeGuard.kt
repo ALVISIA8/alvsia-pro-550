@@ -40,12 +40,19 @@ object NativeGuard {
     private external fun nativeScanFlags(): Int
     private external fun nativeWipe(buf: ByteArray)
     private external fun nativeAntiDump(): Int
+    private external fun nativeSealSeed(): ByteArray
 
     // ── Public API ────────────────────────────────────────────────────
 
     fun scanFlags(): Int {
         if (!nativeLoaded) return fallbackFlags()
         return try { nativeScanFlags() } catch (_: Exception) { fallbackFlags() }
+    }
+
+    /** Build-bound seed used only to decrypt authenticated release Python payloads. */
+    fun sealSeedHex(): String {
+        if (!nativeLoaded) throw IllegalStateException("native security library unavailable")
+        return nativeSealSeed().joinToString("") { "%02x".format(it.toInt() and 0xff) }
     }
 
     fun antiDump(): Int {
