@@ -11213,6 +11213,17 @@ def _safe_captcha_integer(expression):
     return visit(tree)
 
 
+def _alvsia_safe_extract_zip(zip_file, destination):
+    """Extract ZIP entries only when their resolved path stays under destination."""
+    root = Path(destination).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    for member in zip_file.infolist():
+        target = (root / member.filename).resolve()
+        if target != root and root not in target.parents:
+            raise ValueError("Unsafe ZIP entry path rejected")
+        zip_file.extract(member, root)
+
+
 def get_device_id():
     device_info = ""
     try:
@@ -12901,7 +12912,7 @@ def pak_deep_aes(input_path, out_dir, key_hex="", iv_hex=""):
     dec_file = result["out"]
     try:
         with zipfile.ZipFile(dec_file) as zf:
-            zf.extractall(out_dir)
+            _alvsia_safe_extract_zip(zf, out_dir)
             result["extracted"] = len(zf.namelist())
     except Exception:
         result["note"] = "decrypted but not a valid ZIP/PAK"
@@ -12976,7 +12987,7 @@ def pak_deep_auto(input_path, out_dir):
     if raw[:2] == b"PK":
         try:
             with zipfile.ZipFile(str(p)) as zf:
-                zf.extractall(str(out_dir))
+                _alvsia_safe_extract_zip(zf, out_dir)
                 return {"ok": True, "method": "plain_zip", "extracted": len(zf.namelist()), "out": str(out_dir)}
         except Exception: pass
     # Try zlib
