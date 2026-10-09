@@ -67,7 +67,7 @@ if "CM_BRANCH" not in codemagic or '!= "main"' not in codemagic:
     fail.append("CodeMagic release branch is not restricted to main")
 if "isMinifyEnabled = true" not in gradle or "isShrinkResources = true" not in gradle:
     fail.append("release R8/minification/resource shrinking is disabled")
-if "META-INF/version-control-info.textproto" not in gradle:
+if "META-INF/version-control-info.textproto" not in gradle or '"**/version-control-info.textproto"' not in gradle:
     fail.append("VCS metadata is not excluded from release packaging")
 if "android.permission.DUMP" in manifest:
     fail.append("unnecessary android.permission.DUMP remains in manifest")
