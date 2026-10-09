@@ -3,6 +3,7 @@
 from __future__ import annotations
 import hashlib
 import io
+import re
 import sys
 import zipfile
 from pathlib import Path
@@ -78,11 +79,19 @@ def main() -> int:
                     plaintext = []
                     for name in members:
                         normalized = name.replace("\\", "/").lower().lstrip("./")
+                        base = Path(normalized).name
                         for module in PROTECTED_MODULES:
-                            prefix = module.lower()
-                            if any(normalized == prefix + suffix or normalized.endswith("/" + prefix + suffix)
-                                   for suffix in (".py", ".pyc")):
+                            module = module.lower()
+                            parent, _, leaf = module.rpartition("/")
+                            source_match = (
+                                base == leaf + ".py"
+                                or base == leaf + ".pyc"
+                                or re.fullmatch(re.escape(leaf) + r"\\.[a-z0-9_]+\\.pyc", base) is not None
+                            )
+                            parent_match = not parent or ("/" + parent + "/") in ("/" + normalized + "/")
+                            if source_match and parent_match:
                                 plaintext.append(name)
+                                break
                     check(not plaintext, "protected Python source/bytecode absent as plaintext" if not plaintext else "plaintext protected modules: " + ", ".join(plaintext))
                     check(any(Path(n).name in {"sealed_loader.py", "sealed_loader.pyc"} for n in members),
                           "sealed Python loader packaged")
