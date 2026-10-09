@@ -24,6 +24,8 @@ android {
 
     buildTypes {
         release {
+            // AGP 8.3+ injects Git revision metadata by default; keep it out of production APKs.
+            vcsInfo.include = false
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
