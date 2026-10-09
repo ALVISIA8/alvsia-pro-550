@@ -52,7 +52,7 @@ if __name__ == "__main__":
     tests = (
         test_menu_ids_are_unique_and_reachable,
         test_catalog_contains_all_seventeen_modules,
-        test_bridge_never_reports_success_for_explicit_failure,
+        test_engine_surfaces_bridge_failures,
     )
     for test in tests:
         test()
