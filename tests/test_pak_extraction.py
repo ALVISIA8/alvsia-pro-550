@@ -84,8 +84,10 @@ def test_pak_v46_sm4_flag50_key_vector():
 
 def test_unpack_refuses_skipped_entries_and_output_count_mismatch():
     original_class = core.TencentPakFile
-    old_session = __import__("os").environ.get("ALVSIA_APK_SESSION")
-    __import__("os").environ["ALVSIA_APK_SESSION"] = "1"
+    original_session_gate = core._alvsia_core_apk_session_valid
+    # Isolate extraction-integrity behavior from the production auth gate.
+    # The real gate is covered separately by tests/test_vanta_redteam.py.
+    core._alvsia_core_apk_session_valid = lambda: True
 
     class FakePak:
         def __init__(self, _path):
@@ -127,10 +129,7 @@ def test_unpack_refuses_skipped_entries_and_output_count_mismatch():
             assert "output file count mismatch" in result["error"]
     finally:
         core.TencentPakFile = original_class
-        if old_session is None:
-            __import__("os").environ.pop("ALVSIA_APK_SESSION", None)
-        else:
-            __import__("os").environ["ALVSIA_APK_SESSION"] = old_session
+        core._alvsia_core_apk_session_valid = original_session_gate
 
 
 def main():
