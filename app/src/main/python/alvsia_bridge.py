@@ -108,7 +108,7 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                 dest.mkdir(parents=True, exist_ok=True)
             except Exception as exc:
                 lines.append("X PAK UNPACK FAILED: cannot reset output directory: %s" % (str(exc)[:500]))
-                return "\\n".join(lines)
+                return "\n".join(lines)
             try:
                 r = core.run_pak_unpack(ip, dest)
             except Exception as exc:
@@ -131,8 +131,26 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                 lines.append("NOTE: no .lua files found in extracted output")
             else:
                 names = sorted({p.name for p in lua_files})
-                for name in [n for n in names if n in ("BRPlayerCharacterBase.lua", "CharacterBase.lua")]:
-                    lines.append("FOUND TARGET LUA -> %s" % name)
+                names_by_lower = {name.lower(): name for name in names}
+                requested_targets = ("BRPlayerCharacterBase.lua", "CharacterBase.lua")
+                found_targets = []
+                missing_targets = []
+                for target in requested_targets:
+                    actual = names_by_lower.get(target.lower())
+                    if actual:
+                        found_targets.append(actual)
+                        lines.append("FOUND TARGET LUA -> %s" % actual)
+                    else:
+                        missing_targets.append(target)
+                if missing_targets:
+                    lines.append(
+                        "NOTE target filename(s) are not present in this PAK index: %s"
+                        % ", ".join(missing_targets)
+                    )
+                lines.append(
+                    "Lua filenames sample -> %s"
+                    % ", ".join(names[:12])
+                )
             return "\n".join(lines)
 
         # ── 2  PAK Rebuild ───────────────────────────────────────────────
