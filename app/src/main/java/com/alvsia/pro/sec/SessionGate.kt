@@ -213,6 +213,7 @@ object SessionGate {
 
         if (strikes >= MAX_STRIKES) {
             ThreatReport.emit(ctx, "GATE_BLOCK", "strike_limit")
+            lock(ctx)
             throw SecurityException("BLOCKED:strike_limit")
         }
 
