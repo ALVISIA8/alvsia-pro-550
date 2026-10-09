@@ -70,6 +70,7 @@ def main() -> int:
             try:
                 with zipfile.ZipFile(io.BytesIO(imy)) as inner:
                     check(inner.testzip() is None, "Chaquopy app.imy ZIP integrity")
+                    check(not any("version-control-info.textproto" in n for n in inner.namelist()), "VCS metadata absent from Chaquopy bundle")
                     members = inner.namelist()
                     by_base = {Path(n).name: n for n in members}
                     missing = sorted(EXPECTED_SEALED - set(by_base))
@@ -86,7 +87,7 @@ def main() -> int:
                             source_match = (
                                 base == leaf + ".py"
                                 or base == leaf + ".pyc"
-                                or re.fullmatch(re.escape(leaf) + r"\.[a-z0-9_]+\.pyc", base) is not None
+                                or re.fullmatch(re.escape(leaf) + r"\.[a-z0-9_-]+\.pyc", base) is not None
                             )
                             parent_match = not parent or ("/" + parent + "/") in ("/" + normalized + "/")
                             if source_match and parent_match:
