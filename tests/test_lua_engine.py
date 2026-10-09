@@ -1,8 +1,8 @@
-import json, tempfile
+import json, tempfile, zlib
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app/src/main/python"))
-from lua_engine import detect_lua, analyze_lua, validate_lua_source
+from lua_engine import detect_lua, analyze_lua, validate_lua_source, unwrap_lua_container
 
 def main():
     with tempfile.TemporaryDirectory() as td:
@@ -23,6 +23,16 @@ def main():
         assert ji.format=="luajit"
         bad=td/"bad.bin"; bad.write_bytes(bytes([0, 1]) + b"garbage")
         assert not analyze_lua(bad,td)["ok"]
+
+        # Standard zlib has multiple valid FLG values; do not hard-code 78da.
+        lua_payload = b"\x1bLuaS" + bytes(range(27))
+        for level, expected_header in ((0, b"\x78\x01"), (6, b"\x78\x9c"), (9, b"\x78\xda")):
+            wrapped = zlib.compress(lua_payload, level)
+            assert wrapped.startswith(expected_header), (level, wrapped[:2].hex())
+            unwrapped, ci = unwrap_lua_container(wrapped)
+            assert unwrapped == lua_payload and ci.wrapped and ci.format == "zlib"
+        plain, ci = unwrap_lua_container(lua_payload)
+        assert plain == lua_payload and not ci.wrapped
 
     # Real wrapped Lua regression fixture: chunked 78da/raw-deflate container.
     real = Path("/mnt/data/CharacterBase.lua")
