@@ -7,6 +7,16 @@ LUA_MAGIC = b"\x1bLua"
 LJ_MAGIC = b"\x1bLJ"
 
 
+def is_zlib_header(data: bytes) -> bool:
+    """Return whether the first two bytes form a valid RFC 1950 zlib header."""
+    return (
+        len(data) >= 2
+        and (data[0] & 0x0F) == 8
+        and (data[0] >> 4) <= 7
+        and ((data[0] << 8) | data[1]) % 31 == 0
+    )
+
+
 @dataclass(frozen=True)
 class ContainerInfo:
     wrapped: bool
@@ -25,10 +35,12 @@ def _raw_deflate_at(data: bytes, start: int, max_output: int):
     than splitting on every 78da occurrence.
     """
     dec = zlib.decompressobj(-15)
-    out = dec.decompress(data[start:])
-    if len(out) > max_output:
+    out = dec.decompress(data[start:], max_output + 1)
+    if len(out) > max_output or dec.unconsumed_tail:
         raise ValueError("compressed Lua container exceeds output limit")
     out += dec.flush()
+    if len(out) > max_output:
+        raise ValueError("compressed Lua container exceeds output limit")
     if not dec.eof:
         raise ValueError("truncated raw-DEFLATE Lua container stream")
     consumed = len(data[start:]) - len(dec.unused_data)
@@ -42,19 +54,31 @@ def unwrap_lua_container(data: bytes, max_output: int = 256 * 1024 * 1024):
     observed in the supplied CharacterBase.lua. If data is not a container,
     the original bytes are returned unchanged.
     """
-    if not data.startswith(b"\x78\xda"):
+    # Accept any RFC 1950 zlib header, not only the common 78da variant.
+    # CM=DEFLATE, CINFO<=7, and the header must be divisible by 31.
+    if not is_zlib_header(data):
         return data, ContainerInfo(False, "none", 0, len(data), ())
 
-    # First try a normal zlib stream. This handles ordinary .zlib files.
+    # First try a normal zlib stream. This handles 7801, 789c, and 78da.
     try:
-        payload = zlib.decompress(data)
+        dec = zlib.decompressobj()
+        payload = dec.decompress(data, max_output + 1)
+        if len(payload) > max_output or dec.unconsumed_tail:
+            raise ValueError("decompressed Lua payload exceeds output limit")
+        payload += dec.flush()
+        if len(payload) > max_output:
+            raise ValueError("decompressed Lua payload exceeds output limit")
         if payload and (payload.startswith(LUA_MAGIC) or payload.startswith(LJ_MAGIC)):
-            if len(payload) > max_output:
-                raise ValueError("decompressed Lua payload exceeds output limit")
+            if not dec.eof:
+                raise ValueError("truncated zlib Lua container")
             return payload, ContainerInfo(True, "zlib", 1, len(payload),
                                           ("standard zlib container",))
     except zlib.error:
         pass
+
+    # Only the observed 78da custom framing uses the raw-DEFLATE fallback.
+    if data[:2] != b"\x78\xda":
+        raise ValueError("valid zlib header but no supported Lua payload")
 
     chunks = []
     pos = 0

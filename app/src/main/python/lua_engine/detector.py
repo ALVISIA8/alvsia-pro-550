@@ -53,7 +53,17 @@ def detect_lua(path) -> LuaInfo:
     p = Path(path)
     data = p.read_bytes()
     info = detect_bytes(data)
-    if info.kind != "unknown" or not data.startswith(b"\x78\xda"):
+    if info.kind != "unknown":
+        return info
+    # RFC 1950 zlib header: DEFLATE method, valid window size, FCHECK.
+    # Do not limit wrapped-container detection to the common 78da header.
+    is_zlib = (
+        len(data) >= 2
+        and (data[0] & 0x0F) == 8
+        and (data[0] >> 4) <= 7
+        and ((data[0] << 8) | data[1]) % 31 == 0
+    )
+    if not is_zlib:
         return info
     try:
         payload, ci = unwrap_lua_container(data)

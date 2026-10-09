@@ -34,6 +34,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Any, Dict, Tuple
 
+
+def _is_zlib_header(data: bytes) -> bool:
+    return (
+        len(data) >= 2
+        and (data[0] & 0x0F) == 8
+        and (data[0] >> 4) <= 7
+        and ((data[0] << 8) | data[1]) % 31 == 0
+    )
+
 # ─── magic bytes ──────────────────────────────────────────────────────────────
 MAGIC = {
     "lua53":    b"\x1bLua\x53",
@@ -120,7 +129,7 @@ def detect_format(path: "Path | str") -> FormatInfo:
                    notes=["Unity asset bundle — may contain Lua bytecode"])
 
     # ── Compressed ────────────────────────────────────────────────────────────
-    if data[:2] in (MAGIC["zlib_lo"], MAGIC["zlib_hi"], MAGIC["zlib_def"]):
+    if _is_zlib_header(data):
         return _fi("zlib", "archive", compressed=True,
                    notes=["zlib-compressed — decompress and re-detect"])
     if data[:2] == MAGIC["gz"]:

@@ -35,6 +35,7 @@ object SessionGate {
     private const val MAX_STRIKES = 2                 // hardened: was 3, now 2
 
     private const val KS_ALIAS = "alvsia_sg_v3"
+    private const val HMAC_ALIAS = "alvsia_sg_strike_hmac_v1"
     private const val KS_PROVIDER = "AndroidKeyStore"
     private const val AES_GCM = "AES/GCM/NoPadding"
     private const val GCM_TAG_LEN = 128
@@ -103,17 +104,34 @@ object SessionGate {
 
     // ── Strike HMAC tag (prevents root-edit of counter) ──────────────
 
+    private fun strikeHmacKey(): javax.crypto.SecretKey {
+        val ks = KeyStore.getInstance(KS_PROVIDER).also { it.load(null) }
+        if (!ks.containsAlias(HMAC_ALIAS)) {
+            val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_HMAC_SHA256, KS_PROVIDER)
+            generator.init(
+                KeyGenParameterSpec.Builder(
+                    HMAC_ALIAS,
+                    KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY
+                ).setDigests(KeyProperties.DIGEST_SHA256).build()
+            )
+            generator.generateKey()
+        }
+        return (ks.getEntry(HMAC_ALIAS, null) as KeyStore.SecretKeyEntry).secretKey
+    }
+
     private fun strikeTag(value: Int): String {
-        val key = keystoreKey().encoded ?: byteArrayOf(0x42)
         val mac = javax.crypto.Mac.getInstance("HmacSHA256")
-        mac.init(javax.crypto.spec.SecretKeySpec(key, "HmacSHA256"))
-        return Base64.encodeToString(mac.doFinal("strikes:$value".toByteArray()), Base64.NO_WRAP)
+        mac.init(strikeHmacKey())
+        return Base64.encodeToString(
+            mac.doFinal("strikes:$value".toByteArray(Charsets.UTF_8)),
+            Base64.NO_WRAP
+        )
     }
 
     private fun strikesIntegral(p: SharedPreferences): Boolean {
-        val v   = p.getInt(KEY_STRIKES, 0)
+        val v = p.getInt(KEY_STRIKES, 0)
         val tag = p.getString(KEY_STRIKE_TAG, "") ?: ""
-        if (tag.isEmpty()) return true   // first run — no tag yet, accept
+        if (tag.isEmpty()) return v == 0
         return try { tag == strikeTag(v) } catch (_: Exception) { false }
     }
 
@@ -121,17 +139,34 @@ object SessionGate {
 
     val sessionOk: Boolean
         get() {
-            // Fast path: in-memory verified state
-            if (_grantedInMem && (System.currentTimeMillis() - _tsInMem) <= SESSION_TTL)
+            // Fast path: in-memory verified state; reject future timestamps too.
+            val fastAge = System.currentTimeMillis() - _tsInMem
+            if (_grantedInMem && _tsInMem > 0L && fastAge in 0..SESSION_TTL)
                 return true
+            if (_grantedInMem) {
+                _grantedInMem = false
+                _tsInMem = 0L
+                NativeGate.sessionUnlocked = false
+            }
             // Slow path: decrypt from prefs
             val ctx = _appCtx ?: return false
             return try {
                 val p = ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
                 val granted = decrypt(p.getString(KEY_GRANTED, null)) == "1"
-                val ts      = decrypt(p.getString(KEY_TS, null))?.toLongOrNull() ?: 0L
-                val ok = granted && (System.currentTimeMillis() - ts) <= SESSION_TTL
-                if (ok) { _grantedInMem = true; _tsInMem = ts }
+                val ts = decrypt(p.getString(KEY_TS, null))?.toLongOrNull() ?: 0L
+                val token = decrypt(p.getString(KEY_TOKEN, null))?.trim().orEmpty()
+                val license = decrypt(p.getString(KEY_LICENSE, null))?.trim().orEmpty()
+                val age = System.currentTimeMillis() - ts
+                val credentialsValid =
+                    token.matches(Regex("^[0-9A-Fa-f]{64}$")) && license.isNotEmpty()
+                val ok = granted && credentialsValid && ts > 0L && age in 0..SESSION_TTL
+                if (ok) {
+                    _grantedInMem = true
+                    _tsInMem = ts
+                } else {
+                    _grantedInMem = false
+                    _tsInMem = 0L
+                }
                 ok
             } catch (_: Exception) { false }
         }
@@ -178,11 +213,14 @@ object SessionGate {
             ThreatReport.emit(ctx, "RASP_DEGRADED", "soft_threat")
         }
 
-        val p       = prefs(ctx)
+        val p = prefs(ctx)
         val granted = try { decrypt(p.getString(KEY_GRANTED, null)) == "1" } catch (_: Exception) { false }
-        val ts      = try { decrypt(p.getString(KEY_TS, null))?.toLongOrNull() ?: 0L } catch (_: Exception) { 0L }
+        val ts = try { decrypt(p.getString(KEY_TS, null))?.toLongOrNull() ?: 0L } catch (_: Exception) { 0L }
+        val token = try { decrypt(p.getString(KEY_TOKEN, null))?.trim().orEmpty() } catch (_: Exception) { "" }
+        val license = try { decrypt(p.getString(KEY_LICENSE, null))?.trim().orEmpty() } catch (_: Exception) { "" }
+        val credentialsValid = token.matches(Regex("^[0-9A-Fa-f]{64}$")) && license.isNotEmpty()
         val strikes = p.getInt(KEY_STRIKES, 0)
-        val now     = System.currentTimeMillis()
+        val now = System.currentTimeMillis()
 
         if (!strikesIntegral(p)) {
             // Strike counter was tampered — treat as max strikes
@@ -193,14 +231,17 @@ object SessionGate {
 
         if (strikes >= MAX_STRIKES) {
             ThreatReport.emit(ctx, "GATE_BLOCK", "strike_limit")
+            lock(ctx)
             throw SecurityException("BLOCKED:strike_limit")
         }
 
-        if (!granted) {
-            throw SecurityException("BLOCKED:no_session")
+        if (!granted || !credentialsValid || ts <= 0L) {
+            lock(ctx)
+            throw SecurityException("BLOCKED:no_valid_session")
         }
 
-        if (now - ts > SESSION_TTL) {
+        val age = now - ts
+        if (age < 0L || age > SESSION_TTL) {
             lock(ctx)
             throw SecurityException("BLOCKED:session_expired")
         }
@@ -209,27 +250,36 @@ object SessionGate {
     }
 
     /** 2-arg overload — called by MainActivity after OTP verify */
-    fun unlock(token: String, license: String) {
-        val ctx = _appCtx ?: return
-        unlock(ctx, token, license)
+    fun unlock(token: String, license: String): Boolean {
+        val ctx = _appCtx ?: return false
+        return unlock(ctx, token, license)
     }
 
-    fun unlock(ctx: Context, token: String, license: String) {
-        if (token.isBlank()) return
-        if (!NativeGate.preCheck()) return
+    fun unlock(ctx: Context, token: String, license: String): Boolean {
+        val normalizedToken = token.trim()
+        val normalizedLicense = license.trim()
+        if (!normalizedToken.matches(Regex("^[0-9A-Fa-f]{64}$")) || normalizedLicense.isEmpty()) {
+            lock(ctx)
+            return false
+        }
+        if (!NativeGate.preCheck()) {
+            lock(ctx)
+            return false
+        }
         val now = System.currentTimeMillis()
         val tag0 = try {
             strikeTag(0)
         } catch (e: Exception) {
             ThreatReport.emit(ctx, "UNLOCK_KS_ERR", e.message ?: "strike_tag_fail")
-            return
+            lock(ctx)
+            return false
         }
 
         try {
             val committed = prefs(ctx).edit()
                 .putString(KEY_GRANTED, encrypt("1"))
-                .putString(KEY_TOKEN,   encrypt(token))
-                .putString(KEY_LICENSE, encrypt(license))
+                .putString(KEY_TOKEN,   encrypt(normalizedToken))
+                .putString(KEY_LICENSE, encrypt(normalizedLicense))
                 .putString(KEY_TS,      encrypt(now.toString()))
                 .putInt(KEY_STRIKES, 0)
                 .putString(KEY_STRIKE_TAG, tag0)
@@ -237,18 +287,19 @@ object SessionGate {
                 .commit()
 
             if (!committed) {
+                lock(ctx)
                 ThreatReport.emit(ctx, "UNLOCK_KS_ERR", "prefs_commit_failed")
-                return
+                return false
             }
 
             NativeGate.sessionUnlocked = true
             _grantedInMem = true
             _tsInMem = now
+            return true
         } catch (e: Exception) {
-            NativeGate.sessionUnlocked = false
-            _grantedInMem = false
-            _tsInMem = 0L
+            lock(ctx)
             ThreatReport.emit(ctx, "UNLOCK_KS_ERR", e.message ?: "ks_fail")
+            return false
         }
     }
 

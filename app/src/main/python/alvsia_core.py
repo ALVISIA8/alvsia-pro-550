@@ -718,6 +718,10 @@ class PakCrypto:
         elif encryption_method == EM_UNKNOWN_17:
             _s2b8e7b87d9f2 = (encryption_method - EM_SM4_NEW_BASE) % len(SM4_SECRET_NEW)
             _sbd281f3d3181 = SM4_SECRET_NEW[_s2b8e7b87d9f2]
+        elif encryption_method == 50:
+            # Verified against core_patch_4.6.0.21546.pak, Tencent PAK v14.
+            # The shortened key table wrapped flag 50 to the wrong salt.
+            _sbd281f3d3181 = 'wD2rP3lP9xF4mE1eC5jS50'
         else:
             _s2b8e7b87d9f2 = (encryption_method - EM_SM4_NEW_BASE) % len(SM4_SECRET_NEW)
             _sbd281f3d3181 = f'{SM4_SECRET_NEW[_s2b8e7b87d9f2]}{encryption_method}'
@@ -892,8 +896,16 @@ class PakCompression:
         if compression_method == CM_ZLIB:
             try:
                 return zlib.decompress(block)
-            except zlib.error:
-                return block
+            except zlib.error as wrapped_error:
+                # Some producers store raw DEFLATE rather than a zlib wrapper.
+                try:
+                    return zlib.decompress(block, -zlib.MAX_WBITS)
+                except zlib.error as raw_error:
+                    # Never return compressed bytes as if they were extracted plaintext.
+                    raise ValueError(
+                        "ZLIB/DEFLATE block decompression failed "
+                        "(wrapped: %s; raw: %s)" % (wrapped_error, raw_error)
+                    ) from raw_error
         elif compression_method == CM_ZSTD or compression_method == CM_ZSTD_DICT:
             if compression_method != CM_ZSTD_DICT:
                 dict = None
@@ -1431,28 +1443,58 @@ class TencentPakFile:
         console.print(f'[white]Output  :[/] [cyan]{output_pak.name}[/cyan]')
 
     def _write_to_disk(self, file_path: PurePath, entry: TencentPakEntry) -> None:
-        _se33e912f7767 = entry.encryption_method
-        _s5206fe150a33 = entry.compression_method
-        console.print(f'[#00CCFF]{file_path.name}[/#00CCFF] - Encryption: {_se33e912f7767}, Compression: {_s5206fe150a33}, Blocks: {len(entry.compressed_blocks)}')
-        if _se33e912f7767 == 17:
-            with open(file_path, 'wb') as _sbb61cc6b3e63:
-                for _s576e50701491 in entry.compressed_blocks:
-                    _s366d3d829edf = self._file_content[_s576e50701491.start:_s576e50701491.end]
-                    _sbb61cc6b3e63.write(_s366d3d829edf)
-            return
-        with open(file_path, 'wb') as _sbb61cc6b3e63:
-            if _s5206fe150a33 == CM_NONE:
-                _sb96393f68f4d = self._peek_content(entry.offset, entry.size, _se33e912f7767)
+        enc_method = entry.encryption_method
+        comp_method = entry.compression_method
+        console.print(f'[#00CCFF]{file_path.name}[/#00CCFF] - Encryption: {enc_method}, Compression: {comp_method}, Blocks: {len(entry.compressed_blocks)}')
+
+        # Build the complete payload before touching the destination. A failed
+        # decrypt/decompress must never leave a partial file that looks extracted.
+        if enc_method == 17:
+            data = b''.join(
+                bytes(self._file_content[block.start:block.end])
+                for block in entry.compressed_blocks
+            )
+        elif comp_method == CM_NONE:
+            data = bytes(self._peek_content(entry.offset, entry.size, enc_method))
+            if entry.encrypted:
+                data = PakCrypto.decrypt_block(data, file_path, enc_method)
+            expected = int(entry.uncompressed_size)
+            if expected >= 0 and len(data) >= expected:
+                data = data[:expected]
+            if expected >= 0 and len(data) != expected:
+                raise ValueError(
+                    f'Uncompressed size mismatch for {file_path.name}: '
+                    f'expected {expected}, got {len(data)}'
+                )
+        else:
+            parts = []
+            for block_index in PakCrypto.generate_block_indices(len(entry.compressed_blocks), enc_method):
+                block = entry.compressed_blocks[block_index]
+                payload = self._peek_block_content(block, enc_method)
                 if entry.encrypted:
-                    _sb96393f68f4d = PakCrypto.decrypt_block(bytes(_sb96393f68f4d), file_path, _se33e912f7767)
-                _sbb61cc6b3e63.write(_sb96393f68f4d)
-                return
-            for _s1f6d01ab75cb in PakCrypto.generate_block_indices(len(entry.compressed_blocks), _se33e912f7767):
-                _sb96393f68f4d = self._peek_block_content(entry.compressed_blocks[_s1f6d01ab75cb], _se33e912f7767)
-                if entry.encrypted:
-                    _sb96393f68f4d = PakCrypto.decrypt_block(bytes(_sb96393f68f4d), file_path, _se33e912f7767)
-                _sb96393f68f4d = PakCompression.decompress_block(_sb96393f68f4d, self._zstd_dict, _s5206fe150a33)
-                _sbb61cc6b3e63.write(_sb96393f68f4d)
+                    payload = PakCrypto.decrypt_block(bytes(payload), file_path, enc_method)
+                parts.append(PakCompression.decompress_block(payload, self._zstd_dict, comp_method))
+            data = b''.join(parts)
+            expected = int(entry.uncompressed_size)
+            if expected >= 0 and len(data) != expected:
+                raise ValueError(
+                    f'Decompressed size mismatch for {file_path.name}: '
+                    f'expected {expected}, got {len(data)}'
+                )
+
+        temp_path = Path(file_path).with_name(Path(file_path).name + '.alvsia-tmp')
+        try:
+            with open(temp_path, 'wb') as out_file:
+                out_file.write(data)
+                out_file.flush()
+                os.fsync(out_file.fileno())
+            os.replace(temp_path, file_path)
+        except Exception:
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
+            raise
 
     def dump(self, out_path: PurePath) -> None:
         debug_path = BASE_DIR / 'index_debug.txt'
@@ -1475,6 +1517,8 @@ class TencentPakFile:
             _log_path_debug('INVALID MOUNT POINT', mount_point=mount_text, output_root=str(out_path))
             raise ValueError('PAK mount point contains an embedded NUL character.')
         out_path /= self._mount_point
+        expected_files = sum(len(items) for items in self._index.values())
+        written_files = 0
         skipped_dirs = 0
         skipped_files = 0
         for dir_path, dir in self._index.items():
@@ -1508,11 +1552,24 @@ class TencentPakFile:
                     continue
                 try:
                     self._write_to_disk(file_out_path, entry)
-                except (ValueError, OSError) as e:
+                    written_files += 1
+                except Exception as e:
                     skipped_files += 1
                     _log_path_debug('FILE WRITE ERROR', directory=dir_text, file_name=file_text, output_path=str(file_out_path), error=f'{type(e).__name__}: {e}')
                     continue
-        _log_path_debug('DUMP PATH SUMMARY', skipped_directories=skipped_dirs, skipped_files=skipped_files)
+        _log_path_debug(
+            'DUMP PATH SUMMARY',
+            expected_files=expected_files,
+            written_files=written_files,
+            skipped_directories=skipped_dirs,
+            skipped_files=skipped_files,
+        )
+        return {
+            'expected_files': expected_files,
+            'written_files': written_files,
+            'skipped_directories': skipped_dirs,
+            'skipped_files': skipped_files,
+        }
 
     def dump_filtered(self, out_path: PurePath, extensions) -> dict:
         """
@@ -2461,15 +2518,37 @@ def run_pak_unpack(pak_path, out_dir, authorization_operation='pak.unpack'):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     pak = TencentPakFile(pak_path)
-    # Prefer dump if available
+    # Prefer dump if available, and refuse partial extraction as success.
+    expected_after_dump = None
     if hasattr(pak, 'dump'):
-        pak.dump(out_dir)
+        stats = pak.dump(out_dir)
+        if isinstance(stats, dict):
+            expected = int(stats.get('expected_files', 0))
+            expected_after_dump = expected
+            written = int(stats.get('written_files', 0))
+            skipped_dirs = int(stats.get('skipped_directories', 0))
+            skipped_files = int(stats.get('skipped_files', 0))
+            if skipped_dirs or skipped_files or written != expected:
+                return {
+                    'ok': False,
+                    'error': (
+                        'incomplete PAK extraction: written=%d/%d, '
+                        'skipped_files=%d, skipped_directories=%d'
+                    ) % (written, expected, skipped_files, skipped_dirs),
+                    'files': written,
+                    'expected_files': expected,
+                    'skipped_files': skipped_files,
+                    'skipped_directories': skipped_dirs,
+                    'out': str(out_dir),
+                }
     elif hasattr(pak, 'extract_all'):
         pak.extract_all(out_dir)
     else:
-        # manual index walk
+        # manual index walk; count only successfully written files.
         n = 0
         index = getattr(pak, '_index', {}) or {}
+        expected = sum(len(items) for items in index.values())
+        failures = []
         for dir_path, files in index.items():
             cur = out_dir / str(dir_path)
             cur.mkdir(parents=True, exist_ok=True)
@@ -2478,10 +2557,19 @@ def run_pak_unpack(pak_path, out_dir, authorization_operation='pak.unpack'):
                     pak._write_to_disk(cur / name, entry)
                     n += 1
                 except Exception as e:
-                    console.print(f'write fail {name}: {e}')
-        return {'ok': True, 'files': n, 'out': str(out_dir)}
-    # count files
-    n = sum(1 for p in out_dir.rglob('*') if p.is_file())
+                    failures.append('%s: %s' % (name, str(e)[:160]))
+        if failures or n != expected:
+            return {'ok': False, 'error': 'incomplete PAK extraction: written=%d/%d; %s' % (n, expected, '; '.join(failures[:5])), 'files': n, 'expected_files': expected, 'out': str(out_dir)}
+    # Count real files after successful completion, not stale or partial outputs.
+    n = sum(1 for p in out_dir.rglob('*') if p.is_file() and not p.name.endswith('.alvsia-tmp'))
+    if expected_after_dump is not None and n != expected_after_dump:
+        return {
+            'ok': False,
+            'error': 'output file count mismatch: expected %d, found %d' % (expected_after_dump, n),
+            'files': n,
+            'expected_files': expected_after_dump,
+            'out': str(out_dir),
+        }
     return {'ok': True, 'files': n, 'out': str(out_dir)}
 
 

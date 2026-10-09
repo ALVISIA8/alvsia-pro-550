@@ -247,7 +247,14 @@ class MainActivity : ComponentActivity() {
                                     screen = "login"
                                     return@launch
                                 }
-                                SessionGate.unlock(this@MainActivity, _tok, license)
+                                val sessionUnlocked = SessionGate.unlock(this@MainActivity, _tok, license)
+                                if (!sessionUnlocked) {
+                                    loading = false
+                                    SessionGate.lock(this@MainActivity)
+                                    error = "Secure session could not be stored. Please login again."
+                                    screen = "login"
+                                    return@launch
+                                }
                                 try {
                                     RaspEngine.start(this@MainActivity, license)
                                 } catch (_: Exception) {

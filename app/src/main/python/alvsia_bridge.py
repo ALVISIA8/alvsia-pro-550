@@ -62,6 +62,10 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                     if r.get("ok"):
                         lines.append("OK mode=%s lines=%s" % (r.get("mode","?"), r.get("lines",0)))
                         lines.append("OUT -> %s" % r.get("out","(see OUT/LUA/)"))
+                        if r.get("note"):
+                            lines.append("NOTE: %s" % r.get("note"))
+                        if r.get("strings_decrypted") is False:
+                            lines.append("WARN: bytecode structure was decompiled, but protected string constants were not fully restored")
                         if r.get("vm_obfuscated"):
                             lines.append("NOTE: VM obfuscation detected — decompiled VM interpreter (not original source)")
                     else:
@@ -76,23 +80,81 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
             dest.mkdir(parents=True, exist_ok=True)
             if sid == "pak_list":
                 r = core.run_pak_list(ip, dest / "index_list.txt")
+                if not r.get("ok"):
+                    lines.append("X PAK LIST FAILED: %s" % r.get("error", r))
+                    return "\n".join(lines)
                 lines.append("entries=%s -> %s" % (r.get("count"), r.get("out")))
                 for pth in (r.get("paths") or [])[:40]:
                     lines.append("  " + pth)
                 return "\n".join(lines)
             if sid == "pak_info":
                 r = core.run_pak_info(ip, dest / "info.txt")
-                lines.append(r.get("info", str(r)))
+                if not r.get("ok"):
+                    lines.append("X PAK INFO FAILED: %s" % r.get("error", r))
+                else:
+                    lines.append(r.get("info", str(r)))
                 return "\n".join(lines)
             if sid == "pak_csv":
                 r = core.run_pak_list(ip, None)
+                if not r.get("ok"):
+                    lines.append("X PAK CSV FAILED: %s" % r.get("error", r))
+                    return "\n".join(lines)
                 paths = r.get("paths") or []
                 csvp = dest / "index.csv"
                 csvp.write_text("path\n" + "\n".join(paths), encoding="utf-8")
                 lines.append("OK csv=%s n=%s" % (csvp, len(paths)))
                 return "\n".join(lines)
-            r = core.run_pak_unpack(ip, dest)
-            lines.append(str(r))
+            # Start from a clean destination so stale files can never satisfy
+            # the extraction verification below.
+            try:
+                if dest.exists():
+                    shutil.rmtree(dest)
+                dest.mkdir(parents=True, exist_ok=True)
+            except Exception as exc:
+                lines.append("X PAK UNPACK FAILED: cannot reset output directory: %s" % (str(exc)[:500]))
+                return "\n".join(lines)
+            try:
+                r = core.run_pak_unpack(ip, dest)
+            except Exception as exc:
+                lines.append("X PAK UNPACK FAILED: %s" % (str(exc)[:1200] or type(exc).__name__))
+                return "\n".join(lines)
+            if not isinstance(r, dict) or not r.get("ok"):
+                lines.append("X PAK UNPACK FAILED: %s" % (
+                    r.get("error", r) if isinstance(r, dict) else str(r)
+                ))
+                return "\n".join(lines)
+            files = [p for p in dest.rglob("*") if p.is_file()]
+            lua_files = [p for p in files if p.suffix.lower() == ".lua"]
+            if not files:
+                lines.append("X PAK UNPACK produced zero files; refusing false success")
+                lines.append("Check archive format, index encryption, keys, and core-patch compatibility")
+                return "\n".join(lines)
+            lines.append("OK PAK UNPACK files=%d lua=%d" % (len(files), len(lua_files)))
+            lines.append("OUT -> %s" % dest)
+            if not lua_files:
+                lines.append("NOTE: no .lua files found in extracted output")
+            else:
+                names = sorted({p.name for p in lua_files})
+                names_by_lower = {name.lower(): name for name in names}
+                requested_targets = ("BRPlayerCharacterBase.lua", "CharacterBase.lua")
+                found_targets = []
+                missing_targets = []
+                for target in requested_targets:
+                    actual = names_by_lower.get(target.lower())
+                    if actual:
+                        found_targets.append(actual)
+                        lines.append("FOUND TARGET LUA -> %s" % actual)
+                    else:
+                        missing_targets.append(target)
+                if missing_targets:
+                    lines.append(
+                        "NOTE target filename(s) are not present in this PAK index: %s"
+                        % ", ".join(missing_targets)
+                    )
+                lines.append(
+                    "Lua filenames sample -> %s"
+                    % ", ".join(names[:12])
+                )
             return "\n".join(lines)
 
         # ── 2  PAK Rebuild ───────────────────────────────────────────────

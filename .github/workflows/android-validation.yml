@@ -1,0 +1,84 @@
+name: Android validation
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches:
+      - main
+      - fix/session-gate-otp-20261009
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Python for Chaquopy
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-34 build-tools;34.0.0
+
+      - name: Verify wrapper
+        run: |
+          test -f ./gradlew
+          chmod +x ./gradlew
+          java -version
+          python --version
+          ./gradlew --version
+
+      - name: Run Lua engine regression tests
+        run: python tests/test_lua_engine.py
+
+      - name: Run BGMI Lua transform regression tests
+        run: python tests/test_bgmi_transform.py
+
+      - name: Run PAK extraction regression tests
+        run: python tests/test_pak_extraction.py
+
+      - name: Test bundled Lua 5.3 decompiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.3
+          bash tests/test_unluac_integration.sh
+
+      - name: Validate all tool menu routes
+        run: python tests/test_tool_dispatch.py
+
+      - name: Compile and test
+        run: ./gradlew testDebugUnitTest assembleRelease --stacktrace --no-daemon
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build-diagnostics
+          path: |
+            **/build/reports/tests/**
+            **/build/outputs/apk/**
+            **/build/outputs/mapping/**
+          if-no-files-found: ignore
+          retention-days: 7

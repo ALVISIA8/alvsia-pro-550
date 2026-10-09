@@ -1,0 +1,151 @@
+"""Regression tests for fail-closed PAK block extraction."""
+import sys
+import tempfile
+import zlib
+from pathlib import Path
+from types import SimpleNamespace
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "app/src/main/python"))
+import alvsia_core as core
+
+
+def test_zlib_and_raw_deflate_blocks():
+    plain = (b"Lua protected payload regression\n" * 200)
+    wrapped = zlib.compress(plain)
+    assert core.PakCompression.decompress_block(wrapped, None, core.CM_ZLIB) == plain
+
+    compressor = zlib.compressobj(wbits=-zlib.MAX_WBITS)
+    raw = compressor.compress(plain) + compressor.flush()
+    assert core.PakCompression.decompress_block(raw, None, core.CM_ZLIB) == plain
+
+
+def test_corrupt_zlib_is_rejected_not_returned_as_plaintext():
+    try:
+        core.PakCompression.decompress_block(b"not-a-deflate-stream", None, core.CM_ZLIB)
+    except ValueError as exc:
+        assert "decompression failed" in str(exc).lower()
+    else:
+        raise AssertionError("corrupt compressed block was silently accepted")
+
+
+def test_write_is_atomic_and_checks_decompressed_size():
+    plain = b"Lua payload: validated"
+    compressed = zlib.compress(plain)
+    pak = core.TencentPakFile.__new__(core.TencentPakFile)
+    pak._file_content = memoryview(compressed)
+    pak._zstd_dict = None
+    entry = SimpleNamespace(
+        encryption_method=0,
+        compression_method=core.CM_ZLIB,
+        compressed_blocks=[SimpleNamespace(start=0, end=len(compressed))],
+        encrypted=False,
+        uncompressed_size=len(plain),
+    )
+    with tempfile.TemporaryDirectory() as td:
+        dest = Path(td) / "sample.lua"
+        dest.write_bytes(b"old-output-must-not-survive-as-success")
+        pak._write_to_disk(dest, entry)
+        assert dest.read_bytes() == plain
+        assert not Path(str(dest) + ".alvsia-tmp").exists()
+
+        corrupt_entry = SimpleNamespace(
+            encryption_method=0,
+            compression_method=core.CM_ZLIB,
+            compressed_blocks=[SimpleNamespace(start=0, end=len(b"corrupt"))],
+            encrypted=False,
+            uncompressed_size=100,
+        )
+        pak._file_content = memoryview(b"corrupt")
+        dest.write_bytes(b"keep-prior-file-if-operation-fails")
+        try:
+            pak._write_to_disk(dest, corrupt_entry)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("corrupt entry did not fail")
+        assert dest.read_bytes() == b"keep-prior-file-if-operation-fails"
+        assert not Path(str(dest) + ".alvsia-tmp").exists()
+
+
+
+
+def test_pak_v46_sm4_flag50_key_vector():
+    # Captured from the first encrypted block of a v14 PAK entry.
+    # This is the game-specific SM4 variant used by the PAK, not standards SM4.
+    path = Path("Lobby_VersionUpdateSlap_Page_002_UIBP.uasset")
+    cipher = bytes.fromhex("dc91fe9cf0e2f652416102fe148da3e8")
+    key = core.PakCrypto._derive_sm4_key(path, 50)
+    assert key.hex() == "d3af220809b6ac0b1225b9812c3f8788"
+    assert core.PakCrypto._decrypt_sm4(cipher, path, 50).hex() == (
+        "789ced9c797414c5bac02b9000212b09"
+    )
+
+
+def test_unpack_refuses_skipped_entries_and_output_count_mismatch():
+    original_class = core.TencentPakFile
+    old_session = __import__("os").environ.get("ALVSIA_APK_SESSION")
+    __import__("os").environ["ALVSIA_APK_SESSION"] = "1"
+
+    class FakePak:
+        def __init__(self, _path):
+            pass
+
+        def dump(self, out_dir):
+            Path(out_dir, "one.lua").write_bytes(b"one")
+            return {
+                "expected_files": 2,
+                "written_files": 1,
+                "skipped_directories": 0,
+                "skipped_files": 1,
+            }
+
+    try:
+        core.TencentPakFile = FakePak
+        with tempfile.TemporaryDirectory() as td:
+            result = core.run_pak_unpack("synthetic.pak", Path(td) / "out")
+            assert not result["ok"]
+            assert "incomplete PAK extraction" in result["error"]
+
+        class MismatchedOutputPak:
+            def __init__(self, _path):
+                pass
+
+            def dump(self, out_dir):
+                Path(out_dir, "only-one.lua").write_bytes(b"one")
+                return {
+                    "expected_files": 2,
+                    "written_files": 2,
+                    "skipped_directories": 0,
+                    "skipped_files": 0,
+                }
+
+        core.TencentPakFile = MismatchedOutputPak
+        with tempfile.TemporaryDirectory() as td:
+            result = core.run_pak_unpack("synthetic.pak", Path(td) / "out")
+            assert not result["ok"]
+            assert "output file count mismatch" in result["error"]
+    finally:
+        core.TencentPakFile = original_class
+        if old_session is None:
+            __import__("os").environ.pop("ALVSIA_APK_SESSION", None)
+        else:
+            __import__("os").environ["ALVSIA_APK_SESSION"] = old_session
+
+
+def main():
+    tests = (
+        test_zlib_and_raw_deflate_blocks,
+        test_corrupt_zlib_is_rejected_not_returned_as_plaintext,
+        test_write_is_atomic_and_checks_decompressed_size,
+        test_pak_v46_sm4_flag50_key_vector,
+        test_unpack_refuses_skipped_entries_and_output_count_mismatch,
+    )
+    for test in tests:
+        test()
+        print("PASS", test.__name__)
+    print("PAK EXTRACTION REGRESSION: PASS (5/5)")
+
+
+if __name__ == "__main__":
+    main()
