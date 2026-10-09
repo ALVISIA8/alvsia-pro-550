@@ -35,11 +35,14 @@ def main():
             sample_path.write_bytes(wrapped)
             detected = detect_lua(sample_path)
             assert detected.wrapped and detected.format == "luac", detected
+            report = analyze_lua(sample_path, td / ("out_" + str(level)))
+            assert report["ok"] and report["format"] == "luac", report
+            assert report["container"] == "zlib", report
         plain, ci = unwrap_lua_container(lua_payload)
         assert plain == lua_payload and not ci.wrapped
 
         # Enforce the expansion limit before buffering an oversized payload.
-        oversized = zlib.compress(b"\\x1bLuaS" + (b"A" * 10000), 9)
+        oversized = zlib.compress(b"\x1bLuaS" + (b"A" * 10000), 9)
         try:
             unwrap_lua_container(oversized, max_output=128)
         except ValueError as exc:
