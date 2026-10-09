@@ -26,7 +26,7 @@ def _load_standalone_python_function(name):
         if isinstance(node, ast.FunctionDef) and node.name == name
     )
     module = ast.Module(body=[function], type_ignores=[])
-    namespace = {"Path": Path}
+    namespace = {"Path": Path, "os": __import__("os"), "re": re}
     exec(compile(module, str(PY / "alvsia_ultimate.py"), "exec"), namespace)
     return namespace[name]
 
@@ -103,6 +103,22 @@ def test_release_hardening_is_enabled():
     assert NATIVE.is_file(), "Native RASP source is missing"
 
 
+def test_apk_session_requires_native_token_shape():
+    import os
+    from unittest.mock import patch
+    valid = _load_standalone_python_function("_alv_apk_session_valid")
+    with patch.dict(os.environ, {"ALVSIA_APK_SESSION": "1"}, clear=False):
+        os.environ.pop("ALVSIA_SESSION_TOKEN", None)
+        assert not valid(), "Session marker alone must not authorize the Python engine"
+        os.environ["ALVSIA_SESSION_TOKEN"] = "not-a-token"
+        assert not valid(), "Malformed session token must be rejected"
+        os.environ["ALVSIA_SESSION_TOKEN"] = "a" * 64
+        assert valid(), "A 64-hex token from the native gate should pass shape validation"
+    assert "if _alvsia_core_apk_session_valid():" in CORE
+    assert "if _alv_apk_session_valid():" in ULTIMATE
+    assert "if not _valid_apk_session():" in BRIDGE
+
+
 def test_bridge_requires_apk_session_gate():
     assert 'os.environ.get("ALVSIA_APK_SESSION") != "1"' in BRIDGE
 
@@ -115,6 +131,7 @@ if __name__ == "__main__":
         test_captcha_does_not_use_eval,
         test_no_direct_zip_extractall_calls,
         test_release_hardening_is_enabled,
+        test_apk_session_requires_native_token_shape,
         test_bridge_requires_apk_session_gate,
     ]
     for check in checks:
