@@ -50,6 +50,9 @@ jobs:
           python --version
           ./gradlew --version
 
+      - name: Run Lua engine regression tests
+        run: python tests/test_lua_engine.py
+
       - name: Compile and test
         run: ./gradlew testDebugUnitTest assembleRelease --stacktrace --no-daemon
 
