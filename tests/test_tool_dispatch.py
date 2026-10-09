@@ -1,10 +1,4 @@
-"""Static regression checks for the 17-module Android tool menu/bridge contract.
-
-These checks complement runtime tests: every selectable sub-tool must be unique
-and either have an explicit bridge branch or be covered by a documented generic
-route. They intentionally do not claim that an encrypted game PAK can be
-unpacked without a valid fixture/key profile.
-"""
+"""Static regression checks for the 17-module Android tool menu/bridge contract."""
 from pathlib import Path
 import re
 
@@ -22,8 +16,6 @@ def test_menu_ids_are_unique_and_reachable():
     duplicates = sorted({sid for sid in ids if ids.count(sid) > 1})
     assert not duplicates, f"Duplicate sub-tool IDs: {duplicates}"
 
-    # All currently defined sub-tools have a direct branch or are handled by
-    # a module-level branch with a documented prefix/fallback.
     generic = {
         "pak_delete_entry": '"delete" in sid',
         "pak_inject": 'sid in ("pak_repack_full","pak_inject","pak_encrypt","pak_decrypt_restore")',
@@ -53,3 +45,15 @@ def test_bridge_never_reports_success_for_explicit_failure():
     assert "'ok': False" in bridge
     assert '"ok": false' in bridge
     assert "X AUTH:" in bridge
+
+
+if __name__ == "__main__":
+    tests = (
+        test_menu_ids_are_unique_and_reachable,
+        test_catalog_contains_all_seventeen_modules,
+        test_bridge_never_reports_success_for_explicit_failure,
+    )
+    for test in tests:
+        test()
+        print("PASS", test.__name__)
+    print("TOOL DISPATCH TEST: PASS (3/3)")
