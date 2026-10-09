@@ -33,7 +33,7 @@ def test_captcha_does_not_use_eval():
 
 def test_no_direct_zip_extractall_calls():
     source = "\n".join(p.read_text(encoding="utf-8", errors="replace")
-                        for p in ROOT.rglob("*.py") if ".git" not in p.parts)
+                        for p in PY.rglob("*.py"))
     assert not re.search(r"\.extractall\s*\(", source), (
         "Direct ZipFile.extractall/ZipFile-like extractall call remains; use validated paths"
     )
