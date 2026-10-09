@@ -144,17 +144,46 @@ class ToolEngine(private val context: Context) {
         } catch (_: Exception) {
         }
 
-        // LUA decompile on ART (no external Java)
+        // Prefer the native ART decompiler only for ordinary Lua chunks.
+        // BGMI/PUBG chunks need opcode, line-info and string-layout normalization
+        // in the Python pipeline first; a non-empty direct-unluac result is not proof.
         if (subId == "lua_decompile" || subId.contains("unluac")) {
             if (inputPath.isNotEmpty()) {
                 val inFile = File(inputPath)
-                val outFile = File(WorkPaths.moduleOut(moduleId), inFile.nameWithoutExtension + "_decompiled.lua")
-                lines.addAll(UnluacRunner.decompile(inFile, outFile))
-                if (outFile.isFile && outFile.length() > 0) {
-                    lines.add("OK OUT -> ${WorkPaths.moduleOut(moduleId).absolutePath}")
-                    return lines
+                val prefix = ByteArray(17)
+                val prefixSize = try {
+                    inFile.inputStream().use { it.read(prefix).coerceAtLeast(0) }
+                } catch (_: Exception) {
+                    0
                 }
-                lines.add("... ART unluac failed, trying Python bridge")
+                val isBgmiLua53 = prefixSize >= 17 &&
+                    prefix[0] == 0x1b.toByte() &&
+                    prefix[1] == 0x4c.toByte() &&
+                    prefix[2] == 0x75.toByte() &&
+                    prefix[3] == 0x61.toByte() &&
+                    prefix[4] == 0x53.toByte() &&
+                    prefix[12] == 4.toByte() &&
+                    prefix[13] == 4.toByte() &&
+                    prefix[14] == 4.toByte() &&
+                    prefix[15] == 8.toByte() &&
+                    prefix[16] == 8.toByte()
+                val hasZlibLuaContainer = prefixSize >= 2 &&
+                    prefix[0] == 0x78.toByte() &&
+                    (prefix[1] == 0xda.toByte() ||
+                     prefix[1] == 0x9c.toByte() ||
+                     prefix[1] == 0x01.toByte())
+
+                if (isBgmiLua53 || hasZlibLuaContainer) {
+                    lines.add("NOTE: BGMI/PUBG Lua normalization required; routing through Python engine")
+                } else {
+                    val outFile = File(WorkPaths.moduleOut(moduleId), inFile.nameWithoutExtension + "_decompiled.lua")
+                    lines.addAll(UnluacRunner.decompile(inFile, outFile))
+                    if (outFile.isFile && outFile.length() > 0) {
+                        lines.add("OK OUT -> ${WorkPaths.moduleOut(moduleId).absolutePath}")
+                        return lines
+                    }
+                    lines.add("... ART unluac failed, trying Python bridge")
+                }
             }
         }
 
