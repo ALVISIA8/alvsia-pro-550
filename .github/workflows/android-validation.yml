@@ -56,6 +56,12 @@ jobs:
       - name: Run PAK extraction regression tests
         run: python tests/test_pak_extraction.py
 
+      - name: Test bundled Lua 5.3 decompiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.3
+          bash tests/test_unluac_integration.sh
+
       - name: Validate all tool menu routes
         run: python tests/test_tool_dispatch.py
 
