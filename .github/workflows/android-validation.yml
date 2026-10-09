@@ -50,6 +50,9 @@ jobs:
           python --version
           ./gradlew --version
 
+      - name: Compile all bundled Python modules
+        run: python -m compileall -q app/src/main/python
+
       - name: Run Lua engine regression tests
         run: python tests/test_lua_engine.py
 
