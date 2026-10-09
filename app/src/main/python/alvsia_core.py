@@ -1513,6 +1513,8 @@ class TencentPakFile:
             _log_path_debug('INVALID MOUNT POINT', mount_point=mount_text, output_root=str(out_path))
             raise ValueError('PAK mount point contains an embedded NUL character.')
         out_path /= self._mount_point
+        expected_files = sum(len(items) for items in self._index.values())
+        written_files = 0
         skipped_dirs = 0
         skipped_files = 0
         for dir_path, dir in self._index.items():
@@ -1546,11 +1548,24 @@ class TencentPakFile:
                     continue
                 try:
                     self._write_to_disk(file_out_path, entry)
-                except (ValueError, OSError) as e:
+                    written_files += 1
+                except Exception as e:
                     skipped_files += 1
                     _log_path_debug('FILE WRITE ERROR', directory=dir_text, file_name=file_text, output_path=str(file_out_path), error=f'{type(e).__name__}: {e}')
                     continue
-        _log_path_debug('DUMP PATH SUMMARY', skipped_directories=skipped_dirs, skipped_files=skipped_files)
+        _log_path_debug(
+            'DUMP PATH SUMMARY',
+            expected_files=expected_files,
+            written_files=written_files,
+            skipped_directories=skipped_dirs,
+            skipped_files=skipped_files,
+        )
+        return {
+            'expected_files': expected_files,
+            'written_files': written_files,
+            'skipped_directories': skipped_dirs,
+            'skipped_files': skipped_files,
+        }
 
     def dump_filtered(self, out_path: PurePath, extensions) -> dict:
         """
@@ -2499,15 +2514,35 @@ def run_pak_unpack(pak_path, out_dir, authorization_operation='pak.unpack'):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     pak = TencentPakFile(pak_path)
-    # Prefer dump if available
+    # Prefer dump if available, and refuse partial extraction as success.
     if hasattr(pak, 'dump'):
-        pak.dump(out_dir)
+        stats = pak.dump(out_dir)
+        if isinstance(stats, dict):
+            expected = int(stats.get('expected_files', 0))
+            written = int(stats.get('written_files', 0))
+            skipped_dirs = int(stats.get('skipped_directories', 0))
+            skipped_files = int(stats.get('skipped_files', 0))
+            if skipped_dirs or skipped_files or written != expected:
+                return {
+                    'ok': False,
+                    'error': (
+                        'incomplete PAK extraction: written=%d/%d, '
+                        'skipped_files=%d, skipped_directories=%d'
+                    ) % (written, expected, skipped_files, skipped_dirs),
+                    'files': written,
+                    'expected_files': expected,
+                    'skipped_files': skipped_files,
+                    'skipped_directories': skipped_dirs,
+                    'out': str(out_dir),
+                }
     elif hasattr(pak, 'extract_all'):
         pak.extract_all(out_dir)
     else:
-        # manual index walk
+        # manual index walk; count only successfully written files.
         n = 0
         index = getattr(pak, '_index', {}) or {}
+        expected = sum(len(items) for items in index.values())
+        failures = []
         for dir_path, files in index.items():
             cur = out_dir / str(dir_path)
             cur.mkdir(parents=True, exist_ok=True)
@@ -2516,10 +2551,11 @@ def run_pak_unpack(pak_path, out_dir, authorization_operation='pak.unpack'):
                     pak._write_to_disk(cur / name, entry)
                     n += 1
                 except Exception as e:
-                    console.print(f'write fail {name}: {e}')
-        return {'ok': True, 'files': n, 'out': str(out_dir)}
-    # count files
-    n = sum(1 for p in out_dir.rglob('*') if p.is_file())
+                    failures.append('%s: %s' % (name, str(e)[:160]))
+        if failures or n != expected:
+            return {'ok': False, 'error': 'incomplete PAK extraction: written=%d/%d; %s' % (n, expected, '; '.join(failures[:5])), 'files': n, 'expected_files': expected, 'out': str(out_dir)}
+    # Count real files after successful completion, not stale or partial outputs.
+    n = sum(1 for p in out_dir.rglob('*') if p.is_file() and not p.name.endswith('.alvsia-tmp'))
     return {'ok': True, 'files': n, 'out': str(out_dir)}
 
 
