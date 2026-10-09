@@ -209,14 +209,22 @@ object SessionGate {
     }
 
     /** 2-arg overload — called by MainActivity after OTP verify */
-    fun unlock(token: String, license: String) {
-        val ctx = _appCtx ?: return
-        unlock(ctx, token, license)
+    fun unlock(token: String, license: String): Boolean {
+        val ctx = _appCtx ?: return false
+        return unlock(ctx, token, license)
     }
 
-    fun unlock(ctx: Context, token: String, license: String) {
-        if (token.isBlank()) return
-        if (!NativeGate.preCheck()) return
+    fun unlock(ctx: Context, token: String, license: String): Boolean {
+        val normalizedToken = token.trim()
+        val normalizedLicense = license.trim()
+        if (!normalizedToken.matches(Regex("^[0-9A-Fa-f]{64}$")) || normalizedLicense.isEmpty()) {
+            lock(ctx)
+            return false
+        }
+        if (!NativeGate.preCheck()) {
+            lock(ctx)
+            return false
+        }
         val now = System.currentTimeMillis()
         val tag0 = try {
             strikeTag(0)
@@ -228,8 +236,8 @@ object SessionGate {
         try {
             val committed = prefs(ctx).edit()
                 .putString(KEY_GRANTED, encrypt("1"))
-                .putString(KEY_TOKEN,   encrypt(token))
-                .putString(KEY_LICENSE, encrypt(license))
+                .putString(KEY_TOKEN,   encrypt(normalizedToken))
+                .putString(KEY_LICENSE, encrypt(normalizedLicense))
                 .putString(KEY_TS,      encrypt(now.toString()))
                 .putInt(KEY_STRIKES, 0)
                 .putString(KEY_STRIKE_TAG, tag0)
@@ -237,18 +245,23 @@ object SessionGate {
                 .commit()
 
             if (!committed) {
+                NativeGate.sessionUnlocked = false
+                _grantedInMem = false
+                _tsInMem = 0L
                 ThreatReport.emit(ctx, "UNLOCK_KS_ERR", "prefs_commit_failed")
-                return
+                return false
             }
 
             NativeGate.sessionUnlocked = true
             _grantedInMem = true
             _tsInMem = now
+            return true
         } catch (e: Exception) {
             NativeGate.sessionUnlocked = false
             _grantedInMem = false
             _tsInMem = 0L
             ThreatReport.emit(ctx, "UNLOCK_KS_ERR", e.message ?: "ks_fail")
+            return false
         }
     }
 
