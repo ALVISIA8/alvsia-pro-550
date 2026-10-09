@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MENUS = ROOT / "app/src/main/java/com/alvsia/pro/tool/SubMenus.kt"
 BRIDGE = ROOT / "app/src/main/python/alvsia_bridge.py"
 CATALOG = ROOT / "app/src/main/java/com/alvsia/pro/tool/ToolCatalog.kt"
+ENGINE = ROOT / "app/src/main/java/com/alvsia/pro/tool/ToolEngine.kt"
 
 
 def test_menu_ids_are_unique_and_reachable():
@@ -39,12 +40,12 @@ def test_catalog_contains_all_seventeen_modules():
     assert ids == list(range(1, 18)), f"Expected module IDs 1..17 in order, got {ids}"
 
 
-def test_bridge_never_reports_success_for_explicit_failure():
-    bridge = BRIDGE.read_text(encoding="utf-8")
-    assert "X OUT -> operation failed" in bridge
-    assert "'ok': False" in bridge
-    assert '"ok": false' in bridge
-    assert "X AUTH:" in bridge
+def test_engine_surfaces_bridge_failures():
+    engine = ENGINE.read_text(encoding="utf-8")
+    assert "X OUT -> operation failed" in engine
+    assert "'ok': False" in engine
+    assert '"ok": false' in engine
+    assert 'startsWith("X ")' in engine
 
 
 if __name__ == "__main__":
