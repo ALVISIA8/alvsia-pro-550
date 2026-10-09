@@ -4,6 +4,8 @@ workflows:
     max_build_duration: 120
     instance_type: mac_mini_m2
     environment:
+      groups:
+        - signing
       java: 17
       vars:
         PACKAGE_NAME: "com.alvsia.pro"
@@ -17,6 +19,14 @@ workflows:
         script: |
           chmod +x ./gradlew
           java -version
+
+      - name: Check release signing secrets
+        script: |
+          set -euo pipefail
+          if [ -z "${CM_KEYSTORE:-}" ] || [ -z "${CM_KEYSTORE_PASSWORD:-}" ]; then
+            echo "ERROR: attach the 'signing' environment group with CM_KEYSTORE and CM_KEYSTORE_PASSWORD."
+            exit 2
+          fi
 
       - name: Run regression and VANTA security tests
         script: |
