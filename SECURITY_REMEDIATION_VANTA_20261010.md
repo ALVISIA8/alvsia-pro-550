@@ -3,6 +3,10 @@
 Date: 2026-10-10  
 Scope: source branch `r5.4-native-rasp` and follow-up branch `r5.4-security-hardening-20261010`.
 
+## Build provenance note
+
+The APK signed in the preceding conversation came from the release-candidate artifact built from `main` commit `cc3584fb4470f85a9e82f42b100c7e0d3f88803f`. It is not the same source revision as `r5.4-native-rasp`. Do not infer R5.4 protections from that APK; use the CodeMagic build from this remediation branch and require `release_security_audit.txt` to pass before applying ReArK and signing.
+
 ## Verified in the R5.4 source
 
 - The manifest does not declare `android.permission.DUMP`.
