@@ -178,6 +178,27 @@ class MainActivity : ComponentActivity() {
                                     error = res.message
                                     return@launch
                                 }
+
+                                // Re-run the hostile-environment gate after OTP and before
+                                // fetching/loading the protected engine. Do not ignore a false
+                                // return value: checkAndReport() reports hostile state by return.
+                                val safeAfterOtp = try {
+                                    Guard.checkAndReport(
+                                        this@MainActivity,
+                                        license,
+                                        hardEnforcement = true,
+                                    )
+                                } catch (_: Exception) {
+                                    false
+                                }
+                                if (!safeAfterOtp) {
+                                    loading = false
+                                    SessionGate.lock(this@MainActivity)
+                                    error = "Security check blocked this session. Close debugging or hooking tools and retry."
+                                    screen = "login"
+                                    return@launch
+                                }
+
                                 screen = "loading"
                                 loadMsg = "LOADING FOR NOOB | secure session"
                                 loadProgress = 0.1f
