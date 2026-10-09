@@ -1,90 +1,34 @@
-workflows:
-  alvisia-android:
-    name: ALVISIA PRO 5.5.0
-    max_build_duration: 120
-    instance_type: mac_mini_m2
-    environment:
-      java: 17
-      vars:
-        PACKAGE_NAME: "com.alvsia.pro"
-      # Optional: set these in Codemagic UI → Environment variables (group "signing")
-      # CM_KEYSTORE  (base64 of alvsia-release.keystore) OR use keystore in repo
-      # CM_KEYSTORE_PASSWORD
-      # CM_KEY_ALIAS: alvsia
-      # CM_KEY_PASSWORD
-    scripts:
-      - name: Set gradlew permission
-        script: |
-          chmod +x ./gradlew
-          java -version
+# ALVISIA PRO 5.5.0 — CodeMagic Release Build
 
-      - name: Build release APK
-        script: |
-          set -o pipefail
-          ./gradlew assembleRelease --stacktrace --no-daemon 2>&1 | tee build_full.log
-          STATUS=${PIPESTATUS[0]}
-          echo "===== ERRORS (if any) ====="
-          grep -E "^e:|What went wrong|Caused by:|FAILED|error:" build_full.log | head -50 || true
-          echo "===== APK outputs ====="
-          find app/build/outputs -name "*.apk" -type f 2>/dev/null || true
-          exit $STATUS
+## Source
 
-      - name: Sign APK if keystore present
-        script: |
-          set -e
-          UNSIGNED=$(find app/build/outputs/apk -name "*.apk" -type f | head -1)
-          if [ -z "$UNSIGNED" ]; then
-            echo "No APK found — build step failed"
-            exit 1
-          fi
-          echo "Found: $UNSIGNED"
+- Repository: `ALVISIA8/alvsia-pro-550`
+- Branch: `fix/autonomous-release-hardening-20261009`
+- Configuration: `codemagic.yaml`
+- Package: `com.alvsia.pro`
 
-          # Prefer Codemagic env keystore; fallback to repo keystore
-          if [ -n "${CM_KEYSTORE:-}" ]; then
-            echo "$CM_KEYSTORE" | base64 -d > /tmp/alvsia.keystore
-            KS=/tmp/alvsia.keystore
-            KSPASS="${CM_KEYSTORE_PASSWORD}"
-            ALIAS="${CM_KEY_ALIAS:-alvsia}"
-            KEYPASS="${CM_KEY_PASSWORD:-$KSPASS}"
-          elif [ -f alvsia-release.keystore ]; then
-            KS=alvsia-release.keystore
-            # Password: set CM_KEYSTORE_PASSWORD in Codemagic UI (do not hardcode)
-            KSPASS="${CM_KEYSTORE_PASSWORD:-}"
-            ALIAS="${CM_KEY_ALIAS:-alvsia}"
-            KEYPASS="${CM_KEY_PASSWORD:-$KSPASS}"
-          else
-            echo "No keystore — leaving unsigned APK"
-            cp "$UNSIGNED" ALVSIA_PRO_5.5.0_unsigned.apk
-            exit 0
-          fi
+## One-time CodeMagic setup
 
-          if [ -z "$KSPASS" ]; then
-            echo "CM_KEYSTORE_PASSWORD not set — copying unsigned APK"
-            cp "$UNSIGNED" ALVSIA_PRO_5.5.0_unsigned.apk
-            exit 0
-          fi
+1. Open the app in CodeMagic and select the branch above as the build source.
+2. In **Team settings → Environment variables**, create an environment-variable group named `signing`.
+3. Add these variables to that group:
+   - `CM_KEYSTORE`: Base64-encoded release JKS keystore (single line).
+   - `CM_KEYSTORE_PASSWORD`: release keystore password.
+   - `CM_KEY_ALIAS`: `alvsia`.
+   - `CM_KEY_PASSWORD`: key password (if identical, use the same value as `CM_KEYSTORE_PASSWORD`).
+4. Attach the `signing` group to the workflow. Do not commit the keystore or passwords to GitHub.
 
-          # Align + sign
-          BUILD_TOOLS=$(ls -d $ANDROID_SDK_ROOT/build-tools/* 2>/dev/null | sort -V | tail -1)
-          ZIPALIGN="$BUILD_TOOLS/zipalign"
-          APKSIGNER="$BUILD_TOOLS/apksigner"
-          ALIGNED=/tmp/alvsia-aligned.apk
-          SIGNED=ALVSIA_PRO_5.5.0_signed.apk
+## Build and release checks
 
-          "$ZIPALIGN" -f 4 "$UNSIGNED" "$ALIGNED"
-          "$APKSIGNER" sign \
-            --ks "$KS" \
-            --ks-key-alias "$ALIAS" \
-            --ks-pass "pass:$KSPASS" \
-            --key-pass "pass:$KEYPASS" \
-            --out "$SIGNED" \
-            "$ALIGNED"
-          "$APKSIGNER" verify "$SIGNED"
-          echo "Signed OK: $SIGNED"
-          ls -lh "$SIGNED"
+The workflow runs Python compilation and regression tests, Android unit tests, and `assembleRelease`. It checks that the APK contains `lib/arm64-v8a/librasp_guard.so`, signs the release APK, verifies the APK signature, and rejects a signer certificate that does not match the pinned ALVISIA release certificate.
 
-    artifacts:
-      - app/build/outputs/apk/**/*.apk
-      - ALVSIA_PRO_5.5.0_signed.apk
-      - ALVSIA_PRO_5.5.0_unsigned.apk
-      - build_full.log
+The workflow publishes these artifacts only after successful verification:
+
+- `ALVISIA_PRO_5.5.0_signed.apk`
+- `ALVSIA_PRO_5.5.0_release.sha256`
+- `ALVSIA_PRO_5.5.0_signing-verification.txt`
+- `build_full.log`
+
+## Run
+
+Select the `alvisia-android` workflow and click **Start new build**. Do not distribute a build unless CodeMagic finishes successfully and the signed APK, signer verification, and SHA-256 artifact are present.
