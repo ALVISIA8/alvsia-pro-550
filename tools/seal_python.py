@@ -47,6 +47,8 @@ def _key() -> bytes:
 def restore() -> None:
     manifest = BACKUP / "manifest.json"
     if not manifest.is_file():
+        if BACKUP.exists():
+            shutil.rmtree(BACKUP, ignore_errors=True)
         print("No protected Python backup to restore.")
         return
     for rel in json.loads(manifest.read_text(encoding="utf-8")):
@@ -77,6 +79,8 @@ def seal() -> None:
     BACKUP.mkdir(parents=True)
     (BACKUP / "manifest.json").write_text(json.dumps(list(MODULES)), encoding="utf-8")
     OUT.mkdir(parents=True, exist_ok=True)
+    for stale_blob in OUT.glob("*.alv"):
+        stale_blob.unlink()
     aes = AESGCM(_key())
     try:
         for rel, source in zip(MODULES, sources):
