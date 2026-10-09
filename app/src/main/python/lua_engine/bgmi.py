@@ -140,10 +140,18 @@ def transform_bgmi_lua(data: bytes, key: bytes = b"", decrypt=True) -> bytes:
             bx = (raw >> 14) & 0x3FFFF
             ax = (raw >> 6) & 0x3FFFFFF
             sbx = bx - 131071
-            sop = BGMI_STD.get(op, op) if decrypt else STD_BGMI.get(op, op)
-            fmt = (STD_FMT[sop] if sop < len(STD_FMT) else 0) if decrypt else (
-                STD_FMT[op] if op < len(STD_FMT) else 0
-            )
+            if decrypt:
+                if op not in BGMI_STD:
+                    raise ValueError(f"unsupported BGMI opcode {op} at instruction {_}")
+                sop = BGMI_STD[op]
+                if not 0 <= sop < len(STD_FMT):
+                    raise ValueError(f"invalid normalized opcode {sop} at instruction {_}")
+                fmt = STD_FMT[sop]
+            else:
+                if op not in STD_FMT or op not in STD_BGMI:
+                    raise ValueError(f"unsupported standard opcode {op} at instruction {_}")
+                sop = STD_BGMI[op]
+                fmt = STD_FMT[op]
             if fmt == 0:
                 encoded = (sop & 0x3F) | (a << 6) | (c << 14) | (b << 23)
             elif fmt == 1:
