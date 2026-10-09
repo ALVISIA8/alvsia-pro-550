@@ -76,16 +76,25 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
             dest.mkdir(parents=True, exist_ok=True)
             if sid == "pak_list":
                 r = core.run_pak_list(ip, dest / "index_list.txt")
+                if not r.get("ok"):
+                    lines.append("X PAK LIST FAILED: %s" % r.get("error", r))
+                    return "\n".join(lines)
                 lines.append("entries=%s -> %s" % (r.get("count"), r.get("out")))
                 for pth in (r.get("paths") or [])[:40]:
                     lines.append("  " + pth)
                 return "\n".join(lines)
             if sid == "pak_info":
                 r = core.run_pak_info(ip, dest / "info.txt")
-                lines.append(r.get("info", str(r)))
+                if not r.get("ok"):
+                    lines.append("X PAK INFO FAILED: %s" % r.get("error", r))
+                else:
+                    lines.append(r.get("info", str(r)))
                 return "\n".join(lines)
             if sid == "pak_csv":
                 r = core.run_pak_list(ip, None)
+                if not r.get("ok"):
+                    lines.append("X PAK CSV FAILED: %s" % r.get("error", r))
+                    return "\n".join(lines)
                 paths = r.get("paths") or []
                 csvp = dest / "index.csv"
                 csvp.write_text("path\n" + "\n".join(paths), encoding="utf-8")
