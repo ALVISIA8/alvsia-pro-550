@@ -62,6 +62,10 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                     if r.get("ok"):
                         lines.append("OK mode=%s lines=%s" % (r.get("mode","?"), r.get("lines",0)))
                         lines.append("OUT -> %s" % r.get("out","(see OUT/LUA/)"))
+                        if r.get("note"):
+                            lines.append("NOTE: %s" % r.get("note"))
+                        if r.get("strings_decrypted") is False:
+                            lines.append("WARN: bytecode structure was decompiled, but protected string constants were not fully restored")
                         if r.get("vm_obfuscated"):
                             lines.append("NOTE: VM obfuscation detected — decompiled VM interpreter (not original source)")
                     else:
