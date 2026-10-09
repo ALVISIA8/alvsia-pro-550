@@ -50,22 +50,25 @@ def test_captcha_parser_accepts_bounded_arithmetic_and_rejects_code():
             raise AssertionError(f"Captcha parser accepted invalid input: {malicious!r}")
 
 
-def test_zip_extractor_rejects_path_traversal(tmp_path):
+def test_zip_extractor_rejects_path_traversal():
+    import tempfile
     import zipfile
     extract = _load_standalone_python_function("_alvsia_safe_extract_zip")
-    archive_path = tmp_path / "malicious.zip"
-    output = tmp_path / "out"
-    outside = tmp_path / "escape.txt"
-    with zipfile.ZipFile(archive_path, "w") as archive:
-        archive.writestr("../escape.txt", "must-not-write")
-    with zipfile.ZipFile(archive_path) as archive:
-        try:
-            extract(archive, output)
-        except ValueError as exc:
-            assert "Unsafe ZIP entry path rejected" in str(exc)
-        else:
-            raise AssertionError("ZIP traversal entry was not rejected")
-    assert not outside.exists(), "ZIP traversal wrote outside destination"
+    with tempfile.TemporaryDirectory(prefix="alvsia-vanta-") as temp:
+        tmp_path = Path(temp)
+        archive_path = tmp_path / "malicious.zip"
+        output = tmp_path / "out"
+        outside = tmp_path / "escape.txt"
+        with zipfile.ZipFile(archive_path, "w") as archive:
+            archive.writestr("../escape.txt", "must-not-write")
+        with zipfile.ZipFile(archive_path) as archive:
+            try:
+                extract(archive, output)
+            except ValueError as exc:
+                assert "Unsafe ZIP entry path rejected" in str(exc)
+            else:
+                raise AssertionError("ZIP traversal entry was not rejected")
+        assert not outside.exists(), "ZIP traversal wrote outside destination"
 
 
 def test_no_reported_master_passwords_remain():
