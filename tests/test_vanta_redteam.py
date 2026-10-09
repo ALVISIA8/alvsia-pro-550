@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PY = ROOT / "app/src/main/python"
 ULTIMATE = (PY / "alvsia_ultimate.py").read_text(encoding="utf-8")
 CORE = (PY / "alvsia_core.py").read_text(encoding="utf-8")
-BRIDGE = (PY / "alvsia_bridge.py").read_text(encoding="utf-8")
+BRIDGE = (PY / "alvsia_bridge.py").read_text(encoding="utf-8") + "\n" + (PY / "alvsia_bridge_impl.py").read_text(encoding="utf-8")
 GRADLE = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
 MANIFEST = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
 NATIVE = ROOT / "app/src/main/cpp/rasp_guard.cpp"
