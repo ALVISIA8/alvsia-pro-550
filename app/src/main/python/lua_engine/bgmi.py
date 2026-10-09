@@ -98,7 +98,7 @@ def transform_bgmi_lua(data: bytes, key: bytes = b"", decrypt=True) -> bytes:
         if size < 1:
             raise ValueError("invalid Lua string length")
         raw = r.raw(size - 1)
-        if key and ((decrypt) or (not decrypt)):
+        if decrypt and key:
             raw = bytes(value ^ key[i % len(key)] for i, value in enumerate(raw))
         # Bytes preserve opaque/XOR-encrypted constants without lossy UTF-8 replacement.
         return raw
