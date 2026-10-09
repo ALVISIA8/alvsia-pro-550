@@ -51,7 +51,16 @@ def main():
             + bytes.fromhex("0000000000287740")
         )
         assert len(bgmi_header) == 33
-        unknown_opcode_chunk = bgmi_header + b"\x00" + (1).to_bytes(4, "little") + (6).to_bytes(4, "little")
+        # main upvalue, source=nil, line-defined, last-line, proto flags,
+        # instruction count, then one raw instruction whose opcode is 6.
+        unknown_opcode_chunk = (
+            bgmi_header
+            + b"\x00"
+            + b"\x00" * 8
+            + b"\x00" * 3
+            + (1).to_bytes(4, "little")
+            + (6).to_bytes(4, "little")
+        )
         try:
             transform_bgmi_lua(unknown_opcode_chunk)
         except ValueError as exc:
