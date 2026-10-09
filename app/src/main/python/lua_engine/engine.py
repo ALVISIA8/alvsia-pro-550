@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import tempfile
 from .detector import detect_lua, LuaInfo
-from .container import unwrap_lua_container, is_zlib_header
+from .container import unwrap_lua_container, is_zlib_header, is_zlib_header
 
 def _find_java():
     for name in ("java", "/system/bin/java", "/data/data/com.alvsia.pro/files/java/bin/java"):
@@ -80,7 +80,7 @@ def _xor_candidate(data: bytes, key: bytes, offset: int):
 def _normalized_input(path: Path, out: Path):
     """Normalize a wrapped Lua container into a real .luac/.lj input."""
     raw = path.read_bytes()
-    if not raw.startswith(b"\x78\xda"):
+    if not is_zlib_header(raw):
         return path, None
     payload, ci = unwrap_lua_container(raw)
     if not payload.startswith((b"\x1bLua", b"\x1bLJ")):
@@ -93,7 +93,7 @@ def analyze_lua(path, out_dir=None, keys=None):
     p=Path(path); out=Path(out_dir) if out_dir else p.parent; out.mkdir(parents=True,exist_ok=True)
     raw=p.read_bytes(); container=None; work=p
     try:
-        if raw.startswith(b"\x78\xda"):
+        if is_zlib_header(raw):
             work, container = _normalized_input(p, out)
     except Exception as exc:
         return {"ok": False, "file": str(p), "format": "container-unknown",
@@ -143,7 +143,7 @@ def decompile_lua(path, out_dir, jars_dir=None, timeout=120):
     info=detect_lua(p)
     normalized=p; container=None
     try:
-        if p.read_bytes().startswith(b"\x78\xda"):
+        if is_zlib_header(p.read_bytes()):
             normalized, container = _normalized_input(p, out)
             info=detect_lua(normalized)
     except Exception as exc:
