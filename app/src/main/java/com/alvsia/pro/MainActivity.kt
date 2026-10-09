@@ -27,7 +27,6 @@ import com.alvsia.pro.sec.Tamper
 import com.alvsia.pro.sec.ThreatReport
 import com.alvsia.pro.tool.CoreBundle
 import com.alvsia.pro.tool.CoreSession
-import com.alvsia.pro.tool.FaunaPack
 import com.alvsia.pro.tool.RamToolVault
 import com.alvsia.pro.tool.SubMenus
 import com.alvsia.pro.tool.SubTool
@@ -232,17 +231,16 @@ class MainActivity : ComponentActivity() {
                                             )
                                         }
                                     }
-                                } else {
-                                    tools = ToolCatalog.defaults()
-                                }
                                 if (!engineFromServer) {
-                                    val fauna = withContext(Dispatchers.IO) {
-                                        FaunaPack.unpackFromAssets(this@MainActivity)
-                                    }
-                                    if (fauna != null) {
-                                        engine.installEngineBytes(fauna)
-                                        core.loadFromMemory(fauna)
-                                    }
+                                    // Fail closed: never authorize a bundled/local core when the
+                                    // panel fetch fails or returns a catalog without the protected engine.
+                                    loading = false
+                                    SessionGate.lock(this@MainActivity)
+                                    engine.wipeEngine()
+                                    core.wipe()
+                                    error = "Protected engine could not be fetched from the panel. Please retry login."
+                                    screen = "login"
+                                    return@launch
                                 }
 
                                 val tamper = Tamper.evaluate(this@MainActivity)
