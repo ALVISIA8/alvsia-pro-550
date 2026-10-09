@@ -2515,10 +2515,12 @@ def run_pak_unpack(pak_path, out_dir, authorization_operation='pak.unpack'):
     out_dir.mkdir(parents=True, exist_ok=True)
     pak = TencentPakFile(pak_path)
     # Prefer dump if available, and refuse partial extraction as success.
+    expected_after_dump = None
     if hasattr(pak, 'dump'):
         stats = pak.dump(out_dir)
         if isinstance(stats, dict):
             expected = int(stats.get('expected_files', 0))
+            expected_after_dump = expected
             written = int(stats.get('written_files', 0))
             skipped_dirs = int(stats.get('skipped_directories', 0))
             skipped_files = int(stats.get('skipped_files', 0))
@@ -2556,6 +2558,14 @@ def run_pak_unpack(pak_path, out_dir, authorization_operation='pak.unpack'):
             return {'ok': False, 'error': 'incomplete PAK extraction: written=%d/%d; %s' % (n, expected, '; '.join(failures[:5])), 'files': n, 'expected_files': expected, 'out': str(out_dir)}
     # Count real files after successful completion, not stale or partial outputs.
     n = sum(1 for p in out_dir.rglob('*') if p.is_file() and not p.name.endswith('.alvsia-tmp'))
+    if expected_after_dump is not None and n != expected_after_dump:
+        return {
+            'ok': False,
+            'error': 'output file count mismatch: expected %d, found %d' % (expected_after_dump, n),
+            'files': n,
+            'expected_files': expected_after_dump,
+            'out': str(out_dir),
+        }
     return {'ok': True, 'files': n, 'out': str(out_dir)}
 
 
