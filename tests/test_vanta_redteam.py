@@ -14,6 +14,7 @@ BRIDGE = (PY / "alvsia_bridge.py").read_text(encoding="utf-8")
 GRADLE = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
 MANIFEST = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
 NATIVE = ROOT / "app/src/main/cpp/rasp_guard.cpp"
+CODEMAGIC = (ROOT / "codemagic.yaml").read_text(encoding="utf-8")
 PANEL_CLIENT = (ROOT / "app/src/main/java/com/alvsia/pro/panel/PanelClient.kt").read_text(encoding="utf-8")
 
 
@@ -164,6 +165,16 @@ def test_bridge_requires_apk_session_gate():
     assert "ALVSIA_SESSION_TOKEN" in BRIDGE
 
 
+def test_codemagic_release_signing_fails_closed_and_pins_certificate():
+    sign_block = CODEMAGIC.split("- name: Sign and verify production release APK", 1)[1]
+    assert 'if [ -z "${CM_KEYSTORE:-}" ] || [ -z "${CM_KEYSTORE_PASSWORD:-}" ]; then' in sign_block
+    assert 'exit 2' in sign_block
+    assert 'apksigner" verify --verbose --print-certs' in sign_block
+    assert '99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c' in sign_block
+    assert 'ALVSIA_PRO_5.5.0_unsigned.apk' not in CODEMAGIC
+    assert 'app/build/outputs/apk/**/*.apk' not in CODEMAGIC
+
+
 if __name__ == "__main__":
     checks = [
         test_captcha_parser_accepts_bounded_arithmetic_and_rejects_code,
@@ -176,6 +187,7 @@ if __name__ == "__main__":
         test_apk_session_requires_native_token_shape,
         test_core_operation_gate_rejects_marker_only_bypass,
         test_bridge_requires_apk_session_gate,
+        test_codemagic_release_signing_fails_closed_and_pins_certificate,
     ]
     for check in checks:
         check()
