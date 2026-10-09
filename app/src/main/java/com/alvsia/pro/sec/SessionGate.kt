@@ -129,9 +129,20 @@ object SessionGate {
             return try {
                 val p = ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
                 val granted = decrypt(p.getString(KEY_GRANTED, null)) == "1"
-                val ts      = decrypt(p.getString(KEY_TS, null))?.toLongOrNull() ?: 0L
-                val ok = granted && (System.currentTimeMillis() - ts) <= SESSION_TTL
-                if (ok) { _grantedInMem = true; _tsInMem = ts }
+                val ts = decrypt(p.getString(KEY_TS, null))?.toLongOrNull() ?: 0L
+                val token = decrypt(p.getString(KEY_TOKEN, null))?.trim().orEmpty()
+                val license = decrypt(p.getString(KEY_LICENSE, null))?.trim().orEmpty()
+                val age = System.currentTimeMillis() - ts
+                val credentialsValid =
+                    token.matches(Regex("^[0-9A-Fa-f]{64}$")) && license.isNotEmpty()
+                val ok = granted && credentialsValid && ts > 0L && age in 0..SESSION_TTL
+                if (ok) {
+                    _grantedInMem = true
+                    _tsInMem = ts
+                } else {
+                    _grantedInMem = false
+                    _tsInMem = 0L
+                }
                 ok
             } catch (_: Exception) { false }
         }
