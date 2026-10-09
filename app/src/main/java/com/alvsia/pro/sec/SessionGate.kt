@@ -230,7 +230,8 @@ object SessionGate {
             strikeTag(0)
         } catch (e: Exception) {
             ThreatReport.emit(ctx, "UNLOCK_KS_ERR", e.message ?: "strike_tag_fail")
-            return
+            lock(ctx)
+            return false
         }
 
         try {
