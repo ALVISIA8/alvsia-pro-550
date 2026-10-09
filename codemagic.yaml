@@ -50,6 +50,10 @@ workflows:
           python3 tests/test_tool_dispatch.py
           python3 tests/test_vanta_redteam.py
           python3 tools/security_release_check.py
+          python3 -m pip install --disable-pip-version-check cryptography
+          python3 tools/seal_python.py --restore
+          python3 tools/seal_python.py --seal
+          python3 tools/seal_python.py --restore
           if command -v lua5.3 >/dev/null 2>&1; then
             LUA_BIN=lua5.3 bash tests/test_unluac_integration.sh
           elif command -v lua >/dev/null 2>&1; then
