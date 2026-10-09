@@ -83,9 +83,25 @@ def test_pak_v46_sm4_flag50_key_vector():
 
 
 def test_unpack_refuses_skipped_entries_and_output_count_mismatch():
+    import os
     original_class = core.TencentPakFile
-    old_session = __import__("os").environ.get("ALVSIA_APK_SESSION")
-    __import__("os").environ["ALVSIA_APK_SESSION"] = "1"
+    original_require = core._alvsia_require_operation
+    original_proof = getattr(core, "_ALVSIA_CORE_ACTIVE_PROOF", None)
+    old_session = os.environ.get("ALVSIA_APK_SESSION")
+    old_token = os.environ.get("ALVSIA_SESSION_TOKEN")
+    os.environ["ALVSIA_APK_SESSION"] = "1"
+    os.environ.pop("ALVSIA_SESSION_TOKEN", None)
+    core._alvsia_clear_operation_proof()
+    try:
+        core._alvsia_require_operation(("pak.unpack",))
+    except RuntimeError as exc:
+        assert "Operation authorization failed" in str(exc)
+    else:
+        raise AssertionError("session marker alone must not authorize PAK unpack")
+
+    # Isolate extraction-integrity behavior from the production authorization
+    # gate; the gate itself is asserted above to reject a marker-only session.
+    core._alvsia_require_operation = lambda _allowed: True
 
     class FakePak:
         def __init__(self, _path):
@@ -127,10 +143,16 @@ def test_unpack_refuses_skipped_entries_and_output_count_mismatch():
             assert "output file count mismatch" in result["error"]
     finally:
         core.TencentPakFile = original_class
+        core._alvsia_require_operation = original_require
+        core._ALVSIA_CORE_ACTIVE_PROOF = original_proof
         if old_session is None:
-            __import__("os").environ.pop("ALVSIA_APK_SESSION", None)
+            os.environ.pop("ALVSIA_APK_SESSION", None)
         else:
-            __import__("os").environ["ALVSIA_APK_SESSION"] = old_session
+            os.environ["ALVSIA_APK_SESSION"] = old_session
+        if old_token is None:
+            os.environ.pop("ALVSIA_SESSION_TOKEN", None)
+        else:
+            os.environ["ALVSIA_SESSION_TOKEN"] = old_token
 
 
 def main():
@@ -144,7 +166,7 @@ def main():
     for test in tests:
         test()
         print("PASS", test.__name__)
-    print("PAK EXTRACTION REGRESSION: PASS (5/5)")
+    print("PAK EXTRACTION REGRESSION: PASS (5/5; marker-only authorization rejected)")
 
 
 if __name__ == "__main__":
