@@ -34,6 +34,15 @@ def main():
         plain, ci = unwrap_lua_container(lua_payload)
         assert plain == lua_payload and not ci.wrapped
 
+        # Enforce the expansion limit before buffering an oversized payload.
+        oversized = zlib.compress(b"\\x1bLuaS" + (b"A" * 10000), 9)
+        try:
+            unwrap_lua_container(oversized, max_output=128)
+        except ValueError as exc:
+            assert "exceeds output limit" in str(exc)
+        else:
+            raise AssertionError("oversized zlib payload was accepted")
+
     # Real wrapped Lua regression fixture: chunked 78da/raw-deflate container.
     real = Path("/mnt/data/CharacterBase.lua")
     if real.is_file():
