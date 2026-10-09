@@ -7,6 +7,16 @@ LUA_MAGIC = b"\x1bLua"
 LJ_MAGIC = b"\x1bLJ"
 
 
+def is_zlib_header(data: bytes) -> bool:
+    """Return whether the first two bytes form a valid RFC 1950 zlib header."""
+    return (
+        len(data) >= 2
+        and (data[0] & 0x0F) == 8
+        and (data[0] >> 4) <= 7
+        and ((data[0] << 8) | data[1]) % 31 == 0
+    )
+
+
 @dataclass(frozen=True)
 class ContainerInfo:
     wrapped: bool
@@ -46,13 +56,7 @@ def unwrap_lua_container(data: bytes, max_output: int = 256 * 1024 * 1024):
     """
     # Accept any RFC 1950 zlib header, not only the common 78da variant.
     # CM=DEFLATE, CINFO<=7, and the header must be divisible by 31.
-    is_zlib = (
-        len(data) >= 2
-        and (data[0] & 0x0F) == 8
-        and (data[0] >> 4) <= 7
-        and ((data[0] << 8) | data[1]) % 31 == 0
-    )
-    if not is_zlib:
+    if not is_zlib_header(data):
         return data, ContainerInfo(False, "none", 0, len(data), ())
 
     # First try a normal zlib stream. This handles 7801, 789c, and 78da.
