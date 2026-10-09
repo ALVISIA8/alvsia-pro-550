@@ -53,13 +53,15 @@ def main():
         assert len(bgmi_header) == 33
         # main upvalue, source=nil, line-defined, last-line, proto flags,
         # instruction count, then one raw instruction whose opcode is 6.
+        import struct
         unknown_opcode_chunk = (
             bgmi_header
-            + b"\x00"
-            + b"\x00" * 8
-            + b"\x00" * 3
-            + (1).to_bytes(4, "little")
-            + (6).to_bytes(4, "little")
+            + struct.pack("<B", 0)       # main upvalue count
+            + struct.pack("<B", 0)       # nil source string
+            + struct.pack("<ii", 0, 0)  # line-defined, last-line
+            + struct.pack("<BBB", 0, 0, 0)  # proto flags
+            + struct.pack("<I", 1)       # one instruction
+            + struct.pack("<I", 6)       # unsupported opcode 6
         )
         try:
             transform_bgmi_lua(unknown_opcode_chunk)
