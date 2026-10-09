@@ -1,5 +1,6 @@
 package com.alvsia.pro.panel
 
+import com.alvsia.pro.BuildConfig
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.FormBody
@@ -73,7 +74,7 @@ class PanelClient {
         .followSslRedirects(true)
         .build()
 
-    /** Prefer pinned TLS; on pin rotate (CDN) fall back once. */
+    /** Pinned TLS is mandatory in release builds; only debug builds may use the loose client. */
     private val clientPinned = clientLoose.newBuilder()
         .certificatePinner(Vault.certPinner())
         .build()
@@ -88,11 +89,6 @@ class PanelClient {
         private set
     var toolTicket: String = ""
         private set
-
-    // Pin-failure counter: at most 1 CDN cert-rotation grace per session.
-    // A MITM attacker triggers the same exception; they cannot know the grace
-    // count and will be blocked on the second attempt. Event is reported regardless.
-    @Volatile private var _pinGrace: Int = 0
 
     private fun callWithPinFallback(req: Request): okhttp3.Response {
         return try {
@@ -111,12 +107,13 @@ class PanelClient {
         try {
             _appCtx?.let { com.alvsia.pro.sec.ThreatReport.emit(it, "PIN_FAIL", "${req.url.host}:$reason") }
         } catch (_: Exception) {}
-        if (_pinGrace < 1) {
-            _pinGrace++
+        // Never downgrade TLS pinning in production. A pin rotation must be
+        // reviewed and released deliberately instead of silently allowing MITM.
+        if (BuildConfig.DEBUG) {
             return clientLoose.newCall(req).execute()
         }
         throw javax.net.ssl.SSLPeerUnverifiedException(
-            "BLOCKED: TLS pin failed twice this session on ${req.url.host}"
+            "BLOCKED: TLS pin verification failed for ${req.url.host}"
         )
     }
 
