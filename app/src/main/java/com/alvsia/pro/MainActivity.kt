@@ -231,6 +231,7 @@ class MainActivity : ComponentActivity() {
                                             )
                                         }
                                     }
+                                }
                                 if (!engineFromServer) {
                                     // Fail closed: never authorize a bundled/local core when the
                                     // panel fetch fails or returns a catalog without the protected engine.
