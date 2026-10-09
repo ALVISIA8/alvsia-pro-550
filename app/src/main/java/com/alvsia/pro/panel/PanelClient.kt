@@ -65,7 +65,7 @@ class PanelClient {
         }
     }
 
-    private val clientLoose = OkHttpClient.Builder()
+    private val clientBase = OkHttpClient.Builder()
         .cookieJar(jar)
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
@@ -73,8 +73,8 @@ class PanelClient {
         .followSslRedirects(true)
         .build()
 
-    /** Prefer pinned TLS; on pin rotate (CDN) fall back once. */
-    private val clientPinned = clientLoose.newBuilder()
+     /** Pin-only TLS: certificate validation failure never retries on an unpinned client. */
+    private val clientPinned = clientBase.newBuilder()
         .certificatePinner(Vault.certPinner())
         .build()
 
@@ -89,37 +89,32 @@ class PanelClient {
     var toolTicket: String = ""
         private set
 
-    // Pin-failure counter: at most 1 CDN cert-rotation grace per session.
-    // A MITM attacker triggers the same exception; they cannot know the grace
-    // count and will be blocked on the second attempt. Event is reported regardless.
-    @Volatile private var _pinGrace: Int = 0
-
-    private fun callWithPinFallback(req: Request): okhttp3.Response {
-        return try {
-            clientPinned.newCall(req).execute()
-        } catch (e: javax.net.ssl.SSLPeerUnverifiedException) {
-            handlePinFailure(req, "ssl_peer_unverified")
-        } catch (e: java.security.cert.CertificateException) {
-            handlePinFailure(req, "cert_exception")
-        }
-    }
-
     // Nullable app context — set on first login() call
     private var _appCtx: android.content.Context? = null
 
-    private fun handlePinFailure(req: Request, reason: String): okhttp3.Response {
+    private fun reportPinFailure(req: Request, reason: String) {
         try {
-            _appCtx?.let { com.alvsia.pro.sec.ThreatReport.emit(it, "PIN_FAIL", "${req.url.host}:$reason") }
+            _appCtx?.let {
+                com.alvsia.pro.sec.ThreatReport.emit(
+                    it, "PIN_FAIL", "${req.url.host}:$reason"
+                )
+            }
         } catch (_: Exception) {}
-        if (_pinGrace < 1) {
-            _pinGrace++
-            return clientLoose.newCall(req).execute()
-        }
-        throw javax.net.ssl.SSLPeerUnverifiedException(
-            "BLOCKED: TLS pin failed twice this session on ${req.url.host}"
-        )
     }
 
+    private fun executePinned(req: Request): okhttp3.Response {
+        return try {
+            clientPinned.newCall(req).execute()
+        } catch (e: javax.net.ssl.SSLPeerUnverifiedException) {
+            reportPinFailure(req, "ssl_peer_unverified")
+            throw e
+        } catch (e: java.security.cert.CertificateException) {
+            reportPinFailure(req, "cert_exception")
+            throw javax.net.ssl.SSLPeerUnverifiedException(
+                "BLOCKED: TLS certificate validation failed for ${req.url.host}"
+            ).apply { initCause(e) }
+        }
+    }
     private fun base() = Vault.apiBase()
 
     fun login(license: String, hwid: String): LoginResult {
@@ -354,7 +349,7 @@ class PanelClient {
             .header("Accept-Language", "en-US,en;q=0.9")
             .get()
             .build()
-        callWithPinFallback(req).use { return it.body?.string() }
+        executePinned(req).use { return it.body?.string() }
     }
 
     private fun postJson(url: String, json: String): String? {
@@ -369,11 +364,11 @@ class PanelClient {
             .header("Content-Type", "application/json")
             .post(body)
             .build()
-        callWithPinFallback(req).use { resp ->
+        executePinned(req).use { resp ->
             val s = resp.body?.string() ?: return null
             if (s.contains("slowAES") || s.contains("__test")) {
                 if (solveTestCookie(s, url)) {
-                    callWithPinFallback(req).use { return it.body?.string() }
+                    executePinned(req).use { return it.body?.string() }
                 }
             }
             return s
@@ -391,7 +386,7 @@ class PanelClient {
             .header("Content-Type", "application/json")
             .post(body)
             .build()
-        callWithPinFallback(req).use { return it.body?.bytes() }
+        executePinned(req).use { return it.body?.bytes() }
     }
 
     private fun postForm(url: String, fields: Map<String, String>): String? {
@@ -406,11 +401,11 @@ class PanelClient {
             .header("Accept-Language", "en-US,en;q=0.9")
             .post(body)
             .build()
-        callWithPinFallback(req).use { resp ->
+        executePinned(req).use { resp ->
             val s = resp.body?.string() ?: return null
             if (s.contains("slowAES") || s.contains("__test")) {
                 if (solveTestCookie(s, url)) {
-                    callWithPinFallback(req).use { return it.body?.string() }
+                    executePinned(req).use { return it.body?.string() }
                 }
             }
             return s
@@ -428,7 +423,7 @@ class PanelClient {
             .header("Accept", "*/*")
             .post(body)
             .build()
-        callWithPinFallback(req).use { return it.body?.bytes() }
+        executePinned(req).use { return it.body?.bytes() }
     }
 
     fun securityEvent(jsonBody: String): Boolean {
@@ -441,7 +436,7 @@ class PanelClient {
                 .header("User-Agent", Vault.ua())
                 .header("Content-Type", "application/json")
                 .build()
-            callWithPinFallback(req).use { it.isSuccessful }
+            executePinned(req).use { it.isSuccessful }
         } catch (_: Exception) {
             false
         }
