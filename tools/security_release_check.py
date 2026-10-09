@@ -77,6 +77,11 @@ if "networkSecurityConfig" not in manifest or "alvsiapro.cc.cd" not in read(ROOT
     fail.append("panel network security configuration is missing")
 if "KEY_ALGORITHM_HMAC_SHA256" not in session or "age in 0..SESSION_TTL" not in session:
     fail.append("SessionGate HMAC or future/expiry timestamp checks are missing")
+ultimate = read(PY / "alvsia_ultimate.py")
+if "/SKIN_TOOL/main/SKIN_TOOL.zip" in ultimate or "/BGMI_CSV/main/" in ultimate:
+    fail.append("external SKIN_TOOL/BGMI_CSV downloads are not commit-pinned")
+if "_verify_pinned_git_blob" not in ultimate or "cbd3d0e257963b54f34a908b6864040c7f96fbb1" not in ultimate:
+    fail.append("external data download integrity verification is missing")
 if fail:
     print("SECURITY SOURCE CHECK: FAIL")
     print("\n".join("- " + x for x in fail))
