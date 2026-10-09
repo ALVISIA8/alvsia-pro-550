@@ -84,7 +84,7 @@ def seal() -> None:
     aes = AESGCM(_key())
     try:
         for rel, source in zip(MODULES, sources):
-            name = rel.replace("/", "_").removesuffix(".py") + ".alv"
+            name = rel.replace("/", "_")[:-3] + ".alv"
             nonce = os.urandom(12)
             encrypted = aes.encrypt(nonce, source.read_bytes(), MAGIC)
             (OUT / name).write_bytes(MAGIC + nonce + encrypted)
