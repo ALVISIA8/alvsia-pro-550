@@ -189,11 +189,14 @@ object SessionGate {
             ThreatReport.emit(ctx, "RASP_DEGRADED", "soft_threat")
         }
 
-        val p       = prefs(ctx)
+        val p = prefs(ctx)
         val granted = try { decrypt(p.getString(KEY_GRANTED, null)) == "1" } catch (_: Exception) { false }
-        val ts      = try { decrypt(p.getString(KEY_TS, null))?.toLongOrNull() ?: 0L } catch (_: Exception) { 0L }
+        val ts = try { decrypt(p.getString(KEY_TS, null))?.toLongOrNull() ?: 0L } catch (_: Exception) { 0L }
+        val token = try { decrypt(p.getString(KEY_TOKEN, null))?.trim().orEmpty() } catch (_: Exception) { "" }
+        val license = try { decrypt(p.getString(KEY_LICENSE, null))?.trim().orEmpty() } catch (_: Exception) { "" }
+        val credentialsValid = token.matches(Regex("^[0-9A-Fa-f]{64}$")) && license.isNotEmpty()
         val strikes = p.getInt(KEY_STRIKES, 0)
-        val now     = System.currentTimeMillis()
+        val now = System.currentTimeMillis()
 
         if (!strikesIntegral(p)) {
             // Strike counter was tampered — treat as max strikes
@@ -207,11 +210,13 @@ object SessionGate {
             throw SecurityException("BLOCKED:strike_limit")
         }
 
-        if (!granted) {
-            throw SecurityException("BLOCKED:no_session")
+        if (!granted || !credentialsValid || ts <= 0L) {
+            lock(ctx)
+            throw SecurityException("BLOCKED:no_valid_session")
         }
 
-        if (now - ts > SESSION_TTL) {
+        val age = now - ts
+        if (age < 0L || age > SESSION_TTL) {
             lock(ctx)
             throw SecurityException("BLOCKED:session_expired")
         }
