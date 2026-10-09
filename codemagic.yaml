@@ -46,6 +46,11 @@ workflows:
             echo "Lua 5.3 not installed on this runner; Lua integration is covered by GitHub Actions."
           fi
 
+      - name: Run Android unit tests
+        script: |
+          set -euo pipefail
+          ./gradlew testDebugUnitTest --stacktrace --no-daemon
+
       - name: Build release APK
         script: |
           set -o pipefail
