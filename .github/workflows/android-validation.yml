@@ -77,11 +77,24 @@ jobs:
       - name: Compile and test
         run: ./gradlew testDebugUnitTest assembleRelease --stacktrace --no-daemon
 
-      - name: Verify native RASP library is packaged
+      - name: Verify native RASP library and calculate APK checksum
         run: |
+          set -euo pipefail
           APK=$(find app/build/outputs/apk/release -name '*.apk' -type f | head -1)
           test -n "$APK"
           unzip -Z1 "$APK" | grep -Fx 'lib/arm64-v8a/librasp_guard.so'
+          mkdir -p release-candidate
+          cp "$APK" release-candidate/ALVSIA_PRO_5.5.0_release-candidate.apk
+          sha256sum release-candidate/ALVSIA_PRO_5.5.0_release-candidate.apk | tee release-candidate/ALVSIA_PRO_5.5.0_release-candidate.sha256
+
+      - name: Upload release candidate APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ALVISIA-PRO-5.5.0-RELEASE-CANDIDATE
+          path: release-candidate/*
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload build diagnostics
         if: always()
