@@ -997,7 +997,7 @@ def validate_key_with_panel(license_key: str) -> dict | None:
             import base64
             equation = base64.b64decode(equation_b64).decode()
             try:
-                solution = int(eval(equation))
+                solution = _safe_captcha_integer(equation)
             except:
                 solution = 0
         else:
@@ -1299,6 +1299,15 @@ def _alv_core_sha256_file(path):
             h.update(block)
     return h.hexdigest()
 
+def _alv_apk_session_valid():
+    """Require the native session token as well as the legacy session marker."""
+    token = os.environ.get("ALVSIA_SESSION_TOKEN", "")
+    return (
+        os.environ.get("ALVSIA_APK_SESSION") == "1"
+        and re.fullmatch(r"[0-9A-Fa-f]{64}", token) is not None
+    )
+
+
 def _alv_core_live_measurement():
     import pathlib as _pl
     root = _pl.Path(__file__).resolve().parent
@@ -1366,7 +1375,7 @@ def _alv_clear_operation_proof():
 def _alv_require_operation(allowed_operations):
     # APK: panel session already verified in native layer — do not alter crypto/PAK logic
     import os as _os
-    if _os.environ.get('ALVSIA_APK_SESSION') == '1':
+    if _alv_apk_session_valid():
         return True
     p = _ALVSIA_CORE_ACTIVE_PROOF
     if not isinstance(p, dict):
@@ -3843,7 +3852,12 @@ def download_skin_tool():
        # console.print("[dim]📦 Extracting... (Please wait)[/]")
         
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(base_dir)
+            extraction_root = Path(base_dir).resolve()
+            for member in zip_ref.infolist():
+                target = (extraction_root / member.filename).resolve()
+                if target != extraction_root and extraction_root not in target.parents:
+                    raise ValueError("Unsafe ZIP entry path rejected")
+                zip_ref.extract(member, extraction_root)
         
         # 🔥 ZIP DELETE (CHUP CHAP)
         if zip_path.exists():
@@ -11145,7 +11159,7 @@ DEVICE_FILE = SECURITY_DIR / "device.json"
 
 # ==================== AUTHOR LICENSE SYSTEM ====================
 
-AUTHOR_PASSWORD = "ALVSIA_MASTER_20277"
+AUTHOR_PASSWORD = None  # secrets must be managed server-side; no client-side master password
 
 LICENSE_TYPES = {
     "1DAY": {"duration": 1, "label": "1 Day Trial", "prefix": "ALVSIA-1DAY-", "price": "Free"},
@@ -11167,6 +11181,57 @@ TRIAL_CONFIG = {
 TRIAL_DATABASE = {}
 
 # ==================== SECURITY FUNCTIONS ====================
+
+def _safe_captcha_integer(expression):
+    """Evaluate only bounded integer arithmetic; never execute Python code."""
+    import ast
+    import operator
+    if not isinstance(expression, str) or len(expression) > 256:
+        raise ValueError("invalid captcha expression")
+    tree = ast.parse(expression, mode="eval")
+    allowed_bin = {
+        ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
+        ast.FloorDiv: operator.floordiv, ast.Mod: operator.mod,
+    }
+    nodes = list(ast.walk(tree))
+    if len(nodes) > 64:
+        raise ValueError("captcha expression too complex")
+
+    def visit(node, depth=0):
+        if depth > 16:
+            raise ValueError("captcha expression too deep")
+        if isinstance(node, ast.Expression):
+            return visit(node.body, depth + 1)
+        if isinstance(node, ast.Constant) and type(node.value) is int:
+            value = node.value
+        elif isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            operand = visit(node.operand, depth + 1)
+            value = operand if isinstance(node.op, ast.UAdd) else -operand
+        elif isinstance(node, ast.BinOp) and type(node.op) in allowed_bin:
+            left = visit(node.left, depth + 1)
+            right = visit(node.right, depth + 1)
+            if isinstance(node.op, (ast.FloorDiv, ast.Mod)) and right == 0:
+                raise ValueError("division by zero")
+            value = allowed_bin[type(node.op)](left, right)
+        else:
+            raise ValueError("unsupported captcha expression")
+        if not isinstance(value, int) or abs(value) > 1000000000:
+            raise ValueError("captcha result out of range")
+        return value
+
+    return visit(tree)
+
+
+def _alvsia_safe_extract_zip(zip_file, destination):
+    """Extract ZIP entries only when their resolved path stays under destination."""
+    root = Path(destination).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    for member in zip_file.infolist():
+        target = (root / member.filename).resolve()
+        if target != root and root not in target.parents:
+            raise ValueError("Unsafe ZIP entry path rejected")
+        zip_file.extract(member, root)
+
 
 def get_device_id():
     device_info = ""
@@ -12007,7 +12072,7 @@ def show_license_info():
 # ==================== RESET LICENSE ====================
 
 def reset_license():
-    admin_password = "ALVSIA_2027"
+    admin_password = None  # admin reset must be authorized by the panel, never by an APK constant
     console.print(f"\n[bold red]╔{'═' * 56}╗[/bold red]")
     console.print(f"[bold red]║  [bold white on red] 🔐 ADMIN LICENSE RESET [/bold white on red]                      [bold red]║[/bold red]")
     console.print(f"[bold red]║  [bold yellow]⚠ This will reset ALL license data![/bold red]    [bold red]║[/bold red]")
@@ -12033,7 +12098,7 @@ def reset_license():
 
 def run_security_check():
     """Fail-closed master gate for the APK session."""
-    if os.environ.get("ALVSIA_APK_SESSION") != "1":
+    if not _alv_apk_session_valid():
         return False
     return True
 
@@ -12856,7 +12921,7 @@ def pak_deep_aes(input_path, out_dir, key_hex="", iv_hex=""):
     dec_file = result["out"]
     try:
         with zipfile.ZipFile(dec_file) as zf:
-            zf.extractall(out_dir)
+            _alvsia_safe_extract_zip(zf, out_dir)
             result["extracted"] = len(zf.namelist())
     except Exception:
         result["note"] = "decrypted but not a valid ZIP/PAK"
@@ -12899,7 +12964,7 @@ def pak_deep_zuc(input_path, out_dir, key_hex=""):
     import zipfile
     try:
         with zipfile.ZipFile(result["out"]) as zf:
-            zf.extractall(out_dir)
+            _alvsia_safe_extract_zip(zf, out_dir)
             result["extracted"] = len(zf.namelist())
     except Exception:
         result["note"] = "decrypted but not ZIP"
@@ -12914,7 +12979,7 @@ def pak_deep_sm4(input_path, out_dir, key_hex=""):
     import zipfile
     try:
         with zipfile.ZipFile(result["out"]) as zf:
-            zf.extractall(out_dir)
+            _alvsia_safe_extract_zip(zf, out_dir)
             result["extracted"] = len(zf.namelist())
     except Exception:
         result["note"] = "decrypted but not ZIP"
@@ -12931,7 +12996,7 @@ def pak_deep_auto(input_path, out_dir):
     if raw[:2] == b"PK":
         try:
             with zipfile.ZipFile(str(p)) as zf:
-                zf.extractall(str(out_dir))
+                _alvsia_safe_extract_zip(zf, out_dir)
                 return {"ok": True, "method": "plain_zip", "extracted": len(zf.namelist()), "out": str(out_dir)}
         except Exception: pass
     # Try zlib
