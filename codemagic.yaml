@@ -164,6 +164,17 @@ workflows:
 
           exit "$STATUS"
 
+      - name: Audit release APK protection layers
+        script: |
+          set -e
+          APK="$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | head -1)"
+          if [ -z "$APK" ]; then
+            echo "No release APK found for security audit"
+            exit 1
+          fi
+          echo "Auditing artifact: $APK"
+          python3 tools/audit_release_apk.py "$APK"
+
       - name: Sign APK if keystore present
         script: |
           set -e
@@ -230,3 +241,4 @@ workflows:
       - ALVSIA_PRO_5.5.0_unsigned.apk
       - build_full.log
       - native_failure_report.txt
+      - release_security_audit.txt
