@@ -14,6 +14,7 @@ BRIDGE = (PY / "alvsia_bridge.py").read_text(encoding="utf-8")
 GRADLE = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
 MANIFEST = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
 NATIVE = ROOT / "app/src/main/cpp/rasp_guard.cpp"
+PANEL_CLIENT = (ROOT / "app/src/main/java/com/alvsia/pro/panel/PanelClient.kt").read_text(encoding="utf-8")
 
 
 
@@ -103,6 +104,13 @@ def test_release_hardening_is_enabled():
     assert NATIVE.is_file(), "Native RASP source is missing"
 
 
+def test_release_tls_pinning_fails_closed():
+    assert "if (BuildConfig.DEBUG)" in PANEL_CLIENT
+    assert "clientLoose.newCall(req).execute()" in PANEL_CLIENT
+    assert "BLOCKED: TLS pin verification failed" in PANEL_CLIENT
+    assert "_pinGrace" not in PANEL_CLIENT
+
+
 def test_apk_session_requires_native_token_shape():
     import os
     from unittest.mock import patch
@@ -132,6 +140,7 @@ if __name__ == "__main__":
         test_captcha_does_not_use_eval,
         test_no_direct_zip_extractall_calls,
         test_release_hardening_is_enabled,
+        test_release_tls_pinning_fails_closed,
         test_apk_session_requires_native_token_shape,
         test_bridge_requires_apk_session_gate,
     ]
