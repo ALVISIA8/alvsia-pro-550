@@ -892,8 +892,16 @@ class PakCompression:
         if compression_method == CM_ZLIB:
             try:
                 return zlib.decompress(block)
-            except zlib.error:
-                return block
+            except zlib.error as wrapped_error:
+                # Some producers store raw DEFLATE rather than a zlib wrapper.
+                try:
+                    return zlib.decompress(block, -zlib.MAX_WBITS)
+                except zlib.error as raw_error:
+                    # Never return compressed bytes as if they were extracted plaintext.
+                    raise ValueError(
+                        "ZLIB/DEFLATE block decompression failed "
+                        "(wrapped: %s; raw: %s)" % (wrapped_error, raw_error)
+                    ) from raw_error
         elif compression_method == CM_ZSTD or compression_method == CM_ZSTD_DICT:
             if compression_method != CM_ZSTD_DICT:
                 dict = None
@@ -1431,28 +1439,58 @@ class TencentPakFile:
         console.print(f'[white]Output  :[/] [cyan]{output_pak.name}[/cyan]')
 
     def _write_to_disk(self, file_path: PurePath, entry: TencentPakEntry) -> None:
-        _se33e912f7767 = entry.encryption_method
-        _s5206fe150a33 = entry.compression_method
-        console.print(f'[#00CCFF]{file_path.name}[/#00CCFF] - Encryption: {_se33e912f7767}, Compression: {_s5206fe150a33}, Blocks: {len(entry.compressed_blocks)}')
-        if _se33e912f7767 == 17:
-            with open(file_path, 'wb') as _sbb61cc6b3e63:
-                for _s576e50701491 in entry.compressed_blocks:
-                    _s366d3d829edf = self._file_content[_s576e50701491.start:_s576e50701491.end]
-                    _sbb61cc6b3e63.write(_s366d3d829edf)
-            return
-        with open(file_path, 'wb') as _sbb61cc6b3e63:
-            if _s5206fe150a33 == CM_NONE:
-                _sb96393f68f4d = self._peek_content(entry.offset, entry.size, _se33e912f7767)
+        enc_method = entry.encryption_method
+        comp_method = entry.compression_method
+        console.print(f'[#00CCFF]{file_path.name}[/#00CCFF] - Encryption: {enc_method}, Compression: {comp_method}, Blocks: {len(entry.compressed_blocks)}')
+
+        # Build the complete payload before touching the destination. A failed
+        # decrypt/decompress must never leave a partial file that looks extracted.
+        if enc_method == 17:
+            data = b''.join(
+                bytes(self._file_content[block.start:block.end])
+                for block in entry.compressed_blocks
+            )
+        elif comp_method == CM_NONE:
+            data = bytes(self._peek_content(entry.offset, entry.size, enc_method))
+            if entry.encrypted:
+                data = PakCrypto.decrypt_block(data, file_path, enc_method)
+            expected = int(entry.uncompressed_size)
+            if expected >= 0 and len(data) >= expected:
+                data = data[:expected]
+            if expected >= 0 and len(data) != expected:
+                raise ValueError(
+                    f'Uncompressed size mismatch for {file_path.name}: '
+                    f'expected {expected}, got {len(data)}'
+                )
+        else:
+            parts = []
+            for block_index in PakCrypto.generate_block_indices(len(entry.compressed_blocks), enc_method):
+                block = entry.compressed_blocks[block_index]
+                payload = self._peek_block_content(block, enc_method)
                 if entry.encrypted:
-                    _sb96393f68f4d = PakCrypto.decrypt_block(bytes(_sb96393f68f4d), file_path, _se33e912f7767)
-                _sbb61cc6b3e63.write(_sb96393f68f4d)
-                return
-            for _s1f6d01ab75cb in PakCrypto.generate_block_indices(len(entry.compressed_blocks), _se33e912f7767):
-                _sb96393f68f4d = self._peek_block_content(entry.compressed_blocks[_s1f6d01ab75cb], _se33e912f7767)
-                if entry.encrypted:
-                    _sb96393f68f4d = PakCrypto.decrypt_block(bytes(_sb96393f68f4d), file_path, _se33e912f7767)
-                _sb96393f68f4d = PakCompression.decompress_block(_sb96393f68f4d, self._zstd_dict, _s5206fe150a33)
-                _sbb61cc6b3e63.write(_sb96393f68f4d)
+                    payload = PakCrypto.decrypt_block(bytes(payload), file_path, enc_method)
+                parts.append(PakCompression.decompress_block(payload, self._zstd_dict, comp_method))
+            data = b''.join(parts)
+            expected = int(entry.uncompressed_size)
+            if expected >= 0 and len(data) != expected:
+                raise ValueError(
+                    f'Decompressed size mismatch for {file_path.name}: '
+                    f'expected {expected}, got {len(data)}'
+                )
+
+        temp_path = Path(file_path).with_name(Path(file_path).name + '.alvsia-tmp')
+        try:
+            with open(temp_path, 'wb') as out_file:
+                out_file.write(data)
+                out_file.flush()
+                os.fsync(out_file.fileno())
+            os.replace(temp_path, file_path)
+        except Exception:
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
+            raise
 
     def dump(self, out_path: PurePath) -> None:
         debug_path = BASE_DIR / 'index_debug.txt'
