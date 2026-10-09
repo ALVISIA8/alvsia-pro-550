@@ -18,6 +18,23 @@ workflows:
           chmod +x ./gradlew
           java -version
 
+      - name: Run regression and VANTA security tests
+        script: |
+          set -e
+          python3 --version
+          python3 tests/test_lua_engine.py
+          python3 tests/test_bgmi_transform.py
+          python3 tests/test_pak_extraction.py
+          python3 tests/test_tool_dispatch.py
+          python3 tests/test_vanta_redteam.py
+          if command -v lua5.3 >/dev/null 2>&1; then
+            LUA_BIN=lua5.3 bash tests/test_unluac_integration.sh
+          elif command -v lua >/dev/null 2>&1; then
+            LUA_BIN=lua bash tests/test_unluac_integration.sh
+          else
+            echo "Lua 5.3 not installed on this runner; Lua integration is covered by GitHub Actions."
+          fi
+
       - name: Build release APK
         script: |
           set -o pipefail
@@ -28,6 +45,14 @@ workflows:
           echo "===== APK outputs ====="
           find app/build/outputs -name "*.apk" -type f 2>/dev/null || true
           exit $STATUS
+
+      - name: Verify release APK and native RASP library
+        script: |
+          set -e
+          APK=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -1)
+          test -n "$APK"
+          unzip -Z1 "$APK" | grep -Fx "lib/arm64-v8a/librasp_guard.so"
+          shasum -a 256 "$APK" | tee ALVSIA_PRO_5.5.0_release.sha256
 
       - name: Sign APK if keystore present
         script: |
