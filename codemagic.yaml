@@ -15,6 +15,17 @@ workflows:
       # CM_KEY_ALIAS: alvsia
       # CM_KEY_PASSWORD (may equal CM_KEYSTORE_PASSWORD if the key uses the same password)
     scripts:
+      - name: Enforce single release branch (main only)
+        script: |
+          set -euo pipefail
+          BRANCH="${CM_BRANCH:-}"
+          if [ "$BRANCH" != "main" ]; then
+            echo "ERROR: ALVISIA PRO release builds are allowed only from branch main."
+            echo "Current CM_BRANCH='${BRANCH:-unset}'. No APK will be built from another branch."
+            exit 2
+          fi
+          echo "Release branch verified: main"
+
       - name: Set gradlew permission
         script: |
           chmod +x ./gradlew
