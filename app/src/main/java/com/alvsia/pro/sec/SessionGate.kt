@@ -35,6 +35,7 @@ object SessionGate {
     private const val MAX_STRIKES = 2                 // hardened: was 3, now 2
 
     private const val KS_ALIAS = "alvsia_sg_v3"
+    private const val HMAC_ALIAS = "alvsia_sg_hmac_v1"
     private const val KS_PROVIDER = "AndroidKeyStore"
     private const val AES_GCM = "AES/GCM/NoPadding"
     private const val GCM_TAG_LEN = 128
@@ -103,18 +104,62 @@ object SessionGate {
 
     // ── Strike HMAC tag (prevents root-edit of counter) ──────────────
 
+    private fun hmacKey(): javax.crypto.SecretKey {
+        val ks = KeyStore.getInstance(KS_PROVIDER).also { it.load(null) }
+        if (!ks.containsAlias(HMAC_ALIAS)) {
+            val kg = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_HMAC_SHA256, KS_PROVIDER)
+            kg.init(
+                KeyGenParameterSpec.Builder(
+                    HMAC_ALIAS,
+                    KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY
+                )
+                    .setKeySize(256)
+                    .setDigests(KeyProperties.DIGEST_SHA256)
+                    .build()
+            )
+            kg.generateKey()
+        }
+        return (ks.getEntry(HMAC_ALIAS, null) as KeyStore.SecretKeyEntry).secretKey
+    }
+
     private fun strikeTag(value: Int): String {
-        val key = keystoreKey().encoded ?: byteArrayOf(0x42)
         val mac = javax.crypto.Mac.getInstance("HmacSHA256")
-        mac.init(javax.crypto.spec.SecretKeySpec(key, "HmacSHA256"))
+        mac.init(hmacKey())
         return Base64.encodeToString(mac.doFinal("strikes:$value".toByteArray()), Base64.NO_WRAP)
     }
 
+    // One-time compatibility check for the old AndroidKeyStore encoded-key fallback.
+    // Only a zero-strike state is migrated; nonzero legacy counters fail closed.
+    private fun legacyZeroStrikeTag(): String {
+        val mac = javax.crypto.Mac.getInstance("HmacSHA256")
+        mac.init(javax.crypto.spec.SecretKeySpec(byteArrayOf(0x42), "HmacSHA256"))
+        return Base64.encodeToString(mac.doFinal("strikes:0".toByteArray()), Base64.NO_WRAP)
+    }
+
     private fun strikesIntegral(p: SharedPreferences): Boolean {
-        val v   = p.getInt(KEY_STRIKES, 0)
+        val v = p.getInt(KEY_STRIKES, 0)
         val tag = p.getString(KEY_STRIKE_TAG, "") ?: ""
-        if (tag.isEmpty()) return true   // first run — no tag yet, accept
-        return try { tag == strikeTag(v) } catch (_: Exception) { true }
+        if (tag.isBlank()) return v == 0 && !p.contains(KEY_GRANTED)
+        return try {
+            val expected = strikeTag(v)
+            if (java.security.MessageDigest.isEqual(
+                    tag.toByteArray(Charsets.UTF_8),
+                    expected.toByteArray(Charsets.UTF_8)
+                )
+            ) return true
+
+            if (v == 0 && java.security.MessageDigest.isEqual(
+                    tag.toByteArray(Charsets.UTF_8),
+                    legacyZeroStrikeTag().toByteArray(Charsets.UTF_8)
+                )
+            ) {
+                p.edit().putString(KEY_STRIKE_TAG, expected).apply()
+                return true
+            }
+            false
+        } catch (_: Exception) {
+            false
+        }
     }
 
     // ── Public state properties (used by ToolEngine) ─────────────────
@@ -129,8 +174,9 @@ object SessionGate {
             return try {
                 val p = ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
                 val granted = decrypt(p.getString(KEY_GRANTED, null)) == "1"
-                val ts      = decrypt(p.getString(KEY_TS, null))?.toLongOrNull() ?: 0L
-                val ok = granted && (System.currentTimeMillis() - ts) <= SESSION_TTL
+                val ts = decrypt(p.getString(KEY_TS, null))?.toLongOrNull() ?: 0L
+                val now = System.currentTimeMillis()
+                val ok = granted && ts > 0L && now >= ts && now - ts <= SESSION_TTL
                 if (ok) { _grantedInMem = true; _tsInMem = ts }
                 ok
             } catch (_: Exception) { false }
@@ -203,7 +249,7 @@ object SessionGate {
             throw SecurityException("BLOCKED:no_session")
         }
 
-        if (now - ts > SESSION_TTL) {
+        if (ts <= 0L || now < ts || now - ts > SESSION_TTL) {
             lock(ctx)
             throw SecurityException("BLOCKED:session_expired")
         }
