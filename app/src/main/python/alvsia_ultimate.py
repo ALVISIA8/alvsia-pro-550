@@ -12955,7 +12955,7 @@ def pak_deep_zuc(input_path, out_dir, key_hex=""):
     import zipfile
     try:
         with zipfile.ZipFile(result["out"]) as zf:
-            zf.extractall(out_dir)
+            _alvsia_safe_extract_zip(zf, out_dir)
             result["extracted"] = len(zf.namelist())
     except Exception:
         result["note"] = "decrypted but not ZIP"
@@ -12970,7 +12970,7 @@ def pak_deep_sm4(input_path, out_dir, key_hex=""):
     import zipfile
     try:
         with zipfile.ZipFile(result["out"]) as zf:
-            zf.extractall(out_dir)
+            _alvsia_safe_extract_zip(zf, out_dir)
             result["extracted"] = len(zf.namelist())
     except Exception:
         result["note"] = "decrypted but not ZIP"
