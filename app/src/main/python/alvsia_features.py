@@ -472,21 +472,36 @@ def run_lua_smart(input_path, out_dir, jars_dir=None):
                                                 **vm_info, **report}
                         except Exception as ve:
                             vm_info["vm_check_error"] = str(ve)
-                    report["ok"] = True
-                    return {"ok": True,
-                            "mode": ("smart_bgmi_py53" if bgmi_normalized else "smart_py53"),
-                            "out": str(out_lua), "lines": pr.get("lines", 0),
-                            **vm_info, **report}
+                    # BGMI structure-only normalization cannot recover XOR-protected
+                    # string constants. Do not advertise a complete decompile without
+                    # the required key, even if the output resembles valid Lua source.
+                    if not (bgmi_normalized and not bgmi_key_available):
+                        report["ok"] = True
+                        report["final_status"] = "SUCCESS"
+                        return {"ok": True,
+                                "mode": ("smart_bgmi_py53" if bgmi_normalized else "smart_py53"),
+                                "out": str(out_lua), "lines": pr.get("lines", 0),
+                                **vm_info, **report}
+                    report["steps"].append({
+                        "step": "complete_decompile_gate", "ok": False,
+                        "reason": "BGMI XOR key unavailable; source may contain opaque string constants",
+                    })
         except Exception as e:
             report["steps"].append({"step": "py_decompile53", "ok": False, "error": str(e)})
 
     # ── Step 3: unluac jar (fallback — needs Java, works in Termux) ─────────
     ur = run_unluac(work_input, out_dir, jars_dir=jars_dir)
     report["steps"].append({"step": "unluac", **ur})
-    if ur.get("ok"):
+    if ur.get("ok") and not (bgmi_normalized and not bgmi_key_available):
+        report["final_status"] = "SUCCESS"
         return {"ok": True,
                 "mode": ("smart_bgmi_unluac" if bgmi_normalized else "smart_unluac"),
                 **ur, **report}
+    if ur.get("ok") and bgmi_normalized and not bgmi_key_available:
+        report["steps"].append({
+            "step": "complete_decompile_gate", "ok": False,
+            "reason": "unluac output withheld from SUCCESS: BGMI XOR key unavailable",
+        })
 
     # ── Step 4: partial recovery ─────────────────────────────────────────────
     cr = extract_lua_constants(input_path, out_dir)
@@ -505,7 +520,7 @@ def run_lua_smart(input_path, out_dir, jars_dir=None):
         for cand in out_dir.glob("*_decompiled.lua"):
             v = validate_decompile_text(cand.read_text(encoding="utf-8", errors="replace"))
             report["steps"].append({"step": "validate_source", "file": str(cand), **v})
-            if v.get("is_lua_source"):
+            if v.get("is_lua_source") and not (bgmi_normalized and not bgmi_key_available):
                 final_status = "SUCCESS"
                 report["ok"] = True
                 break
