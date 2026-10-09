@@ -43,6 +43,8 @@ network_file = ROOT / "app/src/main/res/xml/network_security_config.xml"
 gradle_file = ROOT / "app/build.gradle.kts"
 proguard_file = ROOT / "app/proguard-rules.pro"
 session_file = JAVA / "com/alvsia/pro/sec/SessionGate.kt"
+audit_script = ROOT / "tools/audit_release_apk.py"
+codemagic_file = ROOT / "codemagic.yaml"
 
 def read_or_empty(path):
     try: return path.read_text(errors="ignore")
@@ -80,6 +82,10 @@ if "KEY_ALGORITHM_HMAC_SHA256" not in session_text or "keystoreKey().encoded ?: 
     fail.append("session strike integrity is not using a dedicated Android Keystore HMAC key")
 if "now >= ts" not in session_text:
     fail.append("session TTL does not reject timestamps in the future")
+if not audit_script.is_file():
+    fail.append("release APK artifact audit script is missing")
+if "python3 tools/audit_release_apk.py" not in read_or_empty(codemagic_file):
+    fail.append("CodeMagic does not run the release APK artifact audit")
 
 # A static native seal seed is recoverable by a sufficiently capable binary
 # analyst. Do not block the build on this legacy format, but make the remaining
