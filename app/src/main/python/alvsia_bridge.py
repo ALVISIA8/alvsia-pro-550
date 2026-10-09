@@ -100,8 +100,30 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                 csvp.write_text("path\n" + "\n".join(paths), encoding="utf-8")
                 lines.append("OK csv=%s n=%s" % (csvp, len(paths)))
                 return "\n".join(lines)
-            r = core.run_pak_unpack(ip, dest)
-            lines.append(str(r))
+            try:
+                r = core.run_pak_unpack(ip, dest)
+            except Exception as exc:
+                lines.append("X PAK UNPACK FAILED: %s" % (str(exc)[:1200] or type(exc).__name__))
+                return "\n".join(lines)
+            if not isinstance(r, dict) or not r.get("ok"):
+                lines.append("X PAK UNPACK FAILED: %s" % (
+                    r.get("error", r) if isinstance(r, dict) else str(r)
+                ))
+                return "\n".join(lines)
+            files = [p for p in dest.rglob("*") if p.is_file()]
+            lua_files = [p for p in files if p.suffix.lower() == ".lua"]
+            if not files:
+                lines.append("X PAK UNPACK produced zero files; refusing false success")
+                lines.append("Check archive format, index encryption, keys, and core-patch compatibility")
+                return "\n".join(lines)
+            lines.append("OK PAK UNPACK files=%d lua=%d" % (len(files), len(lua_files)))
+            lines.append("OUT -> %s" % dest)
+            if not lua_files:
+                lines.append("NOTE: no .lua files found in extracted output")
+            else:
+                names = sorted({p.name for p in lua_files})
+                for name in [n for n in names if n in ("BRPlayerCharacterBase.lua", "CharacterBase.lua")]:
+                    lines.append("FOUND TARGET LUA -> %s" % name)
             return "\n".join(lines)
 
         # ── 2  PAK Rebuild ───────────────────────────────────────────────
