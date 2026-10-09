@@ -1,7 +1,7 @@
 """ALVSIA PRO 5.5 — pure PAK core (non-interactive).
 
 Source: cleaned PakCore engine. Branding ALVSIA.
-Auth: ALVSIA_APK_SESSION=1 bypasses RSA operation proof (panel OTP already verified).
+Auth: APK session flag requires a well-formed native session token; this is defense-in-depth, not a substitute for signed grants.
 """
 from __future__ import annotations
 from __future__ import annotations
@@ -112,9 +112,19 @@ def _alvsia_core_sha256_file(path):
             h.update(block)
     return h.hexdigest()
 
+def _alvsia_core_apk_session_valid():
+    """Reject the legacy flag-only bypass; Kotlin must bind a 256-bit session token."""
+    import os as _os
+    import re as _re
+    token = _os.environ.get('ALVSIA_SESSION_TOKEN', '')
+    return (
+        _os.environ.get('ALVSIA_APK_SESSION') == '1'
+        and _re.fullmatch(r'[0-9A-Fa-f]{64}', token) is not None
+    )
+
 def _alvsia_core_live_measurement():
     import pathlib as _pl, os as _os
-    if _os.environ.get('ALVSIA_APK_SESSION') == '1':
+    if _alvsia_core_apk_session_valid():
         h = __import__('hashlib').sha256(b'ALVSIA-APK-SESSION').hexdigest()
         return {'manifest_hash': h, 'tool_hash': h}
     root = _pl.Path(__file__).resolve().parent
@@ -183,9 +193,9 @@ def _alvsia_clear_operation_proof():
     _ALVSIA_CORE_ACTIVE_PROOF = None
 
 def _alvsia_require_operation(allowed_operations):
-    import os as _os
-    # Panel login+OTP already done in native APK / Termux gate
-    if _os.environ.get('ALVSIA_APK_SESSION') == '1':
+    # Keep the legacy APK path compatible, but never accept the marker alone.
+    # This validates token shape only; signed per-operation grants remain stronger.
+    if _alvsia_core_apk_session_valid():
         return True
     p = _ALVSIA_CORE_ACTIVE_PROOF
     if not isinstance(p, dict):

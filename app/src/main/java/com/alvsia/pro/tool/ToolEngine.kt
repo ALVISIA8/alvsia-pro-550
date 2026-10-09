@@ -268,8 +268,11 @@ class ToolEngine(private val context: Context) {
     }
 
     private fun needsInput(moduleId: Int, subId: String): Boolean {
-        if (subId.contains("session") || subId.contains("local") || subId.contains("report") || subId.contains("clear")) return false
-        return moduleId !in listOf(7, 13, 15) && !subId.contains("clear")
+        // Keep runtime input handling aligned with the submenu's declared contract.
+        // Only explicitly file-free actions (currently Clear Workspace) may run without input.
+        return SubMenus.forModule(moduleId)
+            .firstOrNull { it.id == subId }
+            ?.needsFile ?: true
     }
 
     private fun mirrorMsvToOut(moduleId: Int, lines: MutableList<String>) {
@@ -436,16 +439,41 @@ class ToolEngine(private val context: Context) {
         return lines
     }
 
+    /**
+     * Resolve a ZIP entry under the extraction root. Reject absolute paths and
+     * traversal (including backslash-separated names) before opening any output.
+     */
+    private fun safeZipTarget(dest: File, entryName: String): File? {
+        return try {
+            val root = dest.canonicalFile
+            val normalized = entryName.replace('\\', '/')
+            if (normalized.startsWith("/") || Regex("^[A-Za-z]:").containsMatchIn(normalized)) {
+                return null
+            }
+            val target = File(root, normalized).canonicalFile
+            val rootPath = root.path
+            val targetPath = target.path
+            if (targetPath == rootPath || targetPath.startsWith(rootPath + File.separator)) target else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private fun zipExtract(f: File, dest: File): List<String> {
         val lines = mutableListOf<String>()
         dest.mkdirs()
         var count = 0
+        var blocked = 0
         try {
             ZipFile(f).use { zf ->
                 val en = zf.entries()
                 while (en.hasMoreElements()) {
                     val e = en.nextElement()
-                    val out = File(dest, e.name)
+                    val out = safeZipTarget(dest, e.name)
+                    if (out == null) {
+                        blocked++
+                        continue
+                    }
                     if (e.isDirectory) {
                         out.mkdirs()
                     } else {
@@ -458,17 +486,22 @@ class ToolEngine(private val context: Context) {
                 }
             }
             lines.add("OK extracted $count files")
+            if (blocked > 0) lines.add("! blocked $blocked unsafe ZIP entries")
             lines.add("OK OUTPUT -> ${dest.absolutePath}")
         } catch (e: Exception) {
-            // try ZipInputStream fallback
+            // Try stream fallback, with the same path-containment validation.
             try {
                 count = 0
+                blocked = 0
                 ZipInputStream(BufferedInputStream(FileInputStream(f))).use { zis ->
                     var entry = zis.nextEntry
                     while (entry != null) {
-                        val out = File(dest, entry.name)
-                        if (entry.isDirectory) out.mkdirs()
-                        else {
+                        val out = safeZipTarget(dest, entry.name)
+                        if (out == null) {
+                            blocked++
+                        } else if (entry.isDirectory) {
+                            out.mkdirs()
+                        } else {
                             out.parentFile?.mkdirs()
                             FileOutputStream(out).use { outs -> zis.copyTo(outs) }
                             count++
@@ -478,6 +511,7 @@ class ToolEngine(private val context: Context) {
                     }
                 }
                 lines.add("OK extracted $count files (stream)")
+                if (blocked > 0) lines.add("! blocked $blocked unsafe ZIP entries")
                 lines.add("OK OUTPUT -> ${dest.absolutePath}")
             } catch (e2: Exception) {
                 lines.add("X extract failed: ${e.message}")
