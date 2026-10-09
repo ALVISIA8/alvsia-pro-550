@@ -46,12 +46,12 @@ def main():
     key = derive_key()
     mapping = []
     # seal jars under random names
-    for i, jar in enumerate(jars):
-            blob = seal(jar.read_bytes(), key)
-            name = secrets.token_hex(8) + ".bin"
-            (out / name).write_bytes(blob)
-            mapping.append(f"{jar.name}={name}")
-            print("sealed", jar.name, "->", name, len(blob))
+    for jar in jars:
+        blob = seal(jar.read_bytes(), key)
+        name = secrets.token_hex(8) + ".bin"
+        (out / name).write_bytes(blob)
+        mapping.append(f"{jar.name}={name}")
+        print("sealed", jar.name, "->", name, len(blob))
     # index encrypted too
     idx = "\n".join(mapping).encode()
     (out / "i.dat").write_bytes(seal(idx, key))
