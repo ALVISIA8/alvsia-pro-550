@@ -35,6 +35,7 @@ object SessionGate {
     private const val MAX_STRIKES = 2                 // hardened: was 3, now 2
 
     private const val KS_ALIAS = "alvsia_sg_v3"
+    private const val HMAC_ALIAS = "alvsia_sg_strike_hmac_v1"
     private const val KS_PROVIDER = "AndroidKeyStore"
     private const val AES_GCM = "AES/GCM/NoPadding"
     private const val GCM_TAG_LEN = 128
@@ -103,17 +104,34 @@ object SessionGate {
 
     // ── Strike HMAC tag (prevents root-edit of counter) ──────────────
 
+    private fun strikeHmacKey(): javax.crypto.SecretKey {
+        val ks = KeyStore.getInstance(KS_PROVIDER).also { it.load(null) }
+        if (!ks.containsAlias(HMAC_ALIAS)) {
+            val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_HMAC_SHA256, KS_PROVIDER)
+            generator.init(
+                KeyGenParameterSpec.Builder(
+                    HMAC_ALIAS,
+                    KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY
+                ).setDigests(KeyProperties.DIGEST_SHA256).build()
+            )
+            generator.generateKey()
+        }
+        return (ks.getEntry(HMAC_ALIAS, null) as KeyStore.SecretKeyEntry).secretKey
+    }
+
     private fun strikeTag(value: Int): String {
-        val key = keystoreKey().encoded ?: byteArrayOf(0x42)
         val mac = javax.crypto.Mac.getInstance("HmacSHA256")
-        mac.init(javax.crypto.spec.SecretKeySpec(key, "HmacSHA256"))
-        return Base64.encodeToString(mac.doFinal("strikes:$value".toByteArray()), Base64.NO_WRAP)
+        mac.init(strikeHmacKey())
+        return Base64.encodeToString(
+            mac.doFinal("strikes:$value".toByteArray(Charsets.UTF_8)),
+            Base64.NO_WRAP
+        )
     }
 
     private fun strikesIntegral(p: SharedPreferences): Boolean {
-        val v   = p.getInt(KEY_STRIKES, 0)
+        val v = p.getInt(KEY_STRIKES, 0)
         val tag = p.getString(KEY_STRIKE_TAG, "") ?: ""
-        if (tag.isEmpty()) return true   // first run — no tag yet, accept
+        if (tag.isEmpty()) return v == 0
         return try { tag == strikeTag(v) } catch (_: Exception) { false }
     }
 
