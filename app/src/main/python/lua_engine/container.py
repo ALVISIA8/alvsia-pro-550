@@ -25,10 +25,12 @@ def _raw_deflate_at(data: bytes, start: int, max_output: int):
     than splitting on every 78da occurrence.
     """
     dec = zlib.decompressobj(-15)
-    out = dec.decompress(data[start:])
-    if len(out) > max_output:
+    out = dec.decompress(data[start:], max_output + 1)
+    if len(out) > max_output or dec.unconsumed_tail:
         raise ValueError("compressed Lua container exceeds output limit")
     out += dec.flush()
+    if len(out) > max_output:
+        raise ValueError("compressed Lua container exceeds output limit")
     if not dec.eof:
         raise ValueError("truncated raw-DEFLATE Lua container stream")
     consumed = len(data[start:]) - len(dec.unused_data)
@@ -55,10 +57,16 @@ def unwrap_lua_container(data: bytes, max_output: int = 256 * 1024 * 1024):
 
     # First try a normal zlib stream. This handles 7801, 789c, and 78da.
     try:
-        payload = zlib.decompress(data)
+        dec = zlib.decompressobj()
+        payload = dec.decompress(data, max_output + 1)
+        if len(payload) > max_output or dec.unconsumed_tail:
+            raise ValueError("decompressed Lua payload exceeds output limit")
+        payload += dec.flush()
+        if len(payload) > max_output:
+            raise ValueError("decompressed Lua payload exceeds output limit")
         if payload and (payload.startswith(LUA_MAGIC) or payload.startswith(LJ_MAGIC)):
-            if len(payload) > max_output:
-                raise ValueError("decompressed Lua payload exceeds output limit")
+            if not dec.eof:
+                raise ValueError("truncated zlib Lua container")
             return payload, ContainerInfo(True, "zlib", 1, len(payload),
                                           ("standard zlib container",))
     except zlib.error:
