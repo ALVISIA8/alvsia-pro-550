@@ -4,19 +4,52 @@ workflows:
     max_build_duration: 120
     instance_type: mac_mini_m2
     environment:
+      groups:
+        - signing
       java: 17
       vars:
         PACKAGE_NAME: "com.alvsia.pro"
-      # Optional: set these in Codemagic UI → Environment variables (group "signing")
-      # CM_KEYSTORE  (base64 of alvsia-release.keystore) OR use keystore in repo
+      # REQUIRED in Codemagic UI → Environment variables (group "signing"):
+      # CM_KEYSTORE: base64-encoded alvsia release JKS (keep secret; never commit it)
       # CM_KEYSTORE_PASSWORD
       # CM_KEY_ALIAS: alvsia
-      # CM_KEY_PASSWORD
+      # CM_KEY_PASSWORD (may equal CM_KEYSTORE_PASSWORD if the key uses the same password)
     scripts:
       - name: Set gradlew permission
         script: |
           chmod +x ./gradlew
           java -version
+
+      - name: Check release signing secrets
+        script: |
+          set -euo pipefail
+          if [ -z "${CM_KEYSTORE:-}" ] || [ -z "${CM_KEYSTORE_PASSWORD:-}" ]; then
+            echo "ERROR: attach the 'signing' environment group with CM_KEYSTORE and CM_KEYSTORE_PASSWORD."
+            exit 2
+          fi
+
+      - name: Run regression and VANTA security tests
+        script: |
+          set -e
+          python3 --version
+          python3 -m compileall -q app/src/main/python
+          python3 tests/test_lua_engine.py
+          python3 tests/test_bgmi_transform.py
+          python3 tests/test_pak_extraction.py
+          python3 tests/test_tool_dispatch.py
+          python3 tests/test_vanta_redteam.py
+          if command -v lua5.3 >/dev/null 2>&1; then
+            LUA_BIN=lua5.3 bash tests/test_unluac_integration.sh
+          elif command -v lua >/dev/null 2>&1; then
+            LUA_BIN=lua bash tests/test_unluac_integration.sh
+          else
+            echo "Lua 5.3 not installed on this runner; Lua integration is covered by GitHub Actions."
+          fi
+
+      - name: Run Android unit tests
+        script: |
+          set -euo pipefail
+          ./gradlew testDebugUnitTest --stacktrace --no-daemon
 
       - name: Build release APK
         script: |
@@ -29,62 +62,64 @@ workflows:
           find app/build/outputs -name "*.apk" -type f 2>/dev/null || true
           exit $STATUS
 
-      - name: Sign APK if keystore present
+      - name: Verify release APK and native RASP library
         script: |
-          set -e
-          UNSIGNED=$(find app/build/outputs/apk -name "*.apk" -type f | head -1)
-          if [ -z "$UNSIGNED" ]; then
-            echo "No APK found — build step failed"
-            exit 1
-          fi
-          echo "Found: $UNSIGNED"
+          set -euo pipefail
+          APK=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -1)
+          test -n "$APK"
+          unzip -Z1 "$APK" | grep -Fx "lib/arm64-v8a/librasp_guard.so"
+          echo "Release APK input validated: $APK"
 
-          # Prefer Codemagic env keystore; fallback to repo keystore
-          if [ -n "${CM_KEYSTORE:-}" ]; then
-            echo "$CM_KEYSTORE" | base64 -d > /tmp/alvsia.keystore
-            KS=/tmp/alvsia.keystore
-            KSPASS="${CM_KEYSTORE_PASSWORD}"
-            ALIAS="${CM_KEY_ALIAS:-alvsia}"
-            KEYPASS="${CM_KEY_PASSWORD:-$KSPASS}"
-          elif [ -f alvsia-release.keystore ]; then
-            KS=alvsia-release.keystore
-            # Password: set CM_KEYSTORE_PASSWORD in Codemagic UI (do not hardcode)
-            KSPASS="${CM_KEYSTORE_PASSWORD:-}"
-            ALIAS="${CM_KEY_ALIAS:-alvsia}"
-            KEYPASS="${CM_KEY_PASSWORD:-$KSPASS}"
-          else
-            echo "No keystore — leaving unsigned APK"
-            cp "$UNSIGNED" ALVSIA_PRO_5.5.0_unsigned.apk
-            exit 0
+      - name: Sign and verify production release APK
+        script: |
+          set -euo pipefail
+          APK=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -1)
+          test -n "$APK"
+
+          # Never report a production release as successful if signing secrets are absent.
+          if [ -z "${CM_KEYSTORE:-}" ] || [ -z "${CM_KEYSTORE_PASSWORD:-}" ]; then
+            echo "ERROR: Configure CM_KEYSTORE (base64 JKS), CM_KEYSTORE_PASSWORD, CM_KEY_ALIAS, and CM_KEY_PASSWORD in Codemagic."
+            echo "Unsigned APKs are not accepted as production release artifacts."
+            exit 2
           fi
 
-          if [ -z "$KSPASS" ]; then
-            echo "CM_KEYSTORE_PASSWORD not set — copying unsigned APK"
-            cp "$UNSIGNED" ALVSIA_PRO_5.5.0_unsigned.apk
-            exit 0
-          fi
+          KS=/tmp/alvsia-release.keystore
+          trap 'rm -f "$KS" /tmp/alvsia-aligned.apk' EXIT
+          printf '%s' "$CM_KEYSTORE" | base64 -d > "$KS"
+          test -s "$KS"
+          KSPASS="$CM_KEYSTORE_PASSWORD"
+          ALIAS="${CM_KEY_ALIAS:-alvsia}"
+          KEYPASS="${CM_KEY_PASSWORD:-$KSPASS}"
 
-          # Align + sign
-          BUILD_TOOLS=$(ls -d $ANDROID_SDK_ROOT/build-tools/* 2>/dev/null | sort -V | tail -1)
-          ZIPALIGN="$BUILD_TOOLS/zipalign"
-          APKSIGNER="$BUILD_TOOLS/apksigner"
-          ALIGNED=/tmp/alvsia-aligned.apk
+          BUILD_TOOLS=$(find "$ANDROID_SDK_ROOT/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          test -x "$BUILD_TOOLS/zipalign"
+          test -x "$BUILD_TOOLS/apksigner"
+          "$BUILD_TOOLS/zipalign" -f 4 "$APK" /tmp/alvsia-aligned.apk
+
           SIGNED=ALVSIA_PRO_5.5.0_signed.apk
-
-          "$ZIPALIGN" -f 4 "$UNSIGNED" "$ALIGNED"
-          "$APKSIGNER" sign \
+          "$BUILD_TOOLS/apksigner" sign \
             --ks "$KS" \
             --ks-key-alias "$ALIAS" \
             --ks-pass "pass:$KSPASS" \
             --key-pass "pass:$KEYPASS" \
             --out "$SIGNED" \
-            "$ALIGNED"
-          "$APKSIGNER" verify "$SIGNED"
-          echo "Signed OK: $SIGNED"
+            /tmp/alvsia-aligned.apk
+
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$SIGNED" | tee ALVSIA_PRO_5.5.0_signing-verification.txt
+          ACTUAL_CERT=$(awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {gsub(":", "", $2); print tolower($2); exit}' ALVSIA_PRO_5.5.0_signing-verification.txt)
+          EXPECTED_CERT="99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c"
+          if [ "$ACTUAL_CERT" != "$EXPECTED_CERT" ]; then
+            echo "ERROR: APK signer certificate does not match the ALVISIA release certificate."
+            echo "Expected: $EXPECTED_CERT"
+            echo "Actual: ${ACTUAL_CERT:-missing}"
+            exit 3
+          fi
+          shasum -a 256 "$SIGNED" | tee ALVSIA_PRO_5.5.0_release.sha256
           ls -lh "$SIGNED"
 
     artifacts:
-      - app/build/outputs/apk/**/*.apk
+      # Only the verified, certificate-pinned production-signed APK is a release artifact.
       - ALVSIA_PRO_5.5.0_signed.apk
-      - ALVSIA_PRO_5.5.0_unsigned.apk
+      - ALVSIA_PRO_5.5.0_release.sha256
+      - ALVSIA_PRO_5.5.0_signing-verification.txt
       - build_full.log
