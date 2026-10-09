@@ -5,18 +5,26 @@ Modules 1-9: original. Modules 10-17: new in v5.5.0.
 """
 from __future__ import annotations
 import os
+import re
 import shutil
 import traceback
 from pathlib import Path
 
-# SECURITY: do NOT hardcode ALVSIA_APK_SESSION here.
-# Kotlin sets ALVSIA_APK_SESSION=1 only AFTER successful OTP + SessionGate.sessionOk.
+# SECURITY: require native session marker plus 256-bit token shape.
+# This is defense-in-depth, not a substitute for server-signed operation grants.
+
+def _valid_apk_session():
+    token = os.environ.get("ALVSIA_SESSION_TOKEN", "")
+    return (
+        os.environ.get("ALVSIA_APK_SESSION") == "1"
+        and re.fullmatch(r"[0-9A-Fa-f]{64}", token) is not None
+    )
 
 def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
     lines = []
     try:
         # Hard gate
-        if os.environ.get("ALVSIA_APK_SESSION") != "1":
+        if not _valid_apk_session():
             return "X AUTH: no valid APK session — complete license + OTP first"
         lines.append("ALVSIA PRO 5.5.0 PREMIUM · engine")
         lines.append("m=%s sub=%s" % (module_id, sub_id))
