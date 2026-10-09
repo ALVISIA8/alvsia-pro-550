@@ -4,9 +4,9 @@ import hashlib
 import importlib.abc
 import importlib.util
 import os
+import pkgutil
 import re
 import sys
-from pathlib import Path
 
 _BUILD_ID = "ALVISIA-20261010-MAIN-SEAL1"
 _CERT_SHA256 = "99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c"
@@ -52,7 +52,9 @@ class _SealedLoader(importlib.abc.Loader):
         try:
             seed = bytes.fromhex(seed_hex)
             key = hashlib.sha256(seed + bytes.fromhex(_CERT_SHA256) + _BUILD_ID.encode()).digest()
-            raw = (Path(__file__).resolve().parent / "sealed" / self.blob).read_bytes()
+            raw = pkgutil.get_data("sealed", self.blob)
+            if raw is None:
+                raise FileNotFoundError("sealed payload resource missing")
             if not raw.startswith(_MAGIC) or len(raw) < len(_MAGIC) + 12 + 16:
                 raise ValueError("sealed payload header/length invalid")
             nonce = raw[len(_MAGIC):len(_MAGIC) + 12]
