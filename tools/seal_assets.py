@@ -30,11 +30,23 @@ def main():
     src_jars = assets / "unluac"
     out = assets / "nx"
     out.mkdir(parents=True, exist_ok=True)
+    jars = sorted(src_jars.glob("*.jar")) if src_jars.is_dir() else []
+    index_path = out / "i.dat"
+    # Make repeated local/CI runs safe. If plaintext inputs were already removed
+    # by a previous run, preserve the existing sealed payload instead of erasing it.
+    if not jars and index_path.is_file() and index_path.stat().st_size > 0:
+        print("already sealed; keeping existing assets/nx payload")
+        return
+    if not jars:
+        raise SystemExit("No source JARs and no valid existing sealed index")
+    for stale in out.glob("*.bin"):
+        stale.unlink()
+    if index_path.exists():
+        index_path.unlink()
     key = derive_key()
     mapping = []
     # seal jars under random names
-    if src_jars.is_dir():
-        for i, jar in enumerate(sorted(src_jars.glob("*.jar"))):
+    for i, jar in enumerate(jars):
             blob = seal(jar.read_bytes(), key)
             name = secrets.token_hex(8) + ".bin"
             (out / name).write_bytes(blob)

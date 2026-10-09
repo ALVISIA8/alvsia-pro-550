@@ -51,6 +51,12 @@ workflows:
           set -euo pipefail
           ./gradlew testDebugUnitTest --stacktrace --no-daemon
 
+      - name: Seal runtime JAR assets
+        script: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check cryptography
+          python3 tools/seal_assets.py
+
       - name: Build release APK
         script: |
           set -o pipefail

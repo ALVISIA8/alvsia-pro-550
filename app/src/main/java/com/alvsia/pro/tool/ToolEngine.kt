@@ -2,6 +2,8 @@ package com.alvsia.pro.tool
 
 
 import android.content.Context
+import com.alvsia.pro.BuildConfig
+import com.alvsia.pro.asset.AssetVault
 import com.alvsia.pro.sec.SessionGate
 import android.net.Uri
 import com.chaquo.python.Python
@@ -47,16 +49,18 @@ class ToolEngine(private val context: Context) {
 
     fun installJarsFromAssets() {
         try {
-            // Level-A: sealed assets/nx/*.bin ? no plaintext jar names in APK
-            val n = 0
-            if (n > 0) return
-            // legacy fallback (old builds only)
+            // Release builds may load only the certificate-bound AES-GCM asset vault.
+            val count = AssetVault.materializeJars(context, jarsDir)
+            if (count > 0) return
+        } catch (_: Exception) {
+            // Do not fall back to plaintext release assets after a vault failure.
+        }
+        if (!BuildConfig.DEBUG) return
+
+        // Legacy plaintext fallback is debug-only for local development.
+        try {
             val am = context.assets
-            val list = try {
-                am.list("unluac")
-            } catch (_: Exception) {
-                null
-            } ?: return
+            val list = am.list("unluac") ?: return
             for (name in list) {
                 if (!name.endsWith(".jar")) continue
                 val dest = File(jarsDir, name)

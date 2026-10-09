@@ -59,20 +59,26 @@ object AssetVault {
     fun materializeJars(ctx: Context, jarsDir: File): Int {
         jarsDir.mkdirs()
         var n = 0
-        for ((name, bytes) in loadSealedMap(ctx)) {
-            if (!name.endsWith(".jar")) continue
-            val dest = File(jarsDir, name)
-            if (dest.exists() && dest.length() == bytes.size.toLong()) {
-                n++
+        val sealed = loadSealedMap(ctx)
+        if (sealed.isEmpty()) return 0
+        for ((name, bytes) in sealed) {
+            if (!name.endsWith(".jar")) {
+                bytes.fill(0)
                 continue
             }
-            dest.writeBytes(bytes)
             try {
-                dest.setReadable(true, true)
-                dest.setWritable(true, true)
-            } catch (_: Exception) {
+                // Always replace the private runtime copy so same-size tampering cannot persist.
+                val dest = File(jarsDir, name)
+                dest.writeBytes(bytes)
+                try {
+                    dest.setReadable(true, true)
+                    dest.setWritable(true, true)
+                } catch (_: Exception) {
+                }
+                n++
+            } finally {
+                bytes.fill(0)
             }
-            n++
         }
         return n
     }
