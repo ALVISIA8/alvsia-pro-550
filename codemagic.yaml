@@ -23,7 +23,12 @@ workflows:
         script: |
           set -e
           echo "===== R5.4 SOURCE CHECK ====="
-          git branch --show-current
+          BRANCH="${CM_BRANCH:-$(git branch --show-current)}"
+          echo "Branch: $BRANCH"
+          case "$BRANCH" in
+            r5.4-native-rasp|r5.4-security-hardening-20261010) ;;
+            *) echo "Refusing to build an unapproved branch: $BRANCH"; exit 1 ;;
+          esac
           git log -1 --oneline
           test -f app/src/main/cpp/rasp_guard.cpp
           test -f app/src/main/cpp/CMakeLists.txt
