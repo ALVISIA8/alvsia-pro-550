@@ -68,16 +68,69 @@ def test_write_is_atomic_and_checks_decompressed_size():
         assert not Path(str(dest) + ".alvsia-tmp").exists()
 
 
+
+def test_unpack_refuses_skipped_entries_and_output_count_mismatch():
+    original_class = core.TencentPakFile
+    old_session = __import__("os").environ.get("ALVSIA_APK_SESSION")
+    __import__("os").environ["ALVSIA_APK_SESSION"] = "1"
+
+    class FakePak:
+        def __init__(self, _path):
+            pass
+
+        def dump(self, out_dir):
+            Path(out_dir, "one.lua").write_bytes(b"one")
+            return {
+                "expected_files": 2,
+                "written_files": 1,
+                "skipped_directories": 0,
+                "skipped_files": 1,
+            }
+
+    try:
+        core.TencentPakFile = FakePak
+        with tempfile.TemporaryDirectory() as td:
+            result = core.run_pak_unpack("synthetic.pak", Path(td) / "out")
+            assert not result["ok"]
+            assert "incomplete PAK extraction" in result["error"]
+
+        class MismatchedOutputPak:
+            def __init__(self, _path):
+                pass
+
+            def dump(self, out_dir):
+                Path(out_dir, "only-one.lua").write_bytes(b"one")
+                return {
+                    "expected_files": 2,
+                    "written_files": 2,
+                    "skipped_directories": 0,
+                    "skipped_files": 0,
+                }
+
+        core.TencentPakFile = MismatchedOutputPak
+        with tempfile.TemporaryDirectory() as td:
+            result = core.run_pak_unpack("synthetic.pak", Path(td) / "out")
+            assert not result["ok"]
+            assert "output file count mismatch" in result["error"]
+    finally:
+        core.TencentPakFile = original_class
+        if old_session is None:
+            __import__("os").environ.pop("ALVSIA_APK_SESSION", None)
+        else:
+            __import__("os").environ["ALVSIA_APK_SESSION"] = old_session
+
+
 def main():
     tests = (
         test_zlib_and_raw_deflate_blocks,
         test_corrupt_zlib_is_rejected_not_returned_as_plaintext,
         test_write_is_atomic_and_checks_decompressed_size,
+        test_unpack_refuses_skipped_entries_and_output_count_mismatch,
     )
     for test in tests:
         test()
         print("PASS", test.__name__)
-    print("PAK EXTRACTION REGRESSION: PASS (3/3)")
+    print("PAK EXTRACTION REGRESSION: PASS (4/4)")
 
 
 if __name__ == "__main__":
