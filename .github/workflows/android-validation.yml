@@ -68,6 +68,9 @@ jobs:
       - name: Validate all tool menu routes
         run: python tests/test_tool_dispatch.py
 
+      - name: Run VANTA red-team static regression checks
+        run: python tests/test_vanta_redteam.py
+
       - name: Compile and test
         run: ./gradlew testDebugUnitTest assembleRelease --stacktrace --no-daemon
 
