@@ -121,9 +121,15 @@ object SessionGate {
 
     val sessionOk: Boolean
         get() {
-            // Fast path: in-memory verified state
-            if (_grantedInMem && (System.currentTimeMillis() - _tsInMem) <= SESSION_TTL)
+            // Fast path: in-memory verified state; reject future timestamps too.
+            val fastAge = System.currentTimeMillis() - _tsInMem
+            if (_grantedInMem && _tsInMem > 0L && fastAge in 0..SESSION_TTL)
                 return true
+            if (_grantedInMem) {
+                _grantedInMem = false
+                _tsInMem = 0L
+                NativeGate.sessionUnlocked = false
+            }
             // Slow path: decrypt from prefs
             val ctx = _appCtx ?: return false
             return try {
@@ -262,9 +268,7 @@ object SessionGate {
                 .commit()
 
             if (!committed) {
-                NativeGate.sessionUnlocked = false
-                _grantedInMem = false
-                _tsInMem = 0L
+                lock(ctx)
                 ThreatReport.emit(ctx, "UNLOCK_KS_ERR", "prefs_commit_failed")
                 return false
             }
@@ -274,9 +278,7 @@ object SessionGate {
             _tsInMem = now
             return true
         } catch (e: Exception) {
-            NativeGate.sessionUnlocked = false
-            _grantedInMem = false
-            _tsInMem = 0L
+            lock(ctx)
             ThreatReport.emit(ctx, "UNLOCK_KS_ERR", e.message ?: "ks_fail")
             return false
         }
