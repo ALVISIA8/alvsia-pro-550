@@ -53,6 +53,9 @@ jobs:
       - name: Run Lua engine regression tests
         run: python tests/test_lua_engine.py
 
+      - name: Run BGMI Lua transform regression tests
+        run: python tests/test_bgmi_transform.py
+
       - name: Run PAK extraction regression tests
         run: python tests/test_pak_extraction.py
 
