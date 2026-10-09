@@ -718,6 +718,10 @@ class PakCrypto:
         elif encryption_method == EM_UNKNOWN_17:
             _s2b8e7b87d9f2 = (encryption_method - EM_SM4_NEW_BASE) % len(SM4_SECRET_NEW)
             _sbd281f3d3181 = SM4_SECRET_NEW[_s2b8e7b87d9f2]
+        elif encryption_method == 50:
+            # Verified against core_patch_4.6.0.21546.pak, Tencent PAK v14.
+            # The shortened key table wrapped flag 50 to the wrong salt.
+            _sbd281f3d3181 = 'wD2rP3lP9xF4mE1eC5jS50'
         else:
             _s2b8e7b87d9f2 = (encryption_method - EM_SM4_NEW_BASE) % len(SM4_SECRET_NEW)
             _sbd281f3d3181 = f'{SM4_SECRET_NEW[_s2b8e7b87d9f2]}{encryption_method}'
