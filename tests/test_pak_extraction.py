@@ -69,6 +69,19 @@ def test_write_is_atomic_and_checks_decompressed_size():
 
 
 
+
+def test_pak_v46_sm4_flag50_key_vector():
+    # Captured from the first encrypted block of a v14 PAK entry.
+    # This is the game-specific SM4 variant used by the PAK, not standards SM4.
+    path = Path("Lobby_VersionUpdateSlap_Page_002_UIBP.uasset")
+    cipher = bytes.fromhex("dc91fe9cf0e2f652416102fe148da3e8")
+    key = core.PakCrypto._derive_sm4_key(path, 50)
+    assert key.hex() == "d3af220809b6ac0b1225b9812c3f8788"
+    assert core.PakCrypto._decrypt_sm4(cipher, path, 50).hex() == (
+        "789ced9c797414c5bac02b9000212b09"
+    )
+
+
 def test_unpack_refuses_skipped_entries_and_output_count_mismatch():
     original_class = core.TencentPakFile
     old_session = __import__("os").environ.get("ALVSIA_APK_SESSION")
@@ -125,12 +138,13 @@ def main():
         test_zlib_and_raw_deflate_blocks,
         test_corrupt_zlib_is_rejected_not_returned_as_plaintext,
         test_write_is_atomic_and_checks_decompressed_size,
+        test_pak_v46_sm4_flag50_key_vector,
         test_unpack_refuses_skipped_entries_and_output_count_mismatch,
     )
     for test in tests:
         test()
         print("PASS", test.__name__)
-    print("PAK EXTRACTION REGRESSION: PASS (4/4)")
+    print("PAK EXTRACTION REGRESSION: PASS (5/5)")
 
 
 if __name__ == "__main__":
