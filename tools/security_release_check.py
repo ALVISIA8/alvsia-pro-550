@@ -40,7 +40,7 @@ required_modules = {
     "lua_engine/vm_deobfuscator.py",
 }
 script_modules = set(re.findall(r'"([^"]+\.py)"', seal_script.split("MODULES = (",1)[-1].split(")",1)[0]))
-loader_modules = set(re.findall(r'"([^"]+\.py)":', loader))
+loader_modules = set(re.findall(r'"([^"]+)":', loader.split("_MAP = {", 1)[-1].split("}", 1)[0]))
 if required_modules - script_modules:
     fail.append("Python seal script misses modules: " + ", ".join(sorted(required_modules - script_modules)))
 expected_loader = {p.removesuffix(".py").replace("/", ".") for p in required_modules}
