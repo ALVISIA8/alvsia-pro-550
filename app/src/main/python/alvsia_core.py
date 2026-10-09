@@ -193,9 +193,9 @@ def _alvsia_clear_operation_proof():
     _ALVSIA_CORE_ACTIVE_PROOF = None
 
 def _alvsia_require_operation(allowed_operations):
-    import os as _os
-    # Panel login+OTP already done in native APK / Termux gate
-    if _os.environ.get('ALVSIA_APK_SESSION') == '1':
+    # Keep the legacy APK path compatible, but never accept the marker alone.
+    # This validates token shape only; signed per-operation grants remain stronger.
+    if _alvsia_core_apk_session_valid():
         return True
     p = _ALVSIA_CORE_ACTIVE_PROOF
     if not isinstance(p, dict):
