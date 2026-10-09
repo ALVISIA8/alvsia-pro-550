@@ -68,6 +68,8 @@ android {
             excludes += "**/kotlin-tooling-metadata.json"
             excludes += "**/DebugProbesKt.bin"
             excludes += "**/META-INF/version-control-info.textproto"
+            excludes += "META-INF/version-control-info.textproto"
+            excludes += "**/version-control-info.textproto"
             excludes += "**/META-INF/com.android.tools/**"
             excludes += "**/META-INF/*.kotlin_module"
             excludes += "**/*.kotlin_builtins"
