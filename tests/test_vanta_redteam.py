@@ -173,6 +173,8 @@ def test_codemagic_release_signing_fails_closed_and_pins_certificate():
     assert '99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c' in sign_block
     assert 'ALVSIA_PRO_5.5.0_unsigned.apk' not in CODEMAGIC
     assert 'app/build/outputs/apk/**/*.apk' not in CODEMAGIC
+    assert 'groups:\n        - signing' in CODEMAGIC
+    assert '- name: Check release signing secrets' in CODEMAGIC
 
 
 if __name__ == "__main__":
