@@ -443,7 +443,7 @@ class ToolEngine(private val context: Context) {
     private fun safeZipTarget(dest: File, entryName: String): File? {
         return try {
             val root = dest.canonicalFile
-            val normalized = entryName.replace('\\\\', '/')
+            val normalized = entryName.replace('\\', '/')
             if (normalized.startsWith("/") || Regex("^[A-Za-z]:").containsMatchIn(normalized)) {
                 return null
             }
