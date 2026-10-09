@@ -49,6 +49,11 @@ workflows:
           python3 tests/test_pak_extraction.py
           python3 tests/test_tool_dispatch.py
           python3 tests/test_vanta_redteam.py
+          python3 tools/security_release_check.py
+          python3 -m pip install --disable-pip-version-check cryptography
+          python3 tools/seal_python.py --restore
+          python3 tools/seal_python.py --seal
+          python3 tools/seal_python.py --restore
           if command -v lua5.3 >/dev/null 2>&1; then
             LUA_BIN=lua5.3 bash tests/test_unluac_integration.sh
           elif command -v lua >/dev/null 2>&1; then
@@ -68,10 +73,18 @@ workflows:
           python3 -m pip install --disable-pip-version-check cryptography
           python3 tools/seal_assets.py
 
+      - name: Seal protected Python modules
+        script: |
+          set -euo pipefail
+          python3 tools/seal_python.py --restore
+          python3 tools/seal_python.py --seal
+
       - name: Build release APK
         script: |
           set -o pipefail
-          ./gradlew assembleRelease --stacktrace --no-daemon 2>&1 | tee build_full.log
+          restore_python() { python3 tools/seal_python.py --restore || true; }
+          trap restore_python EXIT
+          ./gradlew clean assembleRelease --stacktrace --no-daemon 2>&1 | tee build_full.log
           STATUS=${PIPESTATUS[0]}
           echo "===== ERRORS (if any) ====="
           grep -E "^e:|What went wrong|Caused by:|FAILED|error:" build_full.log | head -50 || true
@@ -86,6 +99,14 @@ workflows:
           test -n "$APK"
           unzip -Z1 "$APK" | grep -Fx "lib/arm64-v8a/librasp_guard.so"
           echo "Release APK input validated: $APK"
+
+      - name: Audit release APK protection layers
+        script: |
+          set -euo pipefail
+          APK=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -1)
+          test -n "$APK"
+          python3 tools/audit_release_apk.py "$APK"
+          cat release_security_audit.txt
 
       - name: Sign and verify production release APK
         script: |
@@ -140,3 +161,4 @@ workflows:
       - ALVSIA_PRO_5.5.0_release.sha256
       - ALVSIA_PRO_5.5.0_signing-verification.txt
       - build_full.log
+      - release_security_audit.txt

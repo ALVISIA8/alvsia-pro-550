@@ -3777,10 +3777,36 @@ from rich import box
 
 console = Console()
 
+_PINNED_GIT_BLOBS = {
+    "SKIN_TOOL.zip": (13886893, "cbd3d0e257963b54f34a908b6864040c7f96fbb1"),
+    "PUBG.csv": (20930952, "2601457787bd2d793880fb1a8c485d0e76144942"),
+    "BGMI.csv": (21122667, "ac72bf1d3ca5f0ae72b65c1845c9c471e4a4a6af"),
+}
+
+def _verify_pinned_git_blob(path: Path, filename: str) -> None:
+    """Verify downloaded bytes against the immutable upstream Git blob and size."""
+    expected = _PINNED_GIT_BLOBS.get(filename)
+    if expected is None:
+        raise ValueError("No integrity pin registered for " + filename)
+    expected_size, expected_sha1 = expected
+    actual_size = path.stat().st_size
+    if actual_size != expected_size:
+        path.unlink(missing_ok=True)
+        raise ValueError("Pinned asset size mismatch: " + filename)
+    digest = hashlib.sha1()
+    digest.update(("blob %d\0" % actual_size).encode("ascii"))
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    if digest.hexdigest() != expected_sha1:
+        path.unlink(missing_ok=True)
+        raise ValueError("Pinned asset Git blob digest mismatch: " + filename)
+
+
 def download_skin_tool():
     """GitHub se download + extract (Sirf download dikhe, extract background mein)"""
     
-    GITHUB_URL = "https://raw.githubusercontent.com/sellacountvinay-creator/SKIN_TOOL/main/SKIN_TOOL.zip"
+    GITHUB_URL = "https://raw.githubusercontent.com/sellacountvinay-creator/SKIN_TOOL/5c7ad2b4996fcd468bf245be43580d1fe131423e/SKIN_TOOL.zip"
     
     base_dir = Path("ALVSIA_PRO_DATA")
     skin_tool_dir = base_dir / "SKIN_TOOL"
@@ -3841,6 +3867,8 @@ def download_skin_tool():
                                 completed=downloaded,
                                 file_size=f"{file_size_mb:.2f} MB"
                             )
+        
+        _verify_pinned_git_blob(zip_path, "SKIN_TOOL.zip")
         
         # 🔥 DOWNLOAD COMPLETE
         console.print()
@@ -8062,8 +8090,8 @@ def run_lua_tool():
                 
                 # --- GITHUB RAW URLS ---
                 csv_urls = {
-                    "PUBG.csv": "https://raw.githubusercontent.com/sellacountvinay-creator/BGMI_CSV/main/PUBG.csv",
-                    "BGMI.csv": "https://raw.githubusercontent.com/sellacountvinay-creator/BGMI_CSV/main/BGMI.csv"
+                    "PUBG.csv": "https://raw.githubusercontent.com/sellacountvinay-creator/BGMI_CSV/d013eca408f85d073c195e42a363b49076babd1d/PUBG.csv",
+                    "BGMI.csv": "https://raw.githubusercontent.com/sellacountvinay-creator/BGMI_CSV/d013eca408f85d073c195e42a363b49076babd1d/BGMI.csv"
                 }
                 
                 try:
@@ -8105,6 +8133,7 @@ def run_lua_tool():
                                                     file_size=f"{file_size_mb:.2f} MB"
                                                 )
                                 
+                                _verify_pinned_git_blob(file_path, filename)
                                 console.print(f"[bold green]✔ Downloaded:[/] [cyan]{filename}[/]")
                             else:
                                 console.print(f"[bold red]❌ Failed:[/] {filename} (Status: {response.status_code})")
@@ -8415,8 +8444,8 @@ def run_lua_tool():
                     border_style="bright_yellow", box=box.HEAVY
                 ))
                 csv_urls = {
-                    "PUBG.csv": "https://raw.githubusercontent.com/sellacountvinay-creator/BGMI_CSV/main/PUBG.csv",
-                    "BGMI.csv": "https://raw.githubusercontent.com/sellacountvinay-creator/BGMI_CSV/main/BGMI.csv"
+                    "PUBG.csv": "https://raw.githubusercontent.com/sellacountvinay-creator/BGMI_CSV/d013eca408f85d073c195e42a363b49076babd1d/PUBG.csv",
+                    "BGMI.csv": "https://raw.githubusercontent.com/sellacountvinay-creator/BGMI_CSV/d013eca408f85d073c195e42a363b49076babd1d/BGMI.csv"
                 }
                 try:
                     BGMI_CSV_folder.mkdir(parents=True, exist_ok=True)
@@ -8442,6 +8471,7 @@ def run_lua_tool():
                                             if total_size > 0:
                                                 percent = int((downloaded / total_size) * 100)
                                                 progress.update(task, completed=percent, file_size=f"{downloaded/(1024*1024):.2f} MB")
+                                _verify_pinned_git_blob(file_path, filename)
                                 console.print(f"[bold green]✔ Downloaded:[/] [cyan]{filename}[/]")
                             else:
                                 console.print(f"[bold red]❌ Failed:[/] {filename} (Status: {response.status_code})")

@@ -5,13 +5,14 @@ import re
 ROOT = Path(__file__).resolve().parents[1]
 MENUS = ROOT / "app/src/main/java/com/alvsia/pro/tool/SubMenus.kt"
 BRIDGE = ROOT / "app/src/main/python/alvsia_bridge.py"
+BRIDGE_IMPL = ROOT / "app/src/main/python/alvsia_bridge_impl.py"
 CATALOG = ROOT / "app/src/main/java/com/alvsia/pro/tool/ToolCatalog.kt"
 ENGINE = ROOT / "app/src/main/java/com/alvsia/pro/tool/ToolEngine.kt"
 
 
 def test_menu_ids_are_unique_and_reachable():
     menus = MENUS.read_text(encoding="utf-8")
-    bridge = BRIDGE.read_text(encoding="utf-8")
+    bridge = BRIDGE.read_text(encoding="utf-8") + "\n" + BRIDGE_IMPL.read_text(encoding="utf-8")
     ids = re.findall(r'SubTool\(\s*"([a-zA-Z0-9_]+)"', menus)
     assert ids, "No SubTool IDs found; menu parsing may have drifted"
     duplicates = sorted({sid for sid in ids if ids.count(sid) > 1})
@@ -42,7 +43,7 @@ def test_catalog_contains_all_seventeen_modules():
 
 def test_engine_surfaces_bridge_failures():
     engine = ENGINE.read_text(encoding="utf-8")
-    bridge = BRIDGE.read_text(encoding="utf-8")
+    bridge = BRIDGE.read_text(encoding="utf-8") + "\n" + BRIDGE_IMPL.read_text(encoding="utf-8")
     assert "X OUT -> operation failed" in engine
     assert "'ok': False" in engine
     assert 'startsWith("X ")' in engine

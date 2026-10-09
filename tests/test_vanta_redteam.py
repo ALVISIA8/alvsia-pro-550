@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PY = ROOT / "app/src/main/python"
 ULTIMATE = (PY / "alvsia_ultimate.py").read_text(encoding="utf-8")
 CORE = (PY / "alvsia_core.py").read_text(encoding="utf-8")
-BRIDGE = (PY / "alvsia_bridge.py").read_text(encoding="utf-8")
+BRIDGE = (PY / "alvsia_bridge.py").read_text(encoding="utf-8") + "\n" + (PY / "alvsia_bridge_impl.py").read_text(encoding="utf-8")
 GRADLE = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
 MANIFEST = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
 NATIVE = ROOT / "app/src/main/cpp/rasp_guard.cpp"
@@ -203,6 +203,21 @@ def test_bridge_requires_apk_session_gate():
     assert "ALVSIA_SESSION_TOKEN" in BRIDGE
 
 
+
+def test_external_data_downloads_are_commit_pinned_and_integrity_checked():
+    # These data downloads are pinned to immutable Git commits and checked against
+    # the upstream Git blob ID/size before the downloaded file is accepted.
+    assert "/SKIN_TOOL/main/SKIN_TOOL.zip" not in ULTIMATE
+    assert "/BGMI_CSV/main/PUBG.csv" not in ULTIMATE
+    assert "/BGMI_CSV/main/BGMI.csv" not in ULTIMATE
+    assert "5c7ad2b4996fcd468bf245be43580d1fe131423e" in ULTIMATE
+    assert "d013eca408f85d073c195e42a363b49076babd1d" in ULTIMATE
+    assert "_verify_pinned_git_blob" in ULTIMATE
+    assert "cbd3d0e257963b54f34a908b6864040c7f96fbb1" in ULTIMATE
+    assert "2601457787bd2d793880fb1a8c485d0e76144942" in ULTIMATE
+    assert "ac72bf1d3ca5f0ae72b65c1845c9c471e4a4a6af" in ULTIMATE
+
+
 def test_codemagic_release_signing_fails_closed_and_pins_certificate():
     sign_block = CODEMAGIC.split("- name: Sign and verify production release APK", 1)[1]
     assert 'if [ -z "${CM_KEYSTORE:-}" ] || [ -z "${CM_KEYSTORE_PASSWORD:-}" ]; then' in sign_block
@@ -230,6 +245,7 @@ if __name__ == "__main__":
         test_apk_session_requires_native_token_shape,
         test_core_operation_gate_rejects_marker_only_bypass,
         test_bridge_requires_apk_session_gate,
+        test_external_data_downloads_are_commit_pinned_and_integrity_checked,
         test_codemagic_release_signing_fails_closed_and_pins_certificate,
     ]
     for check in checks:

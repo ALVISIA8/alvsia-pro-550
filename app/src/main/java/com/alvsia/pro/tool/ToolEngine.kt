@@ -5,6 +5,7 @@ import android.content.Context
 import com.alvsia.pro.BuildConfig
 import com.alvsia.pro.asset.AssetVault
 import com.alvsia.pro.sec.SessionGate
+import com.alvsia.pro.sec.NativeGuard
 import android.net.Uri
 import com.chaquo.python.Python
 import java.io.BufferedInputStream
@@ -215,6 +216,14 @@ class ToolEngine(private val context: Context) {
 
                     environ.callAttr("__setitem__", "ALVSIA_APK_SESSION", "1")
                     environ.callAttr("__setitem__", "ALVSIA_SESSION_TOKEN", token)
+                    if (!BuildConfig.DEBUG) {
+                        // Release-only: the native seed is injected after SessionGate accepts the session.
+                        val seed = NativeGuard.sealSeedHex()
+                        environ.callAttr("__setitem__", "ALVSIA_SEAL_SEED", seed)
+                        environ.callAttr("__setitem__", "ALVSIA_SEALED_RUNTIME", "1")
+                    } else {
+                        environ.callAttr("__setitem__", "ALVSIA_SEALED_RUNTIME", "0")
+                    }
 
                     val bound = environ.callAttr("get", "ALVSIA_APK_SESSION")?.toString()
                     if (bound != "1") {

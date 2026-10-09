@@ -73,6 +73,16 @@ jobs:
       - name: Run VANTA red-team static regression checks
         run: python tests/test_vanta_redteam.py
 
+      - name: Run security source gates
+        run: python tools/security_release_check.py
+
+      - name: Test sealed Python source packaging
+        run: |
+          python -m pip install --disable-pip-version-check cryptography
+          python tools/seal_python.py --restore
+          python tools/seal_python.py --seal
+          python tools/seal_python.py --restore
+
       - name: Run Android unit tests
         run: ./gradlew testDebugUnitTest --stacktrace --no-daemon
 
@@ -81,8 +91,25 @@ jobs:
           python -m pip install --disable-pip-version-check cryptography
           python tools/seal_assets.py
 
+      - name: Seal protected Python modules
+        run: |
+          python tools/seal_python.py --restore
+          python tools/seal_python.py --seal
+
       - name: Build release APK
-        run: ./gradlew assembleRelease --stacktrace --no-daemon
+        shell: bash
+        run: |
+          set -euo pipefail
+          restore_python() { python tools/seal_python.py --restore || true; }
+          trap restore_python EXIT
+          ./gradlew clean assembleRelease --stacktrace --no-daemon
+
+      - name: Audit release APK protection layers
+        run: |
+          set -euo pipefail
+          APK=$(find app/build/outputs/apk/release -name '*.apk' -type f | head -1)
+          test -n "$APK"
+          python tools/audit_release_apk.py "$APK"
 
       - name: Verify native RASP library and calculate APK checksum
         run: |
@@ -95,7 +122,7 @@ jobs:
           sha256sum release-candidate/ALVSIA_PRO_5.5.0_release-candidate.apk | tee release-candidate/ALVSIA_PRO_5.5.0_release-candidate.sha256
 
       - name: Upload release candidate APK
-        if: success()
+        if: success() && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         uses: actions/upload-artifact@v4
         with:
           name: ALVISIA-PRO-5.5.0-RELEASE-CANDIDATE
@@ -112,5 +139,6 @@ jobs:
             **/build/reports/tests/**
             **/build/outputs/apk/**
             **/build/outputs/mapping/**
+            release_security_audit.txt
           if-no-files-found: ignore
           retention-days: 7

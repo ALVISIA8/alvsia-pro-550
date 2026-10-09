@@ -24,6 +24,8 @@ android {
 
     buildTypes {
         release {
+            // AGP 8.3+ injects Git revision metadata by default; keep it out of production APKs.
+            vcsInfo.include = false
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -68,6 +70,8 @@ android {
             excludes += "**/kotlin-tooling-metadata.json"
             excludes += "**/DebugProbesKt.bin"
             excludes += "**/META-INF/version-control-info.textproto"
+            excludes += "META-INF/version-control-info.textproto"
+            excludes += "**/version-control-info.textproto"
             excludes += "**/META-INF/com.android.tools/**"
             excludes += "**/META-INF/*.kotlin_module"
             excludes += "**/*.kotlin_builtins"
