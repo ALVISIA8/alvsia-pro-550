@@ -100,6 +100,15 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                 csvp.write_text("path\n" + "\n".join(paths), encoding="utf-8")
                 lines.append("OK csv=%s n=%s" % (csvp, len(paths)))
                 return "\n".join(lines)
+            # Start from a clean destination so stale files can never satisfy
+            # the extraction verification below.
+            try:
+                if dest.exists():
+                    shutil.rmtree(dest)
+                dest.mkdir(parents=True, exist_ok=True)
+            except Exception as exc:
+                lines.append("X PAK UNPACK FAILED: cannot reset output directory: %s" % (str(exc)[:500]))
+                return "\\n".join(lines)
             try:
                 r = core.run_pak_unpack(ip, dest)
             except Exception as exc:
