@@ -15,13 +15,13 @@ def main():
         assert ok, msg
         report=analyze_lua(src,td)
         assert report["ok"] and report["format"]=="lua-source"
-        luac=td/"sample.luac"; luac.write_bytes(bytes.fromhex("1b4c756153") + b"\\x00"*32)
+        luac=td/"sample.luac"; luac.write_bytes(bytes.fromhex("1b4c756153") + bytes(32))
         li=detect_lua(luac)
         assert li.format=="luac" and li.version=="Lua 5.3"
-        lj=td/"sample.lj"; lj.write_bytes(bytes.fromhex("1b4c4a02") + b"\\x00"*20)
+        lj=td/"sample.lj"; lj.write_bytes(bytes.fromhex("1b4c4a02") + bytes(20))
         ji=detect_lua(lj)
         assert ji.format=="luajit"
-        bad=td/"bad.bin"; bad.write_bytes(b"\\x00\\x01garbage")
+        bad=td/"bad.bin"; bad.write_bytes(bytes([0, 1]) + b"garbage")
         assert not analyze_lua(bad,td)["ok"]
 
     # Real wrapped Lua regression fixture: chunked 78da/raw-deflate container.
