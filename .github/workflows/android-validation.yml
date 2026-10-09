@@ -74,6 +74,12 @@ jobs:
       - name: Compile and test
         run: ./gradlew testDebugUnitTest assembleRelease --stacktrace --no-daemon
 
+      - name: Verify native RASP library is packaged
+        run: |
+          APK=$(find app/build/outputs/apk/release -name '*.apk' -type f | head -1)
+          test -n "$APK"
+          unzip -Z1 "$APK" | grep -Fx 'lib/arm64-v8a/librasp_guard.so'
+
       - name: Upload build diagnostics
         if: always()
         uses: actions/upload-artifact@v4
