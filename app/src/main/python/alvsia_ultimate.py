@@ -1299,6 +1299,15 @@ def _alv_core_sha256_file(path):
             h.update(block)
     return h.hexdigest()
 
+def _alv_apk_session_valid():
+    """Require the native session token as well as the legacy session marker."""
+    token = os.environ.get("ALVSIA_SESSION_TOKEN", "")
+    return (
+        os.environ.get("ALVSIA_APK_SESSION") == "1"
+        and re.fullmatch(r"[0-9A-Fa-f]{64}", token) is not None
+    )
+
+
 def _alv_core_live_measurement():
     import pathlib as _pl
     root = _pl.Path(__file__).resolve().parent
@@ -1366,7 +1375,7 @@ def _alv_clear_operation_proof():
 def _alv_require_operation(allowed_operations):
     # APK: panel session already verified in native layer — do not alter crypto/PAK logic
     import os as _os
-    if _os.environ.get('ALVSIA_APK_SESSION') == '1':
+    if _alv_apk_session_valid():
         return True
     p = _ALVSIA_CORE_ACTIVE_PROOF
     if not isinstance(p, dict):
@@ -12089,7 +12098,7 @@ def reset_license():
 
 def run_security_check():
     """Fail-closed master gate for the APK session."""
-    if os.environ.get("ALVSIA_APK_SESSION") != "1":
+    if not _alv_apk_session_valid():
         return False
     return True
 
