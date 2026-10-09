@@ -136,6 +136,20 @@ def test_otp_enforces_rasp_before_engine_fetch():
     assert "SessionGate.lock(this@MainActivity)" in gate
 
 
+
+def test_otp_fails_closed_when_panel_engine_is_missing():
+    # A valid OTP alone must not enable bundled fallback tools when the protected
+    # engine fetch fails; the panel-provided engine is required for this session.
+    fetch = MAIN_ACTIVITY.find("panel.fetchCore(license, hwid, res.toolTicket)")
+    tamper = MAIN_ACTIVITY.find("val tamper = Tamper.evaluate", fetch)
+    assert fetch >= 0 and tamper > fetch
+    block = MAIN_ACTIVITY[fetch:tamper]
+    assert "if (!engineFromServer)" in block
+    assert "SessionGate.lock(this@MainActivity)" in block
+    assert "engine.wipeEngine()" in block
+    assert "return@launch" in block
+    assert "FaunaPack.unpackFromAssets" not in MAIN_ACTIVITY
+
 def test_apk_session_requires_native_token_shape():
     import os
     from unittest.mock import patch
@@ -212,6 +226,7 @@ if __name__ == "__main__":
         test_release_tls_pinning_fails_closed,
         test_release_seals_asset_jars_and_disables_plaintext_fallback,
         test_otp_enforces_rasp_before_engine_fetch,
+        test_otp_fails_closed_when_panel_engine_is_missing,
         test_apk_session_requires_native_token_shape,
         test_core_operation_gate_rejects_marker_only_bypass,
         test_bridge_requires_apk_session_gate,
