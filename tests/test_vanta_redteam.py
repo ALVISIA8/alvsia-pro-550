@@ -120,7 +120,8 @@ def test_apk_session_requires_native_token_shape():
 
 
 def test_bridge_requires_apk_session_gate():
-    assert 'os.environ.get("ALVSIA_APK_SESSION") != "1"' in BRIDGE
+    assert "if not _valid_apk_session():" in BRIDGE
+    assert "ALVSIA_SESSION_TOKEN" in BRIDGE
 
 
 if __name__ == "__main__":
