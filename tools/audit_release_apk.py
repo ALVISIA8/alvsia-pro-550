@@ -81,7 +81,9 @@ def main() -> int:
                 "VCS revision metadata absent from APK",
             )
 
-            for asset_name in sorted(n for n in names if n.startswith("assets/nx/") and n.endswith(".bin")):
+            asset_blobs = sorted(n for n in names if n.startswith("assets/nx/") and n.endswith(".bin"))
+            check(len(asset_blobs) >= 3, f"sealed JAR asset count >= 3 (found {len(asset_blobs)})")
+            for asset_name in asset_blobs:
                 blob = outer.read(asset_name)
                 check(blob.startswith(ASSET_MAGIC), f"sealed asset header: {asset_name}")
             index = outer.read("assets/nx/i.dat") if "assets/nx/i.dat" in names else b""
@@ -103,11 +105,13 @@ def main() -> int:
 
                     plaintext = []
                     for name in members:
-                        normalized = name.replace("\\", "/")
-                        lower = normalized.lower()
+                        normalized = name.replace("\\", "/").lower().lstrip("./")
                         for module in PROTECTED_MODULES:
                             prefix = module.lower()
-                            if lower in (prefix + ".py", prefix + ".pyc", prefix + ".pyc.pyc"):
+                            if any(
+                                normalized == prefix + suffix or normalized.endswith("/" + prefix + suffix)
+                                for suffix in (".py", ".pyc")
+                            ):
                                 plaintext.append(name)
                     check(not plaintext, "protected Python modules are not shipped as plaintext .py/.pyc" if not plaintext else "plaintext protected modules: " + ", ".join(plaintext))
             except (zipfile.BadZipFile, OSError) as exc:
