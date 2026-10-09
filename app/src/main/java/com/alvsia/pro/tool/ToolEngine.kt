@@ -209,10 +209,11 @@ class ToolEngine(private val context: Context) {
                 // Never report a successful output when the Python engine explicitly
                 // returned a failed operation. This was causing the UI to show
                 // "OK OUT" even when decompilation had failed.
+                // Any explicit error line means the operation failed, including
+                // exceptions thrown by PAK parsers that do not return an {ok:false} map.
                 val bridgeFailed = log.contains("'ok': False") ||
                     log.contains("\"ok\": false", ignoreCase = true) ||
-                    log.contains("X AUTH:") ||
-                    log.contains("X input missing")
+                    log.lineSequence().any { it.trimStart().startsWith("X ") }
                 if (bridgeFailed) {
                     lines.add("X OUT -> operation failed; see engine diagnostics above")
                 } else {
