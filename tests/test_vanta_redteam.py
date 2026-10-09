@@ -127,6 +127,38 @@ def test_apk_session_requires_native_token_shape():
     assert "if not _valid_apk_session():" in BRIDGE
 
 
+
+def test_core_operation_gate_rejects_marker_only_bypass():
+    import ast
+    import os
+    from unittest.mock import patch
+
+    tree = ast.parse(CORE)
+    names = {"_alvsia_core_apk_session_valid", "_alvsia_require_operation"}
+    nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names]
+    assert {node.name for node in nodes} == names
+    namespace = {"_ALVSIA_CORE_ACTIVE_PROOF": None}
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), str(PY / "alvsia_core.py"), "exec"), namespace)
+    require = namespace["_alvsia_require_operation"]
+
+    with patch.dict(os.environ, {"ALVSIA_APK_SESSION": "1"}, clear=False):
+        os.environ.pop("ALVSIA_SESSION_TOKEN", None)
+        try:
+            require({"pak_unpack"})
+        except RuntimeError as exc:
+            assert "authorization failed" in str(exc).lower()
+        else:
+            raise AssertionError("Core accepted APK session marker without token")
+        os.environ["ALVSIA_SESSION_TOKEN"] = "malformed"
+        try:
+            require({"pak_unpack"})
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("Core accepted malformed APK session token")
+        os.environ["ALVSIA_SESSION_TOKEN"] = "a" * 64
+        assert require({"pak_unpack"}) is True
+
 def test_bridge_requires_apk_session_gate():
     assert "if not _valid_apk_session():" in BRIDGE
     assert "ALVSIA_SESSION_TOKEN" in BRIDGE
@@ -142,6 +174,7 @@ if __name__ == "__main__":
         test_release_hardening_is_enabled,
         test_release_tls_pinning_fails_closed,
         test_apk_session_requires_native_token_shape,
+        test_core_operation_gate_rejects_marker_only_bypass,
         test_bridge_requires_apk_session_gate,
     ]
     for check in checks:
