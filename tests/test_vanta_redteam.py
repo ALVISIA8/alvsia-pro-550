@@ -16,6 +16,58 @@ MANIFEST = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8
 NATIVE = ROOT / "app/src/main/cpp/rasp_guard.cpp"
 
 
+
+def _load_standalone_python_function(name):
+    """Load a small stdlib-only function from source without importing the app."""
+    import ast
+    source_tree = ast.parse(ULTIMATE)
+    function = next(
+        node for node in source_tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == name
+    )
+    module = ast.Module(body=[function], type_ignores=[])
+    namespace = {"Path": Path}
+    exec(compile(module, str(PY / "alvsia_ultimate.py"), "exec"), namespace)
+    return namespace[name]
+
+
+def test_captcha_parser_accepts_bounded_arithmetic_and_rejects_code():
+    solve = _load_standalone_python_function("_safe_captcha_integer")
+    assert solve("7 + 5 * 2") == 17
+    assert solve("(20 - 8) // 3") == 4
+    for malicious in (
+        "__import__('os').system('echo unsafe')",
+        "open('/tmp/alvsia-test', 'w')",
+        "1 / 0",
+        "9 ** 99",
+        "1" * 300,
+    ):
+        try:
+            solve(malicious)
+        except (ValueError, SyntaxError, ZeroDivisionError):
+            pass
+        else:
+            raise AssertionError(f"Captcha parser accepted invalid input: {malicious!r}")
+
+
+def test_zip_extractor_rejects_path_traversal(tmp_path):
+    import zipfile
+    extract = _load_standalone_python_function("_alvsia_safe_extract_zip")
+    archive_path = tmp_path / "malicious.zip"
+    output = tmp_path / "out"
+    outside = tmp_path / "escape.txt"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("../escape.txt", "must-not-write")
+    with zipfile.ZipFile(archive_path) as archive:
+        try:
+            extract(archive, output)
+        except ValueError as exc:
+            assert "Unsafe ZIP entry path rejected" in str(exc)
+        else:
+            raise AssertionError("ZIP traversal entry was not rejected")
+    assert not outside.exists(), "ZIP traversal wrote outside destination"
+
+
 def test_no_reported_master_passwords_remain():
     forbidden = ("ALVSIA_2027", "ALVSIA_MASTER_20277")
     source = "\n".join((ULTIMATE, CORE, BRIDGE))
@@ -54,6 +106,8 @@ def test_bridge_requires_apk_session_gate():
 
 if __name__ == "__main__":
     checks = [
+        test_captcha_parser_accepts_bounded_arithmetic_and_rejects_code,
+        test_zip_extractor_rejects_path_traversal,
         test_no_reported_master_passwords_remain,
         test_captcha_does_not_use_eval,
         test_no_direct_zip_extractall_calls,
