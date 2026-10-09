@@ -112,4 +112,5 @@ workflows:
       - app/build/outputs/apk/**/*.apk
       - ALVSIA_PRO_5.5.0_signed.apk
       - ALVSIA_PRO_5.5.0_unsigned.apk
+      - ALVSIA_PRO_5.5.0_release.sha256
       - build_full.log
