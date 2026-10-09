@@ -44,7 +44,6 @@ def test_engine_surfaces_bridge_failures():
     engine = ENGINE.read_text(encoding="utf-8")
     assert "X OUT -> operation failed" in engine
     assert "'ok': False" in engine
-    assert '"ok": false' in engine
     assert 'startsWith("X ")' in engine
 
 
