@@ -41,6 +41,17 @@ except Exception:
     _run_universal = None
 
 
+def _alvsia_safe_extract_zip(zip_file, destination):
+    """Extract ZIP entries only when their resolved path stays under destination."""
+    root = Path(destination).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    for member in zip_file.infolist():
+        target = (root / member.filename).resolve()
+        if target != root and root not in target.parents:
+            raise ValueError("Unsafe ZIP entry path rejected")
+        zip_file.extract(member, root)
+
+
 def _find_java():
     for c in ("java", "/data/data/com.termux/files/usr/bin/java"):
         if shutil.which(c) or Path(c).is_file():
@@ -152,7 +163,7 @@ def run_unzip(src, dest_dir):
     dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(src, "r") as z:
-        z.extractall(dest_dir)
+        _alvsia_safe_extract_zip(z, dest_dir)
     n = sum(1 for _ in dest_dir.rglob("*") if _.is_file())
     return {"ok": True, "out": str(dest_dir), "files": n}
 
@@ -1141,7 +1152,7 @@ def run_obb_extract(input_path, out_dir):
     out_dir.mkdir(parents=True, exist_ok=True)
     try:
         with zipfile.ZipFile(p, "r") as zf:
-            zf.extractall(out_dir)
+            _alvsia_safe_extract_zip(zf, out_dir)
             count = len(zf.namelist())
         return {"ok": True, "extracted": count, "out": str(out_dir)}
     except Exception as e:
