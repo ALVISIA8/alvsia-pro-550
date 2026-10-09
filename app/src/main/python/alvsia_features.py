@@ -71,9 +71,9 @@ def _pick_jar(jars_dir, prefer=("unluac_pro.jar", "unluac_patched.jar", "unluac.
 def _prepare_lua_input(input_path, out_dir):
     input_path = Path(input_path); out_dir = Path(out_dir)
     raw = input_path.read_bytes()
-    if not raw.startswith(b"\x78\xda"):
-        return input_path, None
     payload, ci = unwrap_lua_container(raw)
+    if not ci.wrapped:
+        return input_path, None
     if not payload.startswith((b"\x1bLua", b"\x1bLJ")):
         raise ValueError("compressed input did not contain Lua/LuaJIT bytecode")
     normalized = out_dir / (input_path.stem + "_unwrapped.luac")
