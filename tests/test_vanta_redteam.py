@@ -16,6 +16,7 @@ MANIFEST = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8
 NATIVE = ROOT / "app/src/main/cpp/rasp_guard.cpp"
 CODEMAGIC = (ROOT / "codemagic.yaml").read_text(encoding="utf-8")
 PANEL_CLIENT = (ROOT / "app/src/main/java/com/alvsia/pro/panel/PanelClient.kt").read_text(encoding="utf-8")
+MAIN_ACTIVITY = (ROOT / "app/src/main/java/com/alvsia/pro/MainActivity.kt").read_text(encoding="utf-8")
 
 
 
@@ -112,6 +113,17 @@ def test_release_tls_pinning_fails_closed():
     assert "_pinGrace" not in PANEL_CLIENT
 
 
+def test_otp_enforces_rasp_before_engine_fetch():
+    # A successful OTP response must not bypass the hostile-environment gate.
+    otp = MAIN_ACTIVITY.find("val safeAfterOtp")
+    fetch = MAIN_ACTIVITY.find("panel.fetchCore(license, hwid, res.toolTicket)")
+    assert otp >= 0 and fetch > otp, "RASP gate must run before protected engine fetch"
+    gate = MAIN_ACTIVITY[otp:fetch]
+    assert "Guard.checkAndReport(" in gate
+    assert "if (!safeAfterOtp)" in gate
+    assert "SessionGate.lock(this@MainActivity)" in gate
+
+
 def test_apk_session_requires_native_token_shape():
     import os
     from unittest.mock import patch
@@ -186,6 +198,7 @@ if __name__ == "__main__":
         test_no_direct_zip_extractall_calls,
         test_release_hardening_is_enabled,
         test_release_tls_pinning_fails_closed,
+        test_otp_enforces_rasp_before_engine_fetch,
         test_apk_session_requires_native_token_shape,
         test_core_operation_gate_rejects_marker_only_bypass,
         test_bridge_requires_apk_session_gate,
