@@ -3,6 +3,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app/src/main/python"))
 from lua_engine import detect_lua, analyze_lua, validate_lua_source, unwrap_lua_container
+from lua_engine.bgmi import transform_bgmi_lua
 
 def main():
     with tempfile.TemporaryDirectory() as td:
@@ -40,6 +41,23 @@ def main():
             assert report["container"] == "zlib", report
         plain, ci = unwrap_lua_container(lua_payload)
         assert plain == lua_payload and not ci.wrapped
+
+        # Unknown BGMI opcodes must fail closed, never pass through as standard
+        # Lua opcodes and create a misleading decompile result.
+        bgmi_header = (
+            b"\x1bLua\x53\x00\x19\x93\x0d\x0a\x1a\x0a"
+            + b"\x04\x04\x04\x08\x08"
+            + bytes.fromhex("7856000000000000")
+            + bytes.fromhex("0000000000287740")
+        )
+        assert len(bgmi_header) == 33
+        unknown_opcode_chunk = bgmi_header + b"\x00" + (1).to_bytes(4, "little") + (6).to_bytes(4, "little")
+        try:
+            transform_bgmi_lua(unknown_opcode_chunk)
+        except ValueError as exc:
+            assert "unsupported BGMI opcode 6" in str(exc)
+        else:
+            raise AssertionError("unknown BGMI opcode was silently normalized")
 
         # Enforce the expansion limit before buffering an oversized payload.
         oversized = zlib.compress(b"\x1bLuaS" + (b"A" * 10000), 9)
