@@ -26,10 +26,16 @@ workflows:
           fi
           echo "Release branch verified: main"
 
-      - name: Set gradlew permission
+      - name: Set gradlew permission and install Android SDK 35
         script: |
+          set -euo pipefail
           chmod +x ./gradlew
           java -version
+          SDKMANAGER="$(find "${ANDROID_SDK_ROOT:-$ANDROID_HOME}" -name sdkmanager -type f 2>/dev/null | head -1)"
+          if [ -n "$SDKMANAGER" ]; then
+            yes | "$SDKMANAGER" --licenses >/dev/null || true
+            "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+          fi
 
       - name: Check release signing secrets
         script: |
