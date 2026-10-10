@@ -7,6 +7,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Hardened compile flags
 add_compile_options(
     -O2
+    -g0
+    -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.
     -fvisibility=hidden
     -ffunction-sections
     -fdata-sections
