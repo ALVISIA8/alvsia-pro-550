@@ -253,16 +253,18 @@ Java_com_alvsia_pro_sec_NativeGuard_nativeAntiDump(JNIEnv*, jobject) {
 
 JNIEXPORT jbyteArray JNICALL
 Java_com_alvsia_pro_sec_NativeGuard_nativeSealSeed(JNIEnv* env, jobject) {
-    // Build-bound obfuscation seed; never treat this as a server secret.
-    static const unsigned char seed[32] = {
-        0x00,0x11,0x22,0x33,0x44,0x55,0x66,0x77,
-        0x88,0x99,0xaa,0xbb,0xcc,0xdd,0xee,0xff,
-        0x00,0x11,0x22,0x33,0x44,0x55,0x66,0x77,
-        0x88,0x99,0xaa,0xbb,0xcc,0xdd,0xee,0xff
-    };
+    // Unique per-build obfuscation input; this is not a server-side secret.
+    static const char seedHex[] = ALVSIA_SEAL_SEED_HEX;
+    unsigned char seed[32] = {};
+    for (size_t i = 0; i < 32; ++i) {
+        unsigned int value = 0;
+        if (sscanf(seedHex + (i * 2), "%2x", &value) != 1) return nullptr;
+        seed[i] = static_cast<unsigned char>(value);
+    }
     jbyteArray out = env->NewByteArray(32);
     if (out == nullptr) return nullptr;
     env->SetByteArrayRegion(out, 0, 32, reinterpret_cast<const jbyte*>(seed));
+    memset(seed, 0, sizeof(seed));
     return out;
 }
 
