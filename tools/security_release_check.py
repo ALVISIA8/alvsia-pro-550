@@ -100,6 +100,10 @@ if "networkSecurityConfig" not in manifest or "alvsiapro.cc.cd" not in read(ROOT
     fail.append("panel network security configuration is missing")
 if "KEY_ALGORITHM_HMAC_SHA256" not in session or "age in 0..SESSION_TTL" not in session:
     fail.append("SessionGate HMAC or future/expiry timestamp checks are missing")
+if "if (Guard.hostile(ctx))" not in session or "native_rasp_unavailable" not in session:
+    fail.append("SessionGate must recheck live hooks each dispatch and fail closed if release JNI RASP is unavailable")
+if "fun isNativeLoaded(): Boolean = nativeLoaded" not in native_guard:
+    fail.append("NativeGuard load-state API is missing; release cannot detect JNI downgrade")
 ultimate = read(PY / "alvsia_ultimate.py")
 if "/SKIN_TOOL/main/SKIN_TOOL.zip" in ultimate or "/BGMI_CSV/main/" in ultimate:
     fail.append("external SKIN_TOOL/BGMI_CSV downloads are not commit-pinned")
