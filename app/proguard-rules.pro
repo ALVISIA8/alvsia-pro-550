@@ -71,7 +71,6 @@
 }
 
 # ── Aggressive renaming ───────────────────────────────────────────────
--keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
 
 # ── Strip unused / known debug libs ──────────────────────────────────
