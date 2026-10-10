@@ -1,5 +1,6 @@
 package com.alvsia.pro.sec
 
+import com.alvsia.pro.BuildConfig
 import java.io.File
 import java.security.MessageDigest
 import javax.crypto.Cipher
