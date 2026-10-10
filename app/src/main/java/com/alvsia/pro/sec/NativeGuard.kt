@@ -49,7 +49,8 @@ object NativeGuard {
         return try { nativeScanFlags() } catch (_: Exception) { fallbackFlags() }
     }
 
-    /** Build-bound seed used only to decrypt authenticated release Python payloads. */
+    /** Build-bound seed used only by the sealed loader; never export it through process environment. */
+    @JvmStatic
     fun sealSeedHex(): String {
         if (!nativeLoaded) throw IllegalStateException("native security library unavailable")
         return nativeSealSeed().joinToString("") { "%02x".format(it.toInt() and 0xff) }
