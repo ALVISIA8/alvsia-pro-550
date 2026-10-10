@@ -61,6 +61,7 @@ android {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
             version = "3.22.1"
+            arguments += listOf("-DALVSIA_SEAL_SEED_HEX=${System.getenv("ALVSIA_SEAL_SEED_HEX").orEmpty()}")
         }
     }
 
