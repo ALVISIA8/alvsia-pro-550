@@ -48,8 +48,8 @@ object RaspEngine {
         if (!started.compareAndSet(false, true)) return
         val app = ctx.applicationContext
 
-        // Try to initialize securevale RASP SDK if shipped
-        trySecurevaleInit()
+        // Initialize and execute Securevale's native RASP checks alongside ALVISIA probes.
+        trySecurevaleInit(app, license)
 
         // First tick immediately
         tick(app, license)
@@ -200,10 +200,34 @@ object RaspEngine {
         return r
     }
 
-    private fun trySecurevaleInit() {
+    private fun trySecurevaleInit(ctx: Context, license: String) {
         try {
-            Class.forName("com.securevale.rasp.android.SecureApp")
-                .getMethod("init").invoke(null)
-        } catch (_: Throwable) {}
+            com.securevale.rasp.android.SecureApp.init()
+            val result = com.securevale.rasp.android.api.SecureAppChecker.Builder(
+                ctx,
+                checkEmulator = true,
+                checkDebugger = true,
+                checkRoot = true
+            ).build().check()
+
+            if (result != com.securevale.rasp.android.api.result.Result.Secure) {
+                Guard.degraded = true
+                ThreatReport.emit(
+                    ctx,
+                    "SECUREVALE_RASP",
+                    result::class.java.simpleName.ifBlank { result.toString() },
+                    license
+                )
+            }
+        } catch (error: Throwable) {
+            // Keep the app's independent ALVISIA RASP probes active if the optional SDK fails.
+            Guard.degraded = true
+            ThreatReport.emit(
+                ctx,
+                "SECUREVALE_RASP_INIT_FAILED",
+                error.javaClass.simpleName,
+                license
+            )
+        }
     }
 }
