@@ -135,11 +135,21 @@ workflows:
           set -euo pipefail
           APK="app/build/outputs/andresguard/ALVISIA_PRO_5.5.0_resguard.apk"
           if [ "${ALVSIA_VIRBOX_REQUIRED:-0}" = "1" ]; then
+            if [ -z "${VIRBOX_PROTECTOR_BIN:-}" ] || [ -z "${VIRBOX_SSP_FILE:-}" ]; then
+              echo "ERROR: ALVSIA_VIRBOX_REQUIRED=1 requires both VIRBOX_PROTECTOR_BIN and VIRBOX_SSP_FILE."
+              echo "Do not claim active Virbox protection without the licensed vendor CLI and valid SSP file."
+              exit 3
+            fi
+            if [ ! -x "${VIRBOX_PROTECTOR_BIN}" ] || [ ! -f "${VIRBOX_SSP_FILE}" ]; then
+              echo "ERROR: Licensed Virbox CLI or SSP file is missing; active VM protection cannot be verified."
+              exit 3
+            fi
             bash tools/virbox_protect_release.sh "$APK" "app/build/outputs/andresguard/ALVISIA_PRO_5.5.0_virbox.apk"
             cp "app/build/outputs/andresguard/ALVISIA_PRO_5.5.0_virbox.apk" "$APK"
             echo "Licensed Virbox stage completed; downstream audit and signing will use protected APK."
           else
-            echo "Virbox stage not enabled. Set ALVSIA_VIRBOX_REQUIRED=1, VIRBOX_PROTECTOR_BIN, and VIRBOX_SSP_FILE in CodeMagic only after installing the licensed vendor CLI and generating the .ssp profile."
+            echo "Virbox stage disabled. No active VM/bytecode virtualization layer is included by default."
+            echo "Set ALVSIA_VIRBOX_REQUIRED=1, VIRBOX_PROTECTOR_BIN, and VIRBOX_SSP_FILE only when a licensed vendor setup is installed and build output is verified."
           fi
 
       - name: Verify release APK and native RASP library
@@ -195,8 +205,8 @@ workflows:
             --out "$SIGNED" \
             /tmp/alvsia-aligned.apk
 
-          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$SIGNED" | tee ALVSIA_PRO_5.5.0_signing-verification.txt
-          ACTUAL_CERT=$(awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {gsub(":", "", $2); print tolower($2); exit}' ALVSIA_PRO_5.5.0_signing-verification.txt)
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$SIGNED" | tee ALVISIA_PRO_5.5.0_signing-verification.txt
+          ACTUAL_CERT=$(awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {gsub(":", "", $2); print tolower($2); exit}' ALVISIA_PRO_5.5.0_signing-verification.txt)
           EXPECTED_CERT="99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c"
           if [ "$ACTUAL_CERT" != "$EXPECTED_CERT" ]; then
             echo "ERROR: APK signer certificate does not match the ALVISIA release certificate."
@@ -204,7 +214,7 @@ workflows:
             echo "Actual: ${ACTUAL_CERT:-missing}"
             exit 3
           fi
-          shasum -a 256 "$SIGNED" | tee ALVSIA_PRO_5.5.0_release.sha256
+          shasum -a 256 "$SIGNED" | tee ALVISIA_PRO_5.5.0_release.sha256
           ls -lh "$SIGNED"
 
     artifacts:

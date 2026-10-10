@@ -94,6 +94,8 @@ if "META-INF/version-control-info.textproto" not in gradle or '"**/version-contr
     fail.append("VCS metadata is not excluded from release packaging")
 if "android.permission.DUMP" in manifest:
     fail.append("unnecessary android.permission.DUMP remains in manifest")
+if "android.permission.MODIFY_AUDIO_SETTINGS" in manifest:
+    fail.append("unused MODIFY_AUDIO_SETTINGS permission remains in manifest")
 if ".certificatePinner(Vault.certPinner())" not in panel or "clientPinned.newCall(req).execute()" not in panel:
     fail.append("PanelClient TLS certificate pinning is not wired")
 if "networkSecurityConfig" not in manifest or "alvsiapro.cc.cd" not in read(ROOT / "app/src/main/res/xml/network_security_config.xml"):
