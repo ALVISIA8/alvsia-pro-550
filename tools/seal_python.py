@@ -20,9 +20,8 @@ OUT = PY_ROOT / "sealed"
 BACKUP = Path(os.environ.get("ALVSIA_PY_BACKUP_DIR", str(Path(tempfile.gettempdir()) / "alvsia-python-source-backup")))
 BUILD_ID = "ALVISIA-20261010-MAIN-SEAL1"
 CERT_HEX = "99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c"
-# Must match NativeGuard.nativeSealSeed(). This is a build-bound obfuscation key,
-# not a substitute for server-side authorization or a hardware-backed secret.
-SEED_HEX = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+# Generated per build by CI/CodeMagic; this is obfuscation material, not a server secret.
+SEED_ENV = "ALVSIA_SEAL_SEED_HEX"
 MAGIC = b"ALVSEAL2"
 MODULES = (
     "alvsia_bridge_impl.py",
