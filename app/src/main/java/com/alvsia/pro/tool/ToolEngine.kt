@@ -217,9 +217,8 @@ class ToolEngine(private val context: Context) {
                     environ.callAttr("__setitem__", "ALVSIA_APK_SESSION", "1")
                     environ.callAttr("__setitem__", "ALVSIA_SESSION_TOKEN", token)
                     if (!BuildConfig.DEBUG) {
-                        // Release-only: the native seed is injected after SessionGate accepts the session.
-                        val seed = NativeGuard.sealSeedHex()
-                        environ.callAttr("__setitem__", "ALVSIA_SEAL_SEED", seed)
+                        // The sealed loader requests the per-build seed directly through JNI.
+                        // Never place decryption material in os.environ / /proc/<pid>/environ.
                         environ.callAttr("__setitem__", "ALVSIA_SEALED_RUNTIME", "1")
                     } else {
                         environ.callAttr("__setitem__", "ALVSIA_SEALED_RUNTIME", "0")
