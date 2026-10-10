@@ -42,10 +42,22 @@ workflows:
       - name: Check release signing secrets
         script: |
           set -euo pipefail
-          if [ -z "${CM_KEYSTORE:-}" ] || [ -z "${CM_KEYSTORE_PASSWORD:-}" ]; then
-            echo "ERROR: attach the 'signing' environment group with CM_KEYSTORE and CM_KEYSTORE_PASSWORD."
+          missing=0
+          for name in CM_KEYSTORE CM_KEYSTORE_PASSWORD CM_KEY_ALIAS CM_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "ERROR: required signing variable is missing: $name"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "Attach the 'signing' environment group in CodeMagic. Do not store signing secrets in Git."
             exit 2
           fi
+          if [ "$CM_KEY_ALIAS" != "alvsia" ]; then
+            echo "ERROR: CM_KEY_ALIAS must be the release alias 'alvsia'."
+            exit 2
+          fi
+          echo "All required signing variables are present; values remain hidden."
 
       - name: Generate per-build sealed payload seed
         script: |
@@ -111,11 +123,11 @@ workflows:
             test -n "$APK" && test -s "$APK" || exit 1
             cp "$APK" app/build/outputs/andresguard/ALVISIA_PRO_5.5.0_resguard.apk
           fi
-          STATUS=${PIPESTATUS[0]}
           echo "===== ERRORS (if any) ====="
           grep -E "^e:|What went wrong|Caused by:|FAILED|error:" build_full.log | head -50 || true
           echo "===== APK outputs ====="
           find app/build/outputs -name "*.apk" -type f 2>/dev/null || true
+          # Preserve the Gradle pipeline exit code captured immediately after tee.
           exit $STATUS
 
       - name: Optional licensed Virbox protection stage
