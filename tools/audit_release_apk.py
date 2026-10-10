@@ -60,7 +60,7 @@ def main() -> int:
                   "plaintext unluac JAR assets absent")
             check(not any(n.endswith("META-INF/version-control-info.textproto") for n in names),
                   "VCS revision metadata absent")
-            dex_names = sorted(n for n in names if re.fullmatch(r"classes(?:[0-9]+)?\\.dex", n))
+            dex_names = sorted(n for n in names if re.fullmatch(r"classes(?:[0-9]+)?\.dex", n))
             dex_bytes = b"".join(outer.read(n) for n in dex_names)
             check(b"com/securevale/" not in dex_bytes,
                   "recognizable SecureVale SDK classes absent from DEX")
