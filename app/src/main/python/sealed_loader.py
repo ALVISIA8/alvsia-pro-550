@@ -1,6 +1,5 @@
 # ALVISIA PRO sealed Python bootstrap; payloads are generated during release build.
 from __future__ import annotations
-import hashlib
 import importlib.abc
 import importlib.util
 import os
@@ -9,7 +8,6 @@ import re
 import sys
 
 _BUILD_ID = "ALVISIA-20261010-MAIN-SEAL1"
-_CERT_SHA256 = "99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c"
 _MAGIC = b"ALVSEAL2"
 _MAP = {
     "alvsia_bridge_impl": "alvsia_bridge_impl.alv",
@@ -47,29 +45,13 @@ class _SealedLoader(importlib.abc.Loader):
         if not _valid_session():
             raise ImportError("sealed runtime authorization missing")
         try:
-            # JNI returns the build-bound seed directly. It is intentionally not
-            # copied into os.environ, where /proc/<pid>/environ or getenv hooks
-            # would expose it with less effort.
+            # Keep the seed, certificate-derived key, and AES key derivation out
+            # of Python. The Kotlin/JNI bridge performs authenticated decryption.
             from com.alvsia.pro.sec import NativeGuard
-            seed_hex = str(NativeGuard.sealSeedHex())
-            if len(seed_hex) != 64 or any(ch not in "0123456789abcdefABCDEF" for ch in seed_hex):
-                raise ValueError("native sealed runtime seed invalid")
-            seed = bytes.fromhex(seed_hex)
-            key = hashlib.sha256(seed + bytes.fromhex(_CERT_SHA256) + _BUILD_ID.encode()).digest()
             raw = pkgutil.get_data("sealed", self.blob)
             if raw is None:
                 raise FileNotFoundError("sealed payload resource missing")
-            if not raw.startswith(_MAGIC) or len(raw) < len(_MAGIC) + 12 + 16:
-                raise ValueError("sealed payload header/length invalid")
-            nonce = raw[len(_MAGIC):len(_MAGIC) + 12]
-            ciphertext = raw[len(_MAGIC) + 12:]
-            # Chaquopy exposes Android's JCA; authenticated decryption fails closed.
-            from javax.crypto import Cipher
-            from javax.crypto.spec import GCMParameterSpec, SecretKeySpec
-            cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, nonce))
-            cipher.updateAAD(_MAGIC)
-            source = bytes(cipher.doFinal(ciphertext))
+            source = bytes(NativeGuard.decryptSealedPayload(raw, _BUILD_ID))
         except Exception as exc:
             raise ImportError("sealed payload authentication/decryption failed") from exc
         module.__file__ = "<ALVISIA-SEALED:%s>" % self.fullname
