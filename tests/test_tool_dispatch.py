@@ -25,8 +25,12 @@ def test_menu_ids_are_unique_and_reachable():
         "lua_patch_byte": 'mid == 16 or sid.startswith("lua_patch_")',
         "lua_mod_repack": 'sid.startswith("lua_patch_") or sid in ("lua_inject_hook","lua_mod_repack")',
     }
+    direct_engine_routes = {"android_permission_dump": 'subId == "android_permission_dump"'}
+    engine = ENGINE.read_text(encoding="utf-8")
     missing = []
     for sid in ids:
+        if sid in direct_engine_routes and direct_engine_routes[sid] in engine:
+            continue
         if f'"{sid}"' in bridge:
             continue
         route = generic.get(sid)

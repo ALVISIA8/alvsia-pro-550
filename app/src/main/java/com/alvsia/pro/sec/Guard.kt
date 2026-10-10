@@ -17,6 +17,15 @@ object Guard {
 
     @Volatile var degraded: Boolean = false
 
+    // Only active instrumentation/debugging indicators are enforced on every
+    // dispatch. Root-management markers alone (Magisk/Zygisk/Shamiko) remain
+    // report-only to avoid breaking legitimate rooted-device users.
+    private val RUNTIME_MARKERS = listOf(
+        "frida", "xposed", "substrate", "dobby",
+        "lspatch", "lsposed", "edxposed",
+        "hookzz", "whale", "sandhook", "epic", "dexposed", "andfix"
+    )
+
     private var _lastReason = ""
     val lastReason: String get() = _lastReason
 
@@ -36,6 +45,13 @@ object Guard {
             if (hardEnforcement) return false
         }
         return !hostile
+    }
+
+    fun runtimeHostile(ctx: Context): Boolean {
+        if (tracerPidAttached()) { _lastReason = "tracer_attached"; return true }
+        if (hookInMaps(RUNTIME_MARKERS)) { _lastReason = "runtime_hook_in_maps:" + _mapsHit; return true }
+        _lastReason = ""
+        return false
     }
 
     fun hostile(ctx: Context): Boolean {
@@ -64,14 +80,14 @@ object Guard {
         } catch (_: Exception) { false }
     }
 
-    private fun hookInMaps(): Boolean {
+    private fun hookInMaps(markers: List<String> = MAP_MARKERS): Boolean {
         return try {
             val br = BufferedReader(FileReader("/proc/self/maps"))
             var line: String?
             var found = false
             while (br.readLine().also { line = it } != null) {
                 val lower = line!!.lowercase()
-                for (marker in MAP_MARKERS) {
+                for (marker in markers) {
                     if (lower.contains(marker)) {
                         _mapsHit = marker
                         found = true

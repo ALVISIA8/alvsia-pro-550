@@ -2,6 +2,7 @@ package com.alvsia.pro.tool
 
 
 import android.content.Context
+import android.content.pm.PackageManager
 import com.alvsia.pro.BuildConfig
 import com.alvsia.pro.asset.AssetVault
 import com.alvsia.pro.sec.SessionGate
@@ -135,6 +136,43 @@ class ToolEngine(private val context: Context) {
 
         val (inputPath, stageNotes) = stageInput(inputUri, moduleId)
         lines.addAll(stageNotes)
+
+        // Read requested permissions from a user-selected APK. This uses PackageManager
+        // to parse the APK manifest; it does not grant permissions to this app.
+        if (subId == "android_permission_dump") {
+            if (inputPath.isBlank()) return listOf("X Select an APK file first")
+            val apkInfo = try {
+                context.packageManager.getPackageArchiveInfo(inputPath, PackageManager.GET_PERMISSIONS)
+            } catch (_: Exception) {
+                null
+            } ?: return listOf("X Unable to parse APK manifest")
+
+            val permissions = apkInfo.requestedPermissions?.toList().orEmpty().sorted()
+            val report = File(
+                WorkPaths.moduleOut(moduleId),
+                "${File(inputPath).nameWithoutExtension}_permissions.txt"
+            )
+            report.parentFile?.mkdirs()
+            report.writeText(buildString {
+                appendLine("ALVISIA PRO — Android Permission Dump")
+                appendLine("APK: ${File(inputPath).name}")
+                appendLine("Package: ${apkInfo.packageName ?: "unknown"}")
+                appendLine("Requested permissions: ${permissions.size}")
+                appendLine()
+                if (permissions.isEmpty()) {
+                    appendLine("(No requested permissions found)")
+                } else {
+                    permissions.forEachIndexed { index, permission ->
+                        appendLine("${index + 1}. $permission")
+                    }
+                }
+            })
+            return listOf(
+                "OK Permission dump -> ${report.absolutePath}",
+                "Package: ${apkInfo.packageName ?: "unknown"}",
+                "Requested permissions: ${permissions.size}"
+            )
+        }
 
         // Bridge first for all modules; native fallback below
 

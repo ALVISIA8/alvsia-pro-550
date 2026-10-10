@@ -152,7 +152,9 @@ jobs:
           path: |
             **/build/reports/tests/**
             **/build/outputs/apk/**
+            **/build/outputs/andresguard/**
             **/build/outputs/mapping/**
+            release-candidate/**
             release_security_audit.txt
           if-no-files-found: ignore
           retention-days: 7
