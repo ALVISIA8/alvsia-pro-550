@@ -97,13 +97,13 @@ workflows:
           python3 tools/seal_python.py --restore
           python3 tools/seal_python.py --seal
 
-      - name: Build release APK
+      - name: Build and obfuscate release APK with AndResGuard
         script: |
           set -o pipefail
           export ALVSIA_SEAL_SEED_HEX="$(cat "$CM_BUILD_DIR/.alvsia-build-seed")"
           restore_python() { python3 tools/seal_python.py --restore || true; rm -f "$CM_BUILD_DIR/.alvsia-build-seed"; }
           trap restore_python EXIT
-          ./gradlew clean assembleRelease --stacktrace --no-daemon 2>&1 | tee build_full.log
+          ./gradlew clean resguardRelease --stacktrace --no-daemon 2>&1 | tee build_full.log
           STATUS=${PIPESTATUS[0]}
           echo "===== ERRORS (if any) ====="
           grep -E "^e:|What went wrong|Caused by:|FAILED|error:" build_full.log | head -50 || true
@@ -114,7 +114,8 @@ workflows:
       - name: Verify release APK and native RASP library
         script: |
           set -euo pipefail
-          APK=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -1)
+          APK="app/build/outputs/andresguard/ALVISIA_PRO_5.5.0_resguard.apk"
+          if [ ! -s "$APK" ]; then APK=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -1); fi
           test -n "$APK"
           unzip -Z1 "$APK" | grep -Fx "lib/arm64-v8a/librasp_guard.so"
           echo "Release APK input validated: $APK"
@@ -122,7 +123,8 @@ workflows:
       - name: Audit release APK protection layers
         script: |
           set -euo pipefail
-          APK=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -1)
+          APK="app/build/outputs/andresguard/ALVISIA_PRO_5.5.0_resguard.apk"
+          if [ ! -s "$APK" ]; then APK=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -1); fi
           test -n "$APK"
           python3 tools/audit_release_apk.py "$APK"
           cat release_security_audit.txt
@@ -130,7 +132,8 @@ workflows:
       - name: Sign and verify production release APK
         script: |
           set -euo pipefail
-          APK=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -1)
+          APK="app/build/outputs/andresguard/ALVISIA_PRO_5.5.0_resguard.apk"
+          if [ ! -s "$APK" ]; then APK=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -1); fi
           test -n "$APK"
 
           # Never report a production release as successful if signing secrets are absent.
