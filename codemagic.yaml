@@ -118,6 +118,18 @@ workflows:
           find app/build/outputs -name "*.apk" -type f 2>/dev/null || true
           exit $STATUS
 
+      - name: Optional licensed Virbox protection stage
+        script: |
+          set -euo pipefail
+          APK="app/build/outputs/andresguard/ALVISIA_PRO_5.5.0_resguard.apk"
+          if [ "${ALVSIA_VIRBOX_REQUIRED:-0}" = "1" ]; then
+            bash tools/virbox_protect_release.sh "$APK" "app/build/outputs/andresguard/ALVISIA_PRO_5.5.0_virbox.apk"
+            cp "app/build/outputs/andresguard/ALVISIA_PRO_5.5.0_virbox.apk" "$APK"
+            echo "Licensed Virbox stage completed; downstream audit and signing will use protected APK."
+          else
+            echo "Virbox stage not enabled. Set ALVSIA_VIRBOX_REQUIRED=1, VIRBOX_PROTECTOR_BIN, and VIRBOX_SSP_FILE in CodeMagic only after installing the licensed vendor CLI and generating the .ssp profile."
+          fi
+
       - name: Verify release APK and native RASP library
         script: |
           set -euo pipefail
