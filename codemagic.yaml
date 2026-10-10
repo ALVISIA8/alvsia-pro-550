@@ -1,226 +1,269 @@
-workflows:
-  alvisia-android:
-    name: ALVISIA PRO 5.5.0
-    max_build_duration: 120
-    instance_type: mac_mini_m2
-    environment:
-      groups:
-        - signing
-      java: 21
-      vars:
-        PACKAGE_NAME: "com.alvsia.pro"
-      # REQUIRED in Codemagic UI → Environment variables (group "signing"):
-      # CM_KEYSTORE: base64-encoded alvsia release JKS (keep secret; never commit it)
-      # CM_KEYSTORE_PASSWORD
-      # CM_KEY_ALIAS: alvsia
-      # CM_KEY_PASSWORD (may equal CM_KEYSTORE_PASSWORD if the key uses the same password)
-    scripts:
-      - name: Enforce single release branch (main only)
-        script: |
-          set -euo pipefail
-          BRANCH="${CM_BRANCH:-}"
-          if [ "$BRANCH" != "main" ]; then
-            echo "ERROR: ALVISIA PRO release builds are allowed only from branch main."
-            echo "Current CM_BRANCH='${BRANCH:-unset}'. No APK will be built from another branch."
-            exit 2
-          fi
-          echo "Release branch verified: main"
+"""VANTA red-team regression checks for high-impact static findings.
 
-      - name: Set gradlew permission and install Android SDK 35
-        script: |
-          set -euo pipefail
-          chmod +x ./gradlew
-          java -version
-          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
-          SDKMANAGER=""
-          if [ -n "$SDK_ROOT" ]; then SDKMANAGER="$(find "$SDK_ROOT" -name sdkmanager -type f 2>/dev/null | head -1)"; fi
-          if [ -n "$SDKMANAGER" ]; then
-            yes | "$SDKMANAGER" --licenses >/dev/null || true
-            "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
-          fi
+These checks are intentionally conservative and do not claim runtime security.
+They guard against regressions in the reviewed source tree.
+"""
+from pathlib import Path
+import re
 
-      - name: Check release signing secrets
-        script: |
-          set -euo pipefail
-          missing=0
-          for name in CM_KEYSTORE CM_KEYSTORE_PASSWORD CM_KEY_ALIAS CM_KEY_PASSWORD; do
-            if [ -z "${!name:-}" ]; then
-              echo "ERROR: required signing variable is missing: $name"
-              missing=1
-            fi
-          done
-          if [ "$missing" -ne 0 ]; then
-            echo "Attach the 'signing' environment group in CodeMagic. Do not store signing secrets in Git."
-            exit 2
-          fi
-          if [ "$CM_KEY_ALIAS" != "alvsia" ]; then
-            echo "ERROR: CM_KEY_ALIAS must be the release alias 'alvsia'."
-            exit 2
-          fi
-          echo "All required signing variables are present; values remain hidden."
+ROOT = Path(__file__).resolve().parents[1]
+PY = ROOT / "app/src/main/python"
+ULTIMATE = (PY / "alvsia_ultimate.py").read_text(encoding="utf-8")
+CORE = (PY / "alvsia_core.py").read_text(encoding="utf-8")
+BRIDGE = (PY / "alvsia_bridge.py").read_text(encoding="utf-8") + "\n" + (PY / "alvsia_bridge_impl.py").read_text(encoding="utf-8")
+GRADLE = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
+MANIFEST = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
+NATIVE = ROOT / "app/src/main/cpp/rasp_guard.cpp"
+CODEMAGIC = (ROOT / "codemagic.yaml").read_text(encoding="utf-8")
+PANEL_CLIENT = (ROOT / "app/src/main/java/com/alvsia/pro/panel/PanelClient.kt").read_text(encoding="utf-8")
+MAIN_ACTIVITY = (ROOT / "app/src/main/java/com/alvsia/pro/MainActivity.kt").read_text(encoding="utf-8")
+TOOL_ENGINE = (ROOT / "app/src/main/java/com/alvsia/pro/tool/ToolEngine.kt").read_text(encoding="utf-8")
+ASSET_VAULT = (ROOT / "app/src/main/java/com/alvsia/pro/asset/AssetVault.kt").read_text(encoding="utf-8")
+WORKFLOW = (ROOT / ".github/workflows/android-validation.yml").read_text(encoding="utf-8")
 
-      - name: Generate per-build sealed payload seed
-        script: |
-          set -euo pipefail
-          SEED="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
-          printf '%s' "$SEED" > "$CM_BUILD_DIR/.alvsia-build-seed"
-          chmod 600 "$CM_BUILD_DIR/.alvsia-build-seed"
-          unset SEED
 
-      - name: Run regression and VANTA security tests
-        script: |
-          set -e
-          export ALVSIA_SEAL_SEED_HEX="$(cat "$CM_BUILD_DIR/.alvsia-build-seed")"
-          python3 --version
-          python3 -m compileall -q app/src/main/python
-          python3 tests/test_lua_engine.py
-          python3 tests/test_bgmi_transform.py
-          python3 tests/test_pak_extraction.py
-          python3 tests/test_tool_dispatch.py
-          python3 tests/test_vanta_redteam.py
-          python3 tools/security_release_check.py
-          python3 -m pip install --disable-pip-version-check cryptography
-          python3 tools/seal_python.py --restore
-          python3 tools/seal_python.py --seal
-          python3 tools/seal_python.py --restore
-          if command -v lua5.3 >/dev/null 2>&1; then
-            LUA_BIN=lua5.3 bash tests/test_unluac_integration.sh
-          elif command -v lua >/dev/null 2>&1; then
-            LUA_BIN=lua bash tests/test_unluac_integration.sh
-          else
-            echo "Lua 5.3 not installed on this runner; Lua integration is covered by GitHub Actions."
-          fi
+def _load_standalone_python_function(name):
+    """Load a small stdlib-only function from source without importing the app."""
+    import ast
+    source_tree = ast.parse(ULTIMATE)
+    function = next(
+        node for node in source_tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == name
+    )
+    module = ast.Module(body=[function], type_ignores=[])
+    namespace = {"Path": Path, "os": __import__("os"), "re": re}
+    exec(compile(module, str(PY / "alvsia_ultimate.py"), "exec"), namespace)
+    return namespace[name]
 
-      - name: Run Android unit tests
-        script: |
-          set -euo pipefail
-          ./gradlew testDebugUnitTest --stacktrace --no-daemon
 
-      - name: Seal runtime JAR assets
-        script: |
-          set -euo pipefail
-          python3 -m pip install --disable-pip-version-check cryptography
-          python3 tools/seal_assets.py
+def test_captcha_parser_accepts_bounded_arithmetic_and_rejects_code():
+    solve = _load_standalone_python_function("_safe_captcha_integer")
+    assert solve("7 + 5 * 2") == 17
+    assert solve("(20 - 8) // 3") == 4
+    for malicious in (
+        "__import__('os').system('echo unsafe')",
+        "open('/tmp/alvsia-test', 'w')",
+        "1 / 0",
+        "9 ** 99",
+        "1" * 300,
+    ):
+        try:
+            solve(malicious)
+        except (ValueError, SyntaxError, ZeroDivisionError):
+            pass
+        else:
+            raise AssertionError(f"Captcha parser accepted invalid input: {malicious!r}")
 
-      - name: Seal protected Python modules
-        script: |
-          set -euo pipefail
-          export ALVSIA_SEAL_SEED_HEX="$(cat "$CM_BUILD_DIR/.alvsia-build-seed")"
-          python3 tools/seal_python.py --restore
-          python3 tools/seal_python.py --seal
 
-      - name: Build and obfuscate release APK with AndResGuard
-        script: |
-          set -o pipefail
-          export ALVSIA_SEAL_SEED_HEX="$(cat "$CM_BUILD_DIR/.alvsia-build-seed")"
-          restore_python() { python3 tools/seal_python.py --restore || true; rm -f "$CM_BUILD_DIR/.alvsia-build-seed"; }
-          trap restore_python EXIT
-          ./gradlew clean resguardRelease --stacktrace --no-daemon 2>&1 | tee build_full.log
-          STATUS=${PIPESTATUS[0]}
-          if [ "$STATUS" -eq 0 ]; then
-            mkdir -p app/build/outputs/andresguard
-            APK=$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print -quit)
-            test -n "$APK" && test -s "$APK" || exit 1
-            cp "$APK" app/build/outputs/andresguard/ALVISIA_PRO_5.5.0_resguard.apk
-          fi
-          echo "===== ERRORS (if any) ====="
-          grep -E "^e:|What went wrong|Caused by:|FAILED|error:" build_full.log | head -50 || true
-          echo "===== APK outputs ====="
-          find app/build/outputs -name "*.apk" -type f 2>/dev/null || true
-          # Preserve the Gradle pipeline exit code captured immediately after tee.
-          exit $STATUS
+def test_zip_extractor_rejects_path_traversal():
+    import tempfile
+    import zipfile
+    extract = _load_standalone_python_function("_alvsia_safe_extract_zip")
+    with tempfile.TemporaryDirectory(prefix="alvsia-vanta-") as temp:
+        tmp_path = Path(temp)
+        archive_path = tmp_path / "malicious.zip"
+        output = tmp_path / "out"
+        outside = tmp_path / "escape.txt"
+        with zipfile.ZipFile(archive_path, "w") as archive:
+            archive.writestr("../escape.txt", "must-not-write")
+        with zipfile.ZipFile(archive_path) as archive:
+            try:
+                extract(archive, output)
+            except ValueError as exc:
+                assert "Unsafe ZIP entry path rejected" in str(exc)
+            else:
+                raise AssertionError("ZIP traversal entry was not rejected")
+        assert not outside.exists(), "ZIP traversal wrote outside destination"
 
-      - name: Optional licensed Virbox protection stage
-        script: |
-          set -euo pipefail
-          APK="app/build/outputs/andresguard/ALVISIA_PRO_5.5.0_resguard.apk"
-          if [ "${ALVSIA_VIRBOX_REQUIRED:-0}" = "1" ]; then
-            if [ -z "${VIRBOX_PROTECTOR_BIN:-}" ] || [ -z "${VIRBOX_SSP_FILE:-}" ]; then
-              echo "ERROR: ALVSIA_VIRBOX_REQUIRED=1 requires both VIRBOX_PROTECTOR_BIN and VIRBOX_SSP_FILE."
-              echo "Do not claim active Virbox protection without the licensed vendor CLI and valid SSP file."
-              exit 3
-            fi
-            if [ ! -x "${VIRBOX_PROTECTOR_BIN}" ] || [ ! -f "${VIRBOX_SSP_FILE}" ]; then
-              echo "ERROR: Licensed Virbox CLI or SSP file is missing; active VM protection cannot be verified."
-              exit 3
-            fi
-            bash tools/virbox_protect_release.sh "$APK" "app/build/outputs/andresguard/ALVISIA_PRO_5.5.0_virbox.apk"
-            cp "app/build/outputs/andresguard/ALVISIA_PRO_5.5.0_virbox.apk" "$APK"
-            echo "Licensed Virbox stage completed; downstream audit and signing will use protected APK."
-          else
-            echo "Virbox stage disabled. No active VM/bytecode virtualization layer is included by default."
-            echo "Set ALVSIA_VIRBOX_REQUIRED=1, VIRBOX_PROTECTOR_BIN, and VIRBOX_SSP_FILE only when a licensed vendor setup is installed and build output is verified."
-          fi
 
-      - name: Verify release APK and native RASP library
-        script: |
-          set -euo pipefail
-          APK="app/build/outputs/andresguard/ALVISIA_PRO_5.5.0_resguard.apk"
-          test -s "$APK"
-          test -n "$APK"
-          unzip -Z1 "$APK" | grep -Fx "lib/arm64-v8a/librasp_guard.so"
-          echo "Release APK input validated: $APK"
+def test_no_reported_master_passwords_remain():
+    forbidden = ("ALVSIA_2027", "ALVSIA_MASTER_20277")
+    source = "\n".join((ULTIMATE, CORE, BRIDGE))
+    for secret in forbidden:
+        assert secret not in source, f"Hardcoded red-team credential remains: {secret}"
 
-      - name: Audit release APK protection layers
-        script: |
-          set -euo pipefail
-          APK="app/build/outputs/andresguard/ALVISIA_PRO_5.5.0_resguard.apk"
-          test -s "$APK"
-          python3 tools/audit_release_apk.py "$APK"
-          cat release_security_audit.txt
 
-      - name: Sign and verify production release APK
-        script: |
-          set -euo pipefail
-          APK="app/build/outputs/andresguard/ALVISIA_PRO_5.5.0_resguard.apk"
-          if [ ! -s "$APK" ]; then APK=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -1); fi
-          test -n "$APK"
+def test_captcha_does_not_use_eval():
+    # The challenge must use the constrained parser, not Python eval.
+    assert "_safe_captcha_integer(equation)" in ULTIMATE
+    assert not re.search(r"(?<![A-Za-z0-9_])eval\s*\(", ULTIMATE), (
+        "Unsafe eval() remains in alvsia_ultimate.py"
+    )
 
-          # Never report a production release as successful if signing secrets are absent.
-          if [ -z "${CM_KEYSTORE:-}" ] || [ -z "${CM_KEYSTORE_PASSWORD:-}" ]; then
-            echo "ERROR: Configure CM_KEYSTORE (base64 JKS), CM_KEYSTORE_PASSWORD, CM_KEY_ALIAS, and CM_KEY_PASSWORD in Codemagic."
-            echo "Unsigned APKs are not accepted as production release artifacts."
-            exit 2
-          fi
 
-          KS=/tmp/alvsia-release.keystore
-          trap 'rm -f "$KS" /tmp/alvsia-aligned.apk' EXIT
-          printf '%s' "$CM_KEYSTORE" | base64 -d > "$KS"
-          test -s "$KS"
-          KSPASS="$CM_KEYSTORE_PASSWORD"
-          ALIAS="${CM_KEY_ALIAS:-alvsia}"
-          KEYPASS="${CM_KEY_PASSWORD:-$KSPASS}"
+def test_no_direct_zip_extractall_calls():
+    source = "\n".join(p.read_text(encoding="utf-8", errors="replace")
+                        for p in PY.rglob("*.py"))
+    assert not re.search(r"\.extractall\s*\(", source), (
+        "Direct ZipFile.extractall/ZipFile-like extractall call remains; use validated paths"
+    )
 
-          BUILD_TOOLS=$(find "$ANDROID_SDK_ROOT/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
-          test -x "$BUILD_TOOLS/zipalign"
-          test -x "$BUILD_TOOLS/apksigner"
-          "$BUILD_TOOLS/zipalign" -f 4 "$APK" /tmp/alvsia-aligned.apk
 
-          SIGNED=ALVSIA_PRO_5.5.0_signed.apk
-          "$BUILD_TOOLS/apksigner" sign \
-            --ks "$KS" \
-            --ks-key-alias "$ALIAS" \
-            --ks-pass "pass:$KSPASS" \
-            --key-pass "pass:$KEYPASS" \
-            --out "$SIGNED" \
-            /tmp/alvsia-aligned.apk
+def test_release_hardening_is_enabled():
+    assert "isMinifyEnabled = true" in GRADLE
+    assert "isShrinkResources = true" in GRADLE
+    assert "proguard-rules.pro" in GRADLE
+    assert "networkSecurityConfig" in MANIFEST
+    assert "CERT_SHA256" in GRADLE
+    assert NATIVE.is_file(), "Native RASP source is missing"
 
-          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$SIGNED" | tee ALVISIA_PRO_5.5.0_signing-verification.txt
-          ACTUAL_CERT=$(awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {gsub(":", "", $2); print tolower($2); exit}' ALVISIA_PRO_5.5.0_signing-verification.txt)
-          EXPECTED_CERT="99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c"
-          if [ "$ACTUAL_CERT" != "$EXPECTED_CERT" ]; then
-            echo "ERROR: APK signer certificate does not match the ALVISIA release certificate."
-            echo "Expected: $EXPECTED_CERT"
-            echo "Actual: ${ACTUAL_CERT:-missing}"
-            exit 3
-          fi
-          shasum -a 256 "$SIGNED" | tee ALVISIA_PRO_5.5.0_release.sha256
-          ls -lh "$SIGNED"
 
-    artifacts:
-      # Only the verified, certificate-pinned production-signed APK is a release artifact.
-      - ALVSIA_PRO_5.5.0_signed.apk
-      - ALVSIA_PRO_5.5.0_release.sha256
-      - ALVSIA_PRO_5.5.0_signing-verification.txt
-      - build_full.log
-      - release_security_audit.txt
+def test_release_tls_pinning_fails_closed():
+    assert "if (BuildConfig.DEBUG)" in PANEL_CLIENT
+    assert "clientLoose.newCall(req).execute()" in PANEL_CLIENT
+    assert "BLOCKED: TLS pin verification failed" in PANEL_CLIENT
+    assert "_pinGrace" not in PANEL_CLIENT
+
+
+def test_release_seals_asset_jars_and_disables_plaintext_fallback():
+    assert "AssetVault.materializeJars(context, jarsDir)" in TOOL_ENGINE
+    assert "if (!BuildConfig.DEBUG) return" in TOOL_ENGINE
+    assert "dest.writeBytes(bytes)" in ASSET_VAULT
+    assert "bytes.fill(0)" in ASSET_VAULT
+    assert "tools/seal_assets.py" in CODEMAGIC
+    assert "tools/seal_assets.py" in WORKFLOW
+
+
+def test_otp_enforces_rasp_before_engine_fetch():
+    # A successful OTP response must not bypass the hostile-environment gate.
+    otp = MAIN_ACTIVITY.find("val safeAfterOtp")
+    fetch = MAIN_ACTIVITY.find("panel.fetchCore(license, hwid, res.toolTicket)")
+    assert otp >= 0 and fetch > otp, "RASP gate must run before protected engine fetch"
+    gate = MAIN_ACTIVITY[otp:fetch]
+    assert "Guard.checkAndReport(" in gate
+    assert "if (!safeAfterOtp)" in gate
+    assert "SessionGate.lock(this@MainActivity)" in gate
+
+
+def test_otp_fails_closed_when_panel_engine_is_missing():
+    # A valid OTP alone must not enable bundled fallback tools when the protected
+    # engine fetch fails; the panel-provided engine is required for this session.
+    fetch = MAIN_ACTIVITY.find("panel.fetchCore(license, hwid, res.toolTicket)")
+    tamper = MAIN_ACTIVITY.find("val tamper = Tamper.evaluate", fetch)
+    assert fetch >= 0 and tamper > fetch
+    block = MAIN_ACTIVITY[fetch:tamper]
+    assert "if (!engineFromServer)" in block
+    assert "SessionGate.lock(this@MainActivity)" in block
+    assert "engine.wipeEngine()" in block
+    assert "return@launch" in block
+    assert "FaunaPack.unpackFromAssets" not in MAIN_ACTIVITY
+
+
+def test_apk_session_requires_native_token_shape():
+    import os
+    from unittest.mock import patch
+    valid = _load_standalone_python_function("_alv_apk_session_valid")
+    with patch.dict(os.environ, {"ALVSIA_APK_SESSION": "1"}, clear=False):
+        os.environ.pop("ALVSIA_SESSION_TOKEN", None)
+        assert not valid(), "Session marker alone must not authorize the Python engine"
+        os.environ["ALVSIA_SESSION_TOKEN"] = "not-a-token"
+        assert not valid(), "Malformed session token must be rejected"
+        os.environ["ALVSIA_SESSION_TOKEN"] = "a" * 64
+        assert valid(), "A 64-hex token from the native gate should pass shape validation"
+    assert "if _alvsia_core_apk_session_valid():" in CORE
+    assert "if _alv_apk_session_valid():" in ULTIMATE
+    assert "if not _valid_apk_session():" in BRIDGE
+
+
+def test_core_operation_gate_rejects_marker_only_bypass():
+    import ast
+    import os
+    from unittest.mock import patch
+
+    tree = ast.parse(CORE)
+    names = {"_alvsia_core_apk_session_valid", "_alvsia_require_operation"}
+    nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names]
+    assert {node.name for node in nodes} == names
+    namespace = {"_ALVSIA_CORE_ACTIVE_PROOF": None}
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), str(PY / "alvsia_core.py"), "exec"), namespace)
+    require = namespace["_alvsia_require_operation"]
+
+    with patch.dict(os.environ, {"ALVSIA_APK_SESSION": "1"}, clear=False):
+        os.environ.pop("ALVSIA_SESSION_TOKEN", None)
+        try:
+            require({"pak_unpack"})
+        except RuntimeError as exc:
+            assert "authorization failed" in str(exc).lower()
+        else:
+            raise AssertionError("Core accepted APK session marker without token")
+        os.environ["ALVSIA_SESSION_TOKEN"] = "malformed"
+        try:
+            require({"pak_unpack"})
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("Core accepted malformed APK session token")
+        os.environ["ALVSIA_SESSION_TOKEN"] = "a" * 64
+        assert require({"pak_unpack"}) is True
+
+
+def test_bridge_requires_apk_session_gate():
+    assert "if not _valid_apk_session():" in BRIDGE
+    assert "ALVSIA_SESSION_TOKEN" in BRIDGE
+
+
+def test_external_data_downloads_are_commit_pinned_and_integrity_checked():
+    # These data downloads are pinned to immutable Git commits and checked against
+    # the upstream Git blob ID/size before the downloaded file is accepted.
+    assert "/SKIN_TOOL/main/SKIN_TOOL.zip" not in ULTIMATE
+    assert "/BGMI_CSV/main/PUBG.csv" not in ULTIMATE
+    assert "/BGMI_CSV/main/BGMI.csv" not in ULTIMATE
+    assert "5c7ad2b4996fcd468bf245be43580d1fe131423e" in ULTIMATE
+    assert "d013eca408f85d073c195e42a363b49076babd1d" in ULTIMATE
+    assert "_verify_pinned_git_blob" in ULTIMATE
+    assert "cbd3d0e257963b54f34a908b6864040c7f96fbb1" in ULTIMATE
+    assert "2601457787bd2d793880fb1a8c485d0e76144942" in ULTIMATE
+    assert "ac72bf1d3ca5f0ae72b65c1845c9c471e4a4a6af" in ULTIMATE
+
+
+def test_codemagic_release_signing_fails_closed_and_pins_certificate():
+    sign_block = CODEMAGIC.split("- name: Sign and verify production release APK", 1)[1]
+    assert 'if [ -z "${CM_KEYSTORE:-}" ] || [ -z "${CM_KEYSTORE_PASSWORD:-}" ]; then' in sign_block
+    assert 'exit 2' in sign_block
+    assert 'apksigner" verify --verbose --print-certs' in sign_block
+    assert '99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c' in sign_block
+    assert 'ALVSIA_PRO_5.5.0_unsigned.apk' not in CODEMAGIC
+    assert 'app/build/outputs/apk/**/*.apk' not in CODEMAGIC
+    assert 'groups:\n        - signing' in CODEMAGIC
+    assert '- name: Check release signing secrets' in CODEMAGIC
+
+
+def test_runtime_gate_rechecks_live_hooks_after_unlock():
+    session_gate = (ROOT / "app/src/main/java/com/alvsia/pro/sec/SessionGate.kt").read_text(encoding="utf-8")
+    native_guard = (ROOT / "app/src/main/java/com/alvsia/pro/sec/NativeGuard.kt").read_text(encoding="utf-8")
+    gate = session_gate[session_gate.find("fun allowTools(ctx: Context)"):]
+    live_check = gate.find("if (Guard.runtimeHostile(ctx))")
+    unlocked_branch = gate.find("if (!NativeGate.sessionUnlocked)")
+    assert live_check >= 0, "every tool dispatch must re-check live hook/tracer indicators"
+    assert unlocked_branch > live_check, "live guard must run before the unlocked-session shortcut"
+    assert "fun isNativeLoaded(): Boolean = nativeLoaded" in native_guard
+    assert "native_rasp_unavailable" in gate, "release must fail closed if JNI RASP failed to load"
+    guard = (ROOT / "app/src/main/java/com/alvsia/pro/sec/Guard.kt").read_text(encoding="utf-8")
+    runtime = guard.split("private val RUNTIME_MARKERS", 1)[1].split(")", 1)[0]
+    assert "frida" in runtime and "dobby" in runtime
+    assert "magisk" not in runtime and "zygisk" not in runtime, "root-only markers must not trigger hard block on every tool call"
+
+
+if __name__ == "__main__":
+    checks = [
+        test_captcha_parser_accepts_bounded_arithmetic_and_rejects_code,
+        test_zip_extractor_rejects_path_traversal,
+        test_no_reported_master_passwords_remain,
+        test_captcha_does_not_use_eval,
+        test_no_direct_zip_extractall_calls,
+        test_release_hardening_is_enabled,
+        test_release_tls_pinning_fails_closed,
+        test_release_seals_asset_jars_and_disables_plaintext_fallback,
+        test_otp_enforces_rasp_before_engine_fetch,
+        test_otp_fails_closed_when_panel_engine_is_missing,
+        test_apk_session_requires_native_token_shape,
+        test_core_operation_gate_rejects_marker_only_bypass,
+        test_bridge_requires_apk_session_gate,
+        test_external_data_downloads_are_commit_pinned_and_integrity_checked,
+        test_codemagic_release_signing_fails_closed_and_pins_certificate,
+        test_runtime_gate_rechecks_live_hooks_after_unlock,
+    ]
+    for check in checks:
+        check()
+        print("PASS", check.__name__)
+    print(f"VANTA STATIC REGRESSION: PASS ({len(checks)}/{len(checks)})")
