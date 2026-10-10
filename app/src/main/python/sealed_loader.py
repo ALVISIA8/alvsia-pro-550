@@ -46,10 +46,14 @@ class _SealedLoader(importlib.abc.Loader):
     def exec_module(self, module):
         if not _valid_session():
             raise ImportError("sealed runtime authorization missing")
-        seed_hex = os.environ.get("ALVSIA_SEAL_SEED", "")
-        if len(seed_hex) != 64:
-            raise ImportError("sealed runtime seed unavailable")
         try:
+            # JNI returns the build-bound seed directly. It is intentionally not
+            # copied into os.environ, where /proc/<pid>/environ or getenv hooks
+            # would expose it with less effort.
+            from com.alvsia.pro.sec import NativeGuard
+            seed_hex = str(NativeGuard.sealSeedHex())
+            if len(seed_hex) != 64 or any(ch not in "0123456789abcdefABCDEF" for ch in seed_hex):
+                raise ValueError("native sealed runtime seed invalid")
             seed = bytes.fromhex(seed_hex)
             key = hashlib.sha256(seed + bytes.fromhex(_CERT_SHA256) + _BUILD_ID.encode()).digest()
             raw = pkgutil.get_data("sealed", self.blob)
@@ -91,7 +95,5 @@ def install() -> None:
         raise RuntimeError("sealed runtime is not enabled for this build")
     if not _valid_session():
         raise RuntimeError("sealed runtime requires a valid APK session")
-    if len(os.environ.get("ALVSIA_SEAL_SEED", "")) != 64:
-        raise RuntimeError("sealed runtime seed unavailable")
     sys.meta_path.insert(0, _SealedFinder())
     _installed = True
