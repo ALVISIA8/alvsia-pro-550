@@ -46,6 +46,7 @@ jobs:
         run: |
           set -euo pipefail
           SEED="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+          echo "::add-mask::$SEED"
           echo "ALVSIA_SEAL_SEED_HEX=$SEED" >> "$GITHUB_ENV"
           unset SEED
 
