@@ -105,19 +105,19 @@ jobs:
           python tools/seal_python.py --restore
           python tools/seal_python.py --seal
 
-      - name: Build release APK
+      - name: Build and obfuscate release APK with AndResGuard
         shell: bash
         run: |
           set -euo pipefail
           restore_python() { python tools/seal_python.py --restore || true; }
           trap restore_python EXIT
-          ./gradlew clean assembleRelease --stacktrace --no-daemon
+          ./gradlew clean resguardRelease --stacktrace --no-daemon
 
       - name: Audit release APK protection layers
         run: |
           set -euo pipefail
-          APK=$(find app/build/outputs/apk/release -name '*.apk' -type f | head -1)
-          test -n "$APK"
+          APK=app/build/outputs/andresguard/ALVISIA_PRO_5.5.0_resguard.apk
+          test -s "$APK"
           python tools/audit_release_apk.py "$APK"
 
       - name: Verify native RASP library and calculate APK checksum
