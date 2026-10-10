@@ -124,8 +124,7 @@ workflows:
         script: |
           set -euo pipefail
           APK="app/build/outputs/andresguard/ALVISIA_PRO_5.5.0_resguard.apk"
-          if [ ! -s "$APK" ]; then APK=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -1); fi
-          test -n "$APK"
+          test -s "$APK"
           python3 tools/audit_release_apk.py "$APK"
           cat release_security_audit.txt
 
