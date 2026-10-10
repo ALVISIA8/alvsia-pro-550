@@ -52,8 +52,12 @@ for rel in required_modules:
         fail.append("protected source missing from developer/test tree: " + rel)
 if "sealed_loader.install()" not in bridge or "ALVSIA_SEALED_RUNTIME" not in bridge:
     fail.append("bridge bootstrap does not install the sealed loader conditionally")
-if "ALVSIA_SEAL_SEED" not in tool_engine or "NativeGuard.sealSeedHex()" not in tool_engine:
-    fail.append("ToolEngine does not inject native seal seed after session validation")
+if "ALVSIA_SEAL_SEED" in tool_engine or "ALVSIA_SEAL_SEED" in loader:
+    fail.append("seal seed must never be exposed through Python process environment")
+if "NativeGuard.sealSeedHex()" not in loader or "from com.alvsia.pro.sec import NativeGuard" not in loader:
+    fail.append("sealed loader does not fetch seed directly through the JNI bridge")
+if "ALVSIA_SEALED_RUNTIME" not in tool_engine:
+    fail.append("ToolEngine does not enable sealed runtime after session validation")
 if "nativeSealSeed" not in native_guard or "nativeSealSeed" not in native:
     fail.append("native seal seed JNI is not wired end-to-end")
 if "AES/GCM/NoPadding" not in loader or "updateAAD(_MAGIC)" not in loader:
