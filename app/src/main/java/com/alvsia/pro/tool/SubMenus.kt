@@ -208,6 +208,8 @@ object SubMenus {
 
         // ── 17 Anti-RE Audit ──────────────────────────────────────────────
         17 -> listOf(
+            SubTool("android_permission_dump", "Android Permission Dump", "List permissions requested by a selected APK",
+                "Select .apk → OUT/AUDIT/*_permissions.txt"),
             SubTool("audit_apk",       "APK Audit",         "Scan APK for weak anti-RE posture",
                 "Select .apk → OUT/AUDIT/report.txt  (ProGuard gaps, strings, native coverage)"),
             SubTool("audit_lua",       "LUA Audit",         "Find unhashed strings, naked function names",
