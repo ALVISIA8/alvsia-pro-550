@@ -41,6 +41,14 @@ jobs:
         with:
           packages: platform-tools platforms;android-34 build-tools;34.0.0 ndk;27.0.12077973 cmake;3.22.1
 
+      - name: Generate per-build sealed payload seed
+        shell: bash
+        run: |
+          set -euo pipefail
+          SEED="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+          echo "ALVSIA_SEAL_SEED_HEX=$SEED" >> "$GITHUB_ENV"
+          unset SEED
+
       - name: Verify wrapper
         run: |
           test -f ./gradlew
