@@ -40,8 +40,14 @@ MODULES = (
     "lua_engine/vm_deobfuscator.py",
 )
 
+def _seed() -> bytes:
+    value = os.environ.get(SEED_ENV, "").strip()
+    if len(value) != 64 or any(ch not in "0123456789abcdefABCDEF" for ch in value):
+        raise SystemExit(f"{SEED_ENV} must be a per-build 64-character hexadecimal value.")
+    return bytes.fromhex(value)
+
 def _key() -> bytes:
-    return hashlib.sha256(bytes.fromhex(SEED_HEX) + bytes.fromhex(CERT_HEX) + BUILD_ID.encode()).digest()
+    return hashlib.sha256(_seed() + bytes.fromhex(CERT_HEX) + BUILD_ID.encode()).digest()
 
 def restore() -> None:
     manifest = BACKUP / "manifest.json"
