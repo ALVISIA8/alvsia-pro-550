@@ -54,14 +54,16 @@ if "sealed_loader.install()" not in bridge or "ALVSIA_SEALED_RUNTIME" not in bri
     fail.append("bridge bootstrap does not install the sealed loader conditionally")
 if "ALVSIA_SEAL_SEED" in tool_engine or "ALVSIA_SEAL_SEED" in loader:
     fail.append("seal seed must never be exposed through Python process environment")
-if "NativeGuard.sealSeedHex()" not in loader or "from com.alvsia.pro.sec import NativeGuard" not in loader:
-    fail.append("sealed loader does not fetch seed directly through the JNI bridge")
+if "NativeGuard.decryptSealedPayload(raw, _BUILD_ID)" not in loader or "_CERT_SHA256" in loader:
+    fail.append("sealed loader must delegate authenticated decryption and keep certificate digest out of Python")
+if "fun decryptSealedPayload(payload: ByteArray, buildId: String)" not in native_guard or "nativeSealSeed()" not in native_guard:
+    fail.append("Kotlin/native bridge must decrypt sealed payload without exposing the seed to Python")
 if "ALVSIA_SEALED_RUNTIME" not in tool_engine:
     fail.append("ToolEngine does not enable sealed runtime after session validation")
 if "nativeSealSeed" not in native_guard or "nativeSealSeed" not in native:
     fail.append("native seal seed JNI is not wired end-to-end")
-if "AES/GCM/NoPadding" not in loader or "updateAAD(_MAGIC)" not in loader:
-    fail.append("sealed loader lacks authenticated AES-GCM decryption")
+if "AES/GCM/NoPadding" not in native_guard or "cipher.updateAAD(magic)" not in native_guard:
+    fail.append("Kotlin/native bridge lacks authenticated AES-GCM decryption")
 if "ALVSEAL2" not in seal_script or "AESGCM" not in seal_script:
     fail.append("Python sealing script is missing authenticated encryption")
 if "tools/seal_python.py --seal" not in codemagic or "tools/seal_python.py --restore" not in codemagic:
@@ -107,7 +109,7 @@ if fail:
     sys.exit(1)
 print("SECURITY SOURCE CHECK: PASS")
 print(f"- protected Python modules scheduled for sealing: {len(required_modules)}")
-print("- AES-GCM loader + native seed bridge wired")
+print("- AES-GCM decryption in Kotlin/native bridge; seed and cert digest not exposed to Python")
 print("- TLS pinning, SessionGate HMAC/TTL, R8, VCS stripping checked")
 print("- CodeMagic release restricted to main; APK audit required")
 print("NOTE: native seed is build-bound obfuscation, not a server secret; runtime memory dumping remains possible.")
