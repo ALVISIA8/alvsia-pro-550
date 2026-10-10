@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.chaquo.python")
+    id("AndResGuard")
 }
 
 android {
@@ -83,6 +84,26 @@ android {
         }
     }
 }
+
+
+andResGuard {
+    // Run on the release APK before production signing. Do not let this plugin sign it.
+    mappingFile = null
+    use7zip = false
+    useSign = false
+    keepRoot = false
+    fixedResName = "arg"
+    mergeDuplicatedRes = true
+    whiteList = listOf(
+        "R.mipmap.ic_launcher",
+        "R.string.app_name",
+        "R.drawable.logo_alvisia",
+        "R.xml.network_security_config"
+    )
+    compressFilePattern = listOf("*.png", "*.jpg", "*.jpeg", "*.gif")
+    finalApkBackupPath = "${project.rootDir}/app/build/outputs/andresguard/ALVISIA_PRO_5.5.0_resguard.apk"
+}
+
 
 chaquopy {
     defaultConfig {
