@@ -185,6 +185,15 @@ object SessionGate {
     fun allowTools(ctx: Context): Boolean {
         _appCtx = ctx.applicationContext
 
+        // Release builds must not silently downgrade to Kotlin-only RASP if JNI
+        // failed to load. Debug builds retain the fallback for local development.
+        if (!com.alvsia.pro.BuildConfig.DEBUG && !NativeGuard.isNativeLoaded()) {
+            val reason = "native_rasp_unavailable"
+            ThreatReport.emit(ctx, "GATE_BLOCK", reason)
+            lock(ctx)
+            throw SecurityException("BLOCKED:" + reason)
+        }
+
         // Re-run cheap live-process checks on EVERY tool dispatch, including an
         // already-unlocked session. A successful OTP must not permanently bypass
         // tracer/hook detection for the lifetime of the process.
