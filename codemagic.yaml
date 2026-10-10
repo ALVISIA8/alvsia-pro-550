@@ -115,7 +115,7 @@ workflows:
         script: |
           set -euo pipefail
           APK="app/build/outputs/andresguard/ALVISIA_PRO_5.5.0_resguard.apk"
-          if [ ! -s "$APK" ]; then APK=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -1); fi
+          test -s "$APK"
           test -n "$APK"
           unzip -Z1 "$APK" | grep -Fx "lib/arm64-v8a/librasp_guard.so"
           echo "Release APK input validated: $APK"
