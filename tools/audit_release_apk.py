@@ -60,6 +60,12 @@ def main() -> int:
                   "plaintext unluac JAR assets absent")
             check(not any(n.endswith("META-INF/version-control-info.textproto") for n in names),
                   "VCS revision metadata absent")
+            manifest = outer.read("AndroidManifest.xml") if "AndroidManifest.xml" in names else b""
+            check(bool(manifest), "compiled Android manifest exists")
+            check(b"android.permission.DUMP" not in manifest,
+                  "compiled manifest excludes android.permission.DUMP")
+            check(b"android.permission.READ_PHONE_STATE" not in manifest,
+                  "compiled manifest excludes android.permission.READ_PHONE_STATE")
             blobs = sorted(n for n in names if n.startswith("assets/nx/") and n.endswith(".bin"))
             check(len(blobs) >= 3, f"sealed JAR asset count >= 3 (found {len(blobs)})")
             for n in blobs:
