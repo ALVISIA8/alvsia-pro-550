@@ -105,6 +105,13 @@ workflows:
           trap restore_python EXIT
           ./gradlew clean resguardRelease --stacktrace --no-daemon 2>&1 | tee build_full.log
           STATUS=${PIPESTATUS[0]}
+          if [ "$STATUS" -eq 0 ]; then
+            mkdir -p app/build/outputs/andresguard
+            APK=$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print -quit)
+            test -n "$APK" && test -s "$APK" || exit 1
+            cp "$APK" app/build/outputs/andresguard/ALVISIA_PRO_5.5.0_resguard.apk
+          fi
+          STATUS=${PIPESTATUS[0]}
           echo "===== ERRORS (if any) ====="
           grep -E "^e:|What went wrong|Caused by:|FAILED|error:" build_full.log | head -50 || true
           echo "===== APK outputs ====="
