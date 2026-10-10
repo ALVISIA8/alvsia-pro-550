@@ -1,6 +1,10 @@
 package com.alvsia.pro.sec
 
 import java.io.File
+import java.security.MessageDigest
+import javax.crypto.Cipher
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.SecretKeySpec
 
 /**
  * ALVISIA PRO 5.5.0 — NativeGuard HARDENED
@@ -49,11 +53,51 @@ object NativeGuard {
         return try { nativeScanFlags() } catch (_: Exception) { fallbackFlags() }
     }
 
-    /** Build-bound seed used only by the sealed loader; never export it through process environment. */
+    /**
+     * Decrypt a sealed Python module without returning the build seed or derived
+     * AES key to Python. The seed remains inside the Kotlin/native bridge.
+     * This is defense-in-depth only: a determined runtime attacker can still
+     * instrument the process after plaintext is produced.
+     */
     @JvmStatic
-    fun sealSeedHex(): String {
+    fun decryptSealedPayload(payload: ByteArray, buildId: String): ByteArray {
         if (!nativeLoaded) throw IllegalStateException("native security library unavailable")
-        return nativeSealSeed().joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        val magic = "ALVSEAL2".toByteArray(Charsets.US_ASCII)
+        if (payload.size < magic.size + 12 + 16 ||
+            !payload.copyOfRange(0, magic.size).contentEquals(magic)) {
+            throw IllegalArgumentException("sealed payload header/length invalid")
+        }
+        val seed = nativeSealSeed()
+        try {
+            val certHex = BuildConfig.CERT_SHA256
+            if (!certHex.matches(Regex("^[0-9a-fA-F]{64}$"))) {
+                throw SecurityException("release certificate digest invalid")
+            }
+            val certBytes = ByteArray(32) { i ->
+                certHex.substring(i * 2, i * 2 + 2).toInt(16).toByte()
+            }
+            val material = ByteArray(seed.size + certBytes.size + buildId.toByteArray(Charsets.UTF_8).size)
+            var offset = 0
+            seed.copyInto(material, offset); offset += seed.size
+            certBytes.copyInto(material, offset); offset += certBytes.size
+            buildId.toByteArray(Charsets.UTF_8).copyInto(material, offset)
+            val key = MessageDigest.getInstance("SHA-256").digest(material)
+            material.fill(0)
+            certBytes.fill(0)
+            try {
+                val nonceStart = magic.size
+                val nonce = payload.copyOfRange(nonceStart, nonceStart + 12)
+                val ciphertext = payload.copyOfRange(nonceStart + 12, payload.size)
+                val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+                cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, nonce))
+                cipher.updateAAD(magic)
+                return cipher.doFinal(ciphertext)
+            } finally {
+                key.fill(0)
+            }
+        } finally {
+            seed.fill(0)
+        }
     }
 
     fun antiDump(): Int {
