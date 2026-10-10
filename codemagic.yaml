@@ -39,9 +39,18 @@ workflows:
             exit 2
           fi
 
+      - name: Generate per-build sealed payload seed
+        script: |
+          set -euo pipefail
+          SEED="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+          printf '%s' "$SEED" > "$CM_BUILD_DIR/.alvsia-build-seed"
+          chmod 600 "$CM_BUILD_DIR/.alvsia-build-seed"
+          unset SEED
+
       - name: Run regression and VANTA security tests
         script: |
           set -e
+          export ALVSIA_SEAL_SEED_HEX="$(cat "$CM_BUILD_DIR/.alvsia-build-seed")"
           python3 --version
           python3 -m compileall -q app/src/main/python
           python3 tests/test_lua_engine.py
@@ -76,13 +85,15 @@ workflows:
       - name: Seal protected Python modules
         script: |
           set -euo pipefail
+          export ALVSIA_SEAL_SEED_HEX="$(cat "$CM_BUILD_DIR/.alvsia-build-seed")"
           python3 tools/seal_python.py --restore
           python3 tools/seal_python.py --seal
 
       - name: Build release APK
         script: |
           set -o pipefail
-          restore_python() { python3 tools/seal_python.py --restore || true; }
+          export ALVSIA_SEAL_SEED_HEX="$(cat "$CM_BUILD_DIR/.alvsia-build-seed")"
+          restore_python() { python3 tools/seal_python.py --restore || true; rm -f "$CM_BUILD_DIR/.alvsia-build-seed"; }
           trap restore_python EXIT
           ./gradlew clean assembleRelease --stacktrace --no-daemon 2>&1 | tee build_full.log
           STATUS=${PIPESTATUS[0]}
