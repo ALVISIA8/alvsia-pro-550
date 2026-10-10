@@ -25,7 +25,7 @@ jobs:
         with:
           submodules: false
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -112,6 +112,10 @@ jobs:
           restore_python() { python tools/seal_python.py --restore || true; }
           trap restore_python EXIT
           ./gradlew clean resguardRelease --stacktrace --no-daemon
+          mkdir -p app/build/outputs/andresguard
+          APK=$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print -quit)
+          test -n "$APK" && test -s "$APK"
+          cp "$APK" app/build/outputs/andresguard/ALVISIA_PRO_5.5.0_resguard.apk
 
       - name: Audit release APK protection layers
         run: |
