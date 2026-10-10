@@ -100,7 +100,6 @@ andResGuard {
         "R.drawable.logo_alvisia",
         "R.xml.network_security_config"
     )
-    finalApkBackupPath = "${project.rootDir}/app/build/outputs/andresguard/ALVISIA_PRO_5.5.0_resguard.apk"
 }
 
 
