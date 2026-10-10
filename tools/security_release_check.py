@@ -72,6 +72,10 @@ if "CM_BRANCH" not in codemagic or '!= "main"' not in codemagic:
     fail.append("CodeMagic release branch is not restricted to main")
 if "isMinifyEnabled = true" not in gradle or "isShrinkResources = true" not in gradle:
     fail.append("release R8/minification/resource shrinking is disabled")
+if "-keepattributes SourceFile,LineNumberTable" in read(ROOT / "app/proguard-rules.pro"):
+    fail.append("release ProGuard explicitly preserves source/line debug metadata")
+if "-g0" not in read(ROOT / "app/src/main/cpp/CMakeLists.txt"):
+    fail.append("native release build does not explicitly disable debug info")
 if 'implementation("com.securevale:rasp-android:0.7.1")' not in gradle:
     fail.append("Securevale Android RASP SDK dependency is missing")
 if "SecureAppChecker.Builder" not in rasp_engine or "SECUREVALE_RASP" not in rasp_engine:
