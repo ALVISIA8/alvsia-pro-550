@@ -234,12 +234,16 @@ def test_runtime_gate_rechecks_live_hooks_after_unlock():
     session_gate = (ROOT / "app/src/main/java/com/alvsia/pro/sec/SessionGate.kt").read_text(encoding="utf-8")
     native_guard = (ROOT / "app/src/main/java/com/alvsia/pro/sec/NativeGuard.kt").read_text(encoding="utf-8")
     gate = session_gate[session_gate.find("fun allowTools(ctx: Context)"):]
-    live_check = gate.find("if (Guard.hostile(ctx))")
+    live_check = gate.find("if (Guard.runtimeHostile(ctx))")
     unlocked_branch = gate.find("if (!NativeGate.sessionUnlocked)")
     assert live_check >= 0, "every tool dispatch must re-check live hook/tracer indicators"
     assert unlocked_branch > live_check, "live guard must run before the unlocked-session shortcut"
     assert "fun isNativeLoaded(): Boolean = nativeLoaded" in native_guard
     assert "native_rasp_unavailable" in gate, "release must fail closed if JNI RASP failed to load"
+    guard = (ROOT / "app/src/main/java/com/alvsia/pro/sec/Guard.kt").read_text(encoding="utf-8")
+    runtime = guard.split("private val RUNTIME_MARKERS", 1)[1].split(")", 1)[0]
+    assert "frida" in runtime and "dobby" in runtime
+    assert "magisk" not in runtime and "zygisk" not in runtime, "root-only markers must not trigger hard block on every tool call"
 
 
 if __name__ == "__main__":
