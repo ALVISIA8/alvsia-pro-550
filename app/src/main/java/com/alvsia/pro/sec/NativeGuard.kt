@@ -49,6 +49,9 @@ object NativeGuard {
 
     // ── Public API ────────────────────────────────────────────────────
 
+    /** True only when the JNI RASP library loaded successfully. */
+    fun isNativeLoaded(): Boolean = nativeLoaded
+
     fun scanFlags(): Int {
         if (!nativeLoaded) return fallbackFlags()
         return try { nativeScanFlags() } catch (_: Exception) { fallbackFlags() }
