@@ -78,10 +78,12 @@ if "-keepattributes SourceFile,LineNumberTable" in read(ROOT / "app/proguard-rul
     fail.append("release ProGuard explicitly preserves source/line debug metadata")
 if "-g0" not in read(ROOT / "app/src/main/cpp/CMakeLists.txt"):
     fail.append("native release build does not explicitly disable debug info")
-if 'implementation("com.securevale:rasp-android:0.7.1")' not in gradle:
-    fail.append("Securevale Android RASP SDK dependency is missing")
-if "SecureAppChecker.Builder" not in rasp_engine or "SECUREVALE_RASP" not in rasp_engine:
-    fail.append("Securevale RASP checks are not executed and reported by RaspEngine")
+if 'implementation("com.securevale:rasp-android:0.7.1")' in gradle:
+    fail.append("recognizable SecureVale Android RASP SDK dependency remains")
+if "SecureAppChecker" in rasp_engine or "com.securevale." in rasp_engine:
+    fail.append("RaspEngine still references removed SecureVale SDK classes")
+if "NativeGuard.flagsToReasons(NativeGuard.scanFlags())" not in rasp_engine:
+    fail.append("RaspEngine does not consume the in-repo native RASP scan results")
 if 'SEED_ENV = "ALVSIA_SEAL_SEED_HEX"' not in seal_script:
     fail.append("Python sealing does not use the per-build seed environment variable")
 if "secrets.token_hex(32)" not in workflow or "secrets.token_hex(32)" not in codemagic:
