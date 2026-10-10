@@ -252,3 +252,15 @@ if __name__ == "__main__":
         check()
         print("PASS", check.__name__)
     print(f"VANTA STATIC REGRESSION: PASS ({len(checks)}/{len(checks)})")
+
+
+def test_runtime_gate_rechecks_live_hooks_after_unlock():
+    session_gate = (ROOT / "app/src/main/java/com/alvsia/pro/sec/SessionGate.kt").read_text(encoding="utf-8")
+    native_guard = (ROOT / "app/src/main/java/com/alvsia/pro/sec/NativeGuard.kt").read_text(encoding="utf-8")
+    gate = session_gate[session_gate.find("fun allowTools(ctx: Context)"):]
+    live_check = gate.find("if (Guard.hostile(ctx))")
+    unlocked_branch = gate.find("if (!NativeGate.sessionUnlocked)")
+    assert live_check >= 0, "every tool dispatch must re-check live hook/tracer indicators"
+    assert unlocked_branch > live_check, "live guard must run before the unlocked-session shortcut"
+    assert "fun isNativeLoaded(): Boolean = nativeLoaded" in native_guard
+    assert "native_rasp_unavailable" in gate, "release must fail closed if JNI RASP failed to load"
