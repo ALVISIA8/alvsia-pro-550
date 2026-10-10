@@ -23,6 +23,7 @@ vault = read(JAVA / "panel/Vault.kt")
 session = read(JAVA / "sec/SessionGate.kt")
 native = read(ROOT / "app/src/main/cpp/rasp_guard.cpp")
 native_guard = read(JAVA / "sec/NativeGuard.kt")
+rasp_engine = read(JAVA / "sec/RaspEngine.kt")
 tool_engine = read(JAVA / "tool/ToolEngine.kt")
 bridge = read(PY / "alvsia_bridge.py")
 loader = read(PY / "sealed_loader.py")
@@ -67,6 +68,16 @@ if "CM_BRANCH" not in codemagic or '!= "main"' not in codemagic:
     fail.append("CodeMagic release branch is not restricted to main")
 if "isMinifyEnabled = true" not in gradle or "isShrinkResources = true" not in gradle:
     fail.append("release R8/minification/resource shrinking is disabled")
+if 'implementation("com.securevale:rasp-android:0.7.1")' not in gradle:
+    fail.append("Securevale Android RASP SDK dependency is missing")
+if "SecureAppChecker.Builder" not in rasp_engine or "SECUREVALE_RASP" not in rasp_engine:
+    fail.append("Securevale RASP checks are not executed and reported by RaspEngine")
+if 'SEED_ENV = "ALVSIA_SEAL_SEED_HEX"' not in seal_script:
+    fail.append("Python sealing does not use the per-build seed environment variable")
+if "secrets.token_hex(32)" not in workflow or "secrets.token_hex(32)" not in codemagic:
+    fail.append("CI/CodeMagic do not generate a fresh per-build seal seed")
+if "00112233445566778899aabbccddeeff" in native or "00112233445566778899aabbccddeeff" in seal_script:
+    fail.append("fixed public seal seed remains in source")
 if "META-INF/version-control-info.textproto" not in gradle or '"**/version-control-info.textproto"' not in gradle:
     fail.append("VCS metadata is not excluded from release packaging")
 if "android.permission.DUMP" in manifest:
