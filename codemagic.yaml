@@ -1,0 +1,24 @@
+workflows:
+  android-release:
+    name: ALVISIA PRO 5.5.0 Release
+    max_build_duration: 60
+    environment:
+      android_signing:
+        - alvisia_keystore
+      vars:
+        PACKAGE_NAME: "com.alvsia.pro"
+        ALVSIA_SEAL_SEED_HEX: $ALVSIA_SEAL_SEED_HEX
+    scripts:
+      - name: Set gradlew permission
+        script: chmod +x gradlew
+      - name: Build release APK
+        script: ./gradlew assembleRelease
+    artifacts:
+      - app/build/outputs/apk/release/*.apk
+    publishing:
+      email:
+        recipients:
+          - your@email.com
+        notify:
+          success: true
+          failure: true
