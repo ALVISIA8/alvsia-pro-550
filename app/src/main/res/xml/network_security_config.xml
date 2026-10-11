@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">alvsiapro.cc.cd</domain>
+        <!-- SPKI pin from openssl; update when Cloudflare rotates -->
+        <pin-set expiration="2027-12-31">
+            <pin digest="SHA-256">5xvRl/EyzQlZHSgU5dDZKbqmr+rFywWYzvSEEmJgC+Q=</pin>
+        </pin-set>
+    </domain-config>
+</network-security-config>

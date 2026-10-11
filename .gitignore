@@ -1,0 +1,11 @@
+app/src/main/cpp/third_party/
+app/src/main/assets/nx/*.bin
+*.pyc
+__pycache__/
+.gradle/
+build/
+*.apk
+*.aab
+*.keystore
+*.jks
+local.properties

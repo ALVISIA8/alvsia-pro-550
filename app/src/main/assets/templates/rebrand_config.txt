@@ -1,0 +1,5 @@
+# ALVSIA PRO — Rebrand config (manual mode)
+# Copy to device WORK/rebrand_config.txt for Manual Rebrand
+brand=ALVSIA PRO
+channel=t.me/ALVSIA_PRO
+watermark=ALVSIA PRO | t.me/ALVSIA_PRO
