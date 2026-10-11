@@ -1,0 +1,54 @@
+name: Inspect hardened source archive
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'source_archives/ALVISIA_PRO_550_HARDENED_2026-10-11.zip'
+      - '.github/workflows/archive-inspect.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'source_archives/ALVISIA_PRO_550_HARDENED_2026-10-11.zip'
+      - '.github/workflows/archive-inspect.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate and unpack archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARCHIVE='source_archives/ALVISIA_PRO_550_HARDENED_2026-10-11.zip'
+          test -s "$ARCHIVE"
+          python - <<'PY'
+          import zipfile
+          p = 'source_archives/ALVISIA_PRO_550_HARDENED_2026-10-11.zip'
+          with zipfile.ZipFile(p) as z:
+              bad = [n for n in z.namelist() if n.startswith('/') or '..' in n.replace('\\\\', '/').split('/')]
+              if bad:
+                  raise SystemExit('Unsafe archive paths: ' + repr(bad[:10]))
+              print('entries:', len(z.infolist()))
+              print('uncompressed_bytes:', sum(i.file_size for i in z.infolist()))
+              print('first_entries:')
+              print('\\n'.join(z.namelist()[:80]))
+              z.extractall('/tmp/hardened-archive')
+          PY
+          mkdir -p archive-audit
+          cp "$ARCHIVE" archive-audit/
+          (cd /tmp && zip -qr "$GITHUB_WORKSPACE/archive-audit/ALVISIA_PRO_550_HARDENED_2026-10-11_UNPACKED.zip" hardened-archive)
+          find /tmp/hardened-archive -type f -print0 | sort -z | xargs -0 sha256sum > archive-audit/FILES_SHA256.txt
+          sha256sum "$ARCHIVE" > archive-audit/ARCHIVE_SHA256.txt
+      - name: Upload unpacked source for controlled comparison
+        uses: actions/upload-artifact@v4
+        with:
+          name: ALVISIA-HARDENED-ARCHIVE-UNPACKED
+          path: archive-audit/*
+          if-no-files-found: error
+          retention-days: 7
