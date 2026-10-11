@@ -12,9 +12,9 @@ object AssetVault {
     private val MAGIC = byteArrayOf(0x41, 0x4C, 0x56, 0x53, 0x41, 0x31, 0x00)
 
     private fun key(ctx: Context): ByteArray {
-        val cert = Tamper.signingCertSha256(ctx).orEmpty().ifBlank {
-            "99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c"
-        }
+        val cert = Tamper.signingCertSha256(ctx)
+            ?.takeIf { it.matches(Regex("^[0-9a-fA-F]{64}$")) }
+            ?: throw SecurityException("AssetVault: signing cert unavailable or invalid — cannot derive asset key")
         val raw = (ctx.packageName + "|" + cert.lowercase() + "|ALV-ASSET-v1").toByteArray()
         return MessageDigest.getInstance("SHA-256").digest(raw)
     }
@@ -51,6 +51,8 @@ object AssetVault {
                 out[logical] = plain
             }
             out
+        } catch (e: SecurityException) {
+            throw e
         } catch (_: Exception) {
             emptyMap()
         }

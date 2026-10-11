@@ -71,6 +71,13 @@ object NativeGuard {
             !payload.copyOfRange(0, magic.size).contentEquals(magic)) {
             throw IllegalArgumentException("sealed payload header/length invalid")
         }
+        if (buildId.isBlank() || buildId.length > 128 ||
+            !buildId.matches(Regex("^[A-Za-z0-9_\\-\\.]{1,128}$"))) {
+            throw IllegalArgumentException("buildId format invalid")
+        }
+        if (payload.size > 32 * 1024 * 1024) {
+            throw IllegalArgumentException("sealed payload exceeds size limit")
+        }
         val seed = nativeSealSeed()
         try {
             val certHex = BuildConfig.CERT_SHA256
