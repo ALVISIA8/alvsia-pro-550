@@ -20,11 +20,11 @@ android {
         buildConfigField("String", "CERT_SHA256", "\"99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c\"")
         ndk {
             abiFilters += listOf("arm64-v8a")
+        }
         externalNativeBuild {
             cmake {
                 arguments += listOf("-DALVSIA_SEAL_SEED_HEX=${System.getenv("ALVSIA_SEAL_SEED_HEX").orEmpty()}")
             }
-        }
         }
     }
 
