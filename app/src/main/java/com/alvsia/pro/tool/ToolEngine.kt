@@ -7,6 +7,7 @@ import com.alvsia.pro.asset.AssetVault
 import com.alvsia.pro.sec.SessionGate
 import com.alvsia.pro.sec.NativeGuard
 import android.net.Uri
+import android.util.Log
 import com.chaquo.python.Python
 import java.io.BufferedInputStream
 import java.io.File
@@ -113,11 +114,39 @@ class ToolEngine(private val context: Context) {
         } catch (e: SecurityException) {
             val reason = e.message?.removePrefix("BLOCKED:") ?: "gate_fail"
             return listOf("X Session blocked: $reason — re-login required")
+        } catch (e: LinkageError) {
+            Log.e("ALVISIA_TOOL", "Security runtime linkage failure before tool dispatch", e)
+            return listOf("X Tool runtime component unavailable (${e.javaClass.simpleName}). Reopen the app and retry.")
+        } catch (e: Exception) {
+            Log.e("ALVISIA_TOOL", "Security runtime failure before tool dispatch", e)
+            return listOf("X Tool could not start (${e.javaClass.simpleName}). Reopen the app and retry.")
         }
         return runSub(toolId, "mod_$toolId", inputUri, extraName)
     }
 
+    /**
+     * Crash-containment boundary for Java/Kotlin runtime failures during tool dispatch.
+     * Native process aborts/SIGSEGV cannot be caught here and still require device logcat.
+     */
     fun runSub(moduleId: Int, subId: String, inputUri: Uri?, extraName: String?): List<String> {
+        return try {
+            runSubInternal(moduleId, subId, inputUri, extraName)
+        } catch (e: LinkageError) {
+            Log.e("ALVISIA_TOOL", "Tool runtime linkage failure: module=$moduleId sub=$subId", e)
+            listOf(
+                "X Tool runtime component failed to load (${e.javaClass.simpleName}).",
+                "No tool output was committed. Reopen ALVISIA PRO and retry."
+            )
+        } catch (e: Exception) {
+            Log.e("ALVISIA_TOOL", "Tool dispatch exception: module=$moduleId sub=$subId", e)
+            listOf(
+                "X Tool operation stopped safely (${e.javaClass.simpleName}).",
+                "No tool output was committed. Reopen ALVISIA PRO and retry."
+            )
+        }
+    }
+
+    private fun runSubInternal(moduleId: Int, subId: String, inputUri: Uri?, extraName: String?): List<String> {
         try {
             SessionGate.allowTools(context)
         } catch (e: SecurityException) {
