@@ -9,6 +9,7 @@ import com.alvsia.pro.sec.SessionGate
 import com.alvsia.pro.sec.NativeGuard
 import android.net.Uri
 import com.chaquo.python.Python
+import com.chaquo.python.android.AndroidPlatform
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
@@ -232,6 +233,12 @@ class ToolEngine(private val context: Context) {
 
         // Bridge for heavier modules
         try {
+            // Application.onCreate may have failed to start Chaquopy; retry at dispatch
+            // time so Lua normalization does not silently fall through to a limited native path.
+            if (!Python.isStarted()) {
+                lines.add("... Python runtime not started; attempting Chaquopy initialization")
+                Python.start(AndroidPlatform(context.applicationContext))
+            }
             if (Python.isStarted()) {
                 val py = Python.getInstance()
 
@@ -300,7 +307,7 @@ class ToolEngine(private val context: Context) {
                 }
                 return lines
             } else {
-                lines.add("... Python runtime not ready ? native fallback")
+                lines.add("X Python runtime initialization did not start Chaquopy; operation cannot use Python pipeline")
             }
         } catch (e: Exception) {
             lines.add("... bridge: ${e.message ?: e.javaClass.simpleName}")

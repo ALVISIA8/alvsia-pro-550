@@ -136,7 +136,7 @@ jobs:
           sha256sum release-candidate/ALVSIA_PRO_5.5.0_release-candidate.apk | tee release-candidate/ALVSIA_PRO_5.5.0_release-candidate.sha256
 
       - name: Upload release candidate APK
-        if: success() && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        if: success() && ((github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')) || github.event_name == 'pull_request')
         uses: actions/upload-artifact@v4
         with:
           name: ALVISIA-PRO-5.5.0-RELEASE-CANDIDATE
