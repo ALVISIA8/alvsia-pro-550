@@ -5,6 +5,7 @@ import hashlib
 import io
 import re
 import sys
+import struct
 import zipfile
 from pathlib import Path
 
@@ -33,6 +34,59 @@ PROTECTED_MODULES = {
 }
 SEAL_MAGIC = b"ALVSEAL2"
 ASSET_MAGIC = b"ALVSA1\x00"
+
+def android_xml_strings(data: bytes) -> set[str]:
+    """Read the string pool from Android's compiled binary XML (AXML)."""
+    if len(data) < 8 or data[:2] != b"\x03\x00":
+        raise ValueError("not Android binary XML")
+    offset = 8
+    while offset + 8 <= len(data):
+        chunk_type, header_size, chunk_size = struct.unpack_from("<HHI", data, offset)
+        if chunk_size < 8 or offset + chunk_size > len(data):
+            raise ValueError("invalid AXML chunk bounds")
+        if chunk_type == 0x0001:  # RES_STRING_POOL_TYPE
+            if header_size < 28 or chunk_size < header_size:
+                raise ValueError("invalid AXML string-pool header")
+            string_count, _style_count, flags, strings_start, _styles_start = struct.unpack_from(
+                "<IIIII", data, offset + 8
+            )
+            offsets_start = offset + header_size
+            strings_base = offset + strings_start
+            utf8 = bool(flags & 0x00000100)
+            result: set[str] = set()
+
+            def length8(pos: int) -> tuple[int, int]:
+                first = data[pos]
+                if first & 0x80:
+                    return (((first & 0x7F) << 8) | data[pos + 1], pos + 2)
+                return first, pos + 1
+
+            def length16(pos: int) -> tuple[int, int]:
+                first = struct.unpack_from("<H", data, pos)[0]
+                if first & 0x8000:
+                    second = struct.unpack_from("<H", data, pos + 2)[0]
+                    return (((first & 0x7FFF) << 16) | second, pos + 4)
+                return first, pos + 2
+
+            for i in range(string_count):
+                rel = struct.unpack_from("<I", data, offsets_start + i * 4)[0]
+                pos = strings_base + rel
+                if utf8:
+                    _char_len, pos = length8(pos)
+                    byte_len, pos = length8(pos)
+                    end = pos + byte_len
+                    if end > offset + chunk_size:
+                        raise ValueError("AXML UTF-8 string exceeds string pool")
+                    result.add(data[pos:end].decode("utf-8", errors="strict"))
+                else:
+                    char_len, pos = length16(pos)
+                    end = pos + char_len * 2
+                    if end > offset + chunk_size:
+                        raise ValueError("AXML UTF-16 string exceeds string pool")
+                    result.add(data[pos:end].decode("utf-16le", errors="strict"))
+            return result
+        offset += chunk_size
+    raise ValueError("AXML string pool not found")
 
 def main() -> int:
     if len(sys.argv) != 2:
@@ -66,10 +120,15 @@ def main() -> int:
                   "recognizable SecureVale SDK classes absent from DEX")
             manifest = outer.read("AndroidManifest.xml") if "AndroidManifest.xml" in names else b""
             check(bool(manifest), "compiled Android manifest exists")
-            check(b"android.permission.DUMP" not in manifest,
-                  "compiled manifest excludes android.permission.DUMP")
-            check(b"android.permission.READ_PHONE_STATE" not in manifest,
-                  "compiled manifest excludes android.permission.READ_PHONE_STATE")
+            if manifest:
+                try:
+                    manifest_strings = android_xml_strings(manifest)
+                    check("android.permission.DUMP" not in manifest_strings,
+                          "compiled manifest string pool excludes android.permission.DUMP")
+                    check("android.permission.READ_PHONE_STATE" not in manifest_strings,
+                          "compiled manifest string pool excludes android.permission.READ_PHONE_STATE")
+                except (ValueError, UnicodeError, struct.error) as exc:
+                    check(False, f"compiled Android manifest could not be parsed: {exc}")
             blobs = sorted(n for n in names if n.startswith("assets/nx/") and n.endswith(".bin"))
             check(len(blobs) >= 3, f"sealed JAR asset count >= 3 (found {len(blobs)})")
             for n in blobs:
