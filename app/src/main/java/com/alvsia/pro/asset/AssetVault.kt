@@ -27,6 +27,8 @@ object AssetVault {
             val ct = blob.copyOfRange(19, blob.size)
             val c = Cipher.getInstance("AES/GCM/NoPadding")
             c.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, nonce))
+            // Must match tools/seal_assets.py: AES-GCM authenticates MAGIC as AAD.
+            c.updateAAD(MAGIC)
             c.doFinal(ct)
         } catch (_: Exception) {
             null
