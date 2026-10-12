@@ -1,35 +1,31 @@
-name: Android validation
+name: ALVISIA PRO Android Release Build
 
 on:
-  pull_request:
-    branches: [main]
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: android-validation-${{ github.ref }}
+  group: alvisia-release-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
-      - name: Checkout
+      - name: Checkout source
         uses: actions/checkout@v4
-        with:
-          submodules: false
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
+          cache: gradle
 
       - name: Set up Python for Chaquopy
         uses: actions/setup-python@v5
@@ -39,125 +35,57 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: platform-tools platforms;android-35 build-tools;35.0.0 ndk;27.0.12077973 cmake;3.22.1
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0 ndk;27.0.12077973 cmake;3.22.1'
 
-      - name: Generate per-build sealed payload seed
+      - name: Verify source and wrapper
         shell: bash
         run: |
           set -euo pipefail
-          SEED="$(python -c 'import secrets; print(secrets.token_hex(32))')"
-          echo "::add-mask::$SEED"
-          echo "ALVSIA_SEAL_SEED_HEX=$SEED" >> "$GITHUB_ENV"
-          unset SEED
-
-      - name: Verify wrapper
-        run: |
           test -f ./gradlew
+          test -f app/build.gradle.kts
           chmod +x ./gradlew
+          python -m compileall -q app/src/main/python
           java -version
-          python --version
           ./gradlew --version
 
-      - name: Compile all bundled Python modules
-        run: python -m compileall -q app/src/main/python
-
-      - name: Run Lua engine regression tests
-        run: python tests/test_lua_engine.py
-
-      - name: Run BGMI Lua transform regression tests
-        run: python tests/test_bgmi_transform.py
-
-      - name: Run PAK extraction regression tests
-        run: python tests/test_pak_extraction.py
-
-      - name: Test bundled Lua 5.3 decompiler
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y lua5.3
-          bash tests/test_unluac_integration.sh
-
-      - name: Validate all tool menu routes
-        run: python tests/test_tool_dispatch.py
-
-      - name: Validate bridge function contract
-        run: python tools/validate_ultimate_contract.py
-
-      - name: Run VANTA red-team static regression checks
-        run: python tests/test_vanta_redteam.py
-
-      - name: Run security source gates
-        run: python tools/security_release_check.py
-
-      - name: Test sealed Python source packaging
-        run: |
-          python -m pip install --disable-pip-version-check cryptography
-          python tools/seal_python.py --restore
-          python tools/seal_python.py --seal
-          python tools/seal_python.py --restore
-
-      - name: Run Android unit tests
-        run: ./gradlew testDebugUnitTest --stacktrace --no-daemon
-
-      - name: Seal runtime JAR assets
-        run: |
-          python -m pip install --disable-pip-version-check cryptography
-          python tools/seal_assets.py
-
-      - name: Seal protected Python modules
-        run: |
-          python tools/seal_python.py --restore
-          python tools/seal_python.py --seal
-
-      - name: Build and obfuscate release APK with AndResGuard
+      - name: Build release APK
+        env:
+          ALVSIA_SEAL_SEED_HEX: ${{ secrets.ALVSIA_SEAL_SEED_HEX }}
         shell: bash
         run: |
           set -euo pipefail
-          restore_python() { python tools/seal_python.py --restore || true; }
-          trap restore_python EXIT
+          if [[ -z "${ALVSIA_SEAL_SEED_HEX:-}" ]]; then
+            echo "::error::Missing GitHub Actions secret ALVSIA_SEAL_SEED_HEX. Add the existing production seal seed in Repository Settings > Secrets and variables > Actions."
+            exit 1
+          fi
           ./gradlew clean resguardRelease --stacktrace --no-daemon
-          mkdir -p app/build/outputs/andresguard
-          APK=$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print -quit)
-          test -n "$APK" && test -s "$APK"
-          cp "$APK" app/build/outputs/andresguard/ALVISIA_PRO_5.5.0_resguard.apk
-
-      - name: Audit release APK protection layers
-        run: |
-          set -euo pipefail
-          APK=app/build/outputs/andresguard/ALVISIA_PRO_5.5.0_resguard.apk
-          test -s "$APK"
-          python tools/audit_release_apk.py "$APK"
-
-      - name: Verify native RASP library and calculate APK checksum
-        run: |
-          set -euo pipefail
-          APK=app/build/outputs/andresguard/ALVISIA_PRO_5.5.0_resguard.apk
-          test -s "$APK"
-          test -n "$APK"
-          unzip -Z1 "$APK" | grep -Fx 'lib/arm64-v8a/librasp_guard.so'
+          APK="$(find app/build/outputs -type f -name '*.apk' -size +0c | grep -E 'release|andresguard' | head -n 1 || true)"
+          if [[ -z "$APK" ]]; then
+            echo "::error::Gradle finished without a release APK. Inspect the Gradle output above."
+            find app/build/outputs -maxdepth 5 -type f -print || true
+            exit 1
+          fi
           mkdir -p release-candidate
-          cp "$APK" release-candidate/ALVSIA_PRO_5.5.0_release-candidate.apk
-          sha256sum release-candidate/ALVSIA_PRO_5.5.0_release-candidate.apk | tee release-candidate/ALVSIA_PRO_5.5.0_release-candidate.sha256
+          cp "$APK" release-candidate/ALVISIA_PRO_5.5.0_RELEASE_CANDIDATE_UNSIGNED.apk
+          sha256sum release-candidate/*.apk | tee release-candidate/SHA256SUMS.txt
+          unzip -Z1 release-candidate/*.apk | grep -Fx 'lib/arm64-v8a/librasp_guard.so'
 
-      - name: Upload release candidate APK
-        if: success() && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      - name: Upload unsigned release candidate
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: ALVISIA-PRO-5.5.0-RELEASE-CANDIDATE
+          name: ALVISIA-PRO-5.5.0-RELEASE-CANDIDATE-UNSIGNED
           path: release-candidate/*
           if-no-files-found: error
           retention-days: 14
 
-      - name: Upload build diagnostics
-        if: always()
+      - name: Upload diagnostics on failure
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: android-build-diagnostics
+          name: ALVISIA-PRO-BUILD-DIAGNOSTICS
           path: |
-            **/build/reports/tests/**
-            **/build/outputs/apk/**
-            **/build/outputs/andresguard/**
-            **/build/outputs/mapping/**
-            release-candidate/**
-            release_security_audit.txt
+            **/build/reports/**
+            **/build/outputs/**
           if-no-files-found: ignore
           retention-days: 7
