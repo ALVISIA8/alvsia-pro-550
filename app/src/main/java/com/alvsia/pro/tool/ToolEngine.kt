@@ -1257,7 +1257,11 @@ class ToolEngine(private val context: Context) {
                 val en = zf.entries()
                 while (en.hasMoreElements()) {
                     val e = en.nextElement()
-                    val out = safeZipTarget(dest, e.name) ?: run { blocked++; continue }
+                    val out = safeZipTarget(dest, e.name)
+                    if (out == null) {
+                        blocked++
+                        continue
+                    }
                     if (e.isDirectory) out.mkdirs()
                     else {
                         out.parentFile?.mkdirs()
