@@ -49,15 +49,12 @@ jobs:
           ./gradlew --version
 
       - name: Build release APK
-        env:
-          ALVSIA_SEAL_SEED_HEX: ${{ secrets.ALVSIA_SEAL_SEED_HEX }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -z "${ALVSIA_SEAL_SEED_HEX:-}" ]]; then
-            echo "::error::Missing GitHub Actions secret ALVSIA_SEAL_SEED_HEX. Add the existing production seal seed in Repository Settings > Secrets and variables > Actions."
-            exit 1
-          fi
+          # Generate a unique per-build seed so native code and this build share it.
+          export ALVSIA_SEAL_SEED_HEX="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+          echo "::add-mask::$ALVSIA_SEAL_SEED_HEX"
           ./gradlew clean resguardRelease --stacktrace --no-daemon
           APK="$(find app/build/outputs -type f -name '*.apk' -size +0c | grep -E 'release|andresguard' | head -n 1 || true)"
           if [[ -z "$APK" ]]; then
