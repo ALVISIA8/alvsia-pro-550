@@ -26,19 +26,9 @@ object PulseAudio {
         t0 = System.currentTimeMillis()
         try {
             stopInternal(keepActive = true)
-            val mp = MediaPlayer.create(ctx.applicationContext, R.raw.bgm_pulse)
-            if (mp != null) {
-                mp.isLooping = true
-                mp.setVolume(1f, 1f)
-                mp.setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .build()
-                )
-                mp.start()
-                player = mp
-            }
+            // Optional background audio asset is not included in this source snapshot.
+            // Keep the feature safe and silent until the original audio file is restored.
+            player = null
         } catch (_: Exception) {
         }
         startSynthPulse()
