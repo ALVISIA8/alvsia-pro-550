@@ -81,20 +81,8 @@ fun SplashScreen(onFinished: () -> Unit) {
     }
 
     DisposableEffect(Unit) {
-        var mp: MediaPlayer? = null
-        try {
-            mp = MediaPlayer.create(context, R.raw.megatron_welcome)
-            mp?.setVolume(1f, 1f)
-            mp?.start()
-        } catch (_: Exception) {
-        }
-        onDispose {
-            try {
-                mp?.stop()
-                mp?.release()
-            } catch (_: Exception) {
-            }
-        }
+        // The optional welcome audio asset is not present in this source snapshot.
+        onDispose { }
     }
 
     LaunchedEffect(Unit) {
