@@ -46,7 +46,7 @@ class _SealedLoader(importlib.abc.Loader):
             raise ImportError("sealed runtime authorization missing")
         try:
             # Keep the seed, certificate-derived key, and AES key derivation out
-            # of Python. The Kotlin/JNI bridge performs authenticated decryption.
+            # of Python. The native/JNI bridge performs authenticated decryption.
             from com.alvsia.pro.sec import NativeGuard
             raw = pkgutil.get_data("sealed", self.blob)
             if raw is None:
