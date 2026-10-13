@@ -57,7 +57,7 @@ object NativeGuard {
 
     /**
      * Decrypt a sealed Python module without returning the build seed or derived
-     * AES key to Python. The seed remains inside the Kotlin/native bridge.
+     * AES key to Python. Seed and derivation inputs remain native; the short-lived derived key is wiped after decryption.
      * This is defense-in-depth only: a determined runtime attacker can still
      * instrument the process after plaintext is produced.
      */
