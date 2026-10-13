@@ -159,7 +159,7 @@ jobs:
           import re
           p = Path("xop-src/settings.gradle.kts")
           source = p.read_text()
-          pattern = r'(?m)^\\s*file\\("E:/Android/SDK-Android@5\\.14-20260706/SDK/libs"\\),?\\s*\\n'
+          pattern = r'(?m)^\s*file\("E:/Android/SDK-Android@5\.14-20260706/SDK/libs"\),?\s*\n'
           patched, count = re.subn(pattern, "", source, count=1)
           if count:
               p.write_text(patched)
