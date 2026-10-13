@@ -174,6 +174,12 @@ tasks.matching { it.name == "preBuild" }.configureEach {
     dependsOn("prepareSealedPython")
 }
 
+// Chaquopy reads generated sealed sources in this task; declare the producer dependency
+// directly so Gradle 8+ validation cannot schedule the consumer before sealing completes.
+tasks.matching { it.name == "mergeReleasePythonSources" }.configureEach {
+    dependsOn("prepareSealedPython")
+}
+
 
 
 // VANTA release gate: fail the release packaging task if sealed payloads are absent.
