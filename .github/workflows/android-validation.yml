@@ -214,13 +214,14 @@ jobs:
             --verbose --min-sdk-version 26 "$GITHUB_WORKSPACE/xop-work/xop-signed.apk"
           PACKER="$(find packer/build/libs -maxdepth 1 -type f -name 'protector-packer-*.jar' | head -n 1)"
           test -n "$PACKER"
+          # Keep the app's JNI security anchor intact, but keep Xop SO protection
+          # active for compatible libraries (including Chaquopy/Python). Xop's own
+          # report must confirm librasp_guard.so is excluded from SO encryption.
           java -jar "$PACKER" "$GITHUB_WORKSPACE/xop-work/xop-signed.apk" \
             -o "$GITHUB_WORKSPACE/candidates/ALVISIA_XOPPROTECTOR_CANDIDATE_UNSIGNED.apk" \
             --shell-dir "$GITHUB_WORKSPACE/xop-src/executable/shell-files" \
-            # Keep librasp_guard.so unwrapped: NativeGuard loads this library
-            # directly via System.loadLibrary and depends on stable JNI exports.
-            # Native SO packing remains disabled until device-level JNI regression passes.
-            --profile balanced
+            --profile balanced \
+            --protect-so-exclude librasp_guard.so
           # Sign the experimental output so Android can verify/install it for testing.
           # This certificate is ephemeral and is NOT the ALVISIA production certificate.
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
