@@ -56,11 +56,10 @@ def extract_spki_der(cert_der: bytes) -> bytes:
 
 def panel_post(url: str, **kwargs):
     """POST only to the configured panel, verify system TLS and pin the peer SPKI."""
-    import requests
-
     parsed = urlparse(url)
     if parsed.scheme != "https" or parsed.hostname != PANEL_HOST:
         raise ValueError("Python panel client refuses an unpinned host")
+    import requests
     session = requests.Session()
     session.trust_env = False
     kwargs["verify"] = True
