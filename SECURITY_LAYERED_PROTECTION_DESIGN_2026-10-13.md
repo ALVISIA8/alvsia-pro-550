@@ -13,12 +13,11 @@ Increase reverse-engineering resistance and runtime threat visibility without br
   - Do not run it on the production artifact by default. Its apktool rebuild can change package metadata/resources and invalidates existing signatures; sign only after all transformations and verification.
   - Confirm the exact upstream repository, maintenance state, dependencies, and license before vendoring or automating it.
 
-- **Talsec freeRASP KMP** — https://github.com/talsec/Free-RASP-KMP
-  - Preferred candidate for a maintained runtime threat-detection SDK (root/compromised OS, hooking, repackaging, untrusted install, device/app binding).
-  - Integrate through the official versioned dependency and official API documentation, not copied internal code.
-  - Configure the real package name and release signing-certificate fingerprints; verify debug/release behavior separately.
-  - Threat callbacks should record a minimal, privacy-reviewed event and apply a proportionate policy. Avoid unconditional app termination on a single heuristic, because false positives could lock out legitimate users.
-  - Review SDK license, telemetry/data processing, supported Android API levels, size, and offline behavior before release. Do not send HWID/screenshots or sensitive data to third parties without explicit, documented consent.
+- **Talsec freeRASP** — https://github.com/talsec/Free-RASP-KMP
+  - The ALVISIA project is a native Android app (Kotlin 1.9.24), not a Kotlin Multiplatform project. The KMP module currently targets Kotlin 2.2.0, so forcing that module into this build without a compiler/Compose migration would risk regressions.
+  - Therefore this branch wires Talsec's official Android SDK counterpart, `com.aheaditec.talsec.security:TalsecSecurity-Community:19.2.3`, using the official threat-listener API and the existing release certificate hash.
+  - Detection callbacks log minimal local event labels only; they do not send HWID, screenshots, license keys, or OTP, and a single heuristic does not terminate the app or grant/revoke a license.
+  - Validate the dependency resolution and callback API in CI, then test release signing and false positives on real devices before release.
 
 - **XopProtector** — https://github.com/xopJack/XopProtector
   - Treat its packer/native shell, DEX encryption, VMP, SO protection, and RASP as a separate, optional packaging experiment.
@@ -52,4 +51,4 @@ Increase reverse-engineering resistance and runtime threat visibility without br
 - [ ] Enable in production only after all checks pass and rollback path is documented.
 
 ## Current state
-This design does not claim that Obfuscapk, freeRASP, or XopProtector is already linked into the APK. The existing .alv release gate and CI tests must pass first. External packers are intentionally not automatically invoked until their effects on Chaquopy, native loading, signing, and all tool menus are demonstrated.
+Branch status: the Talsec Android SDK dependency and startup listener are wired; CI has been updated to attempt both Obfuscapk and XopProtector on isolated candidate APKs. At the time of this edit, the new workflow run is pending, so no successful build or working transformed APK is claimed. The exact Free-RASP-KMP library is not directly integrated because its current source requires Kotlin 2.2.0 while this Android app is on Kotlin 1.9.24; a Kotlin/Compose migration would need a separate tested change.
