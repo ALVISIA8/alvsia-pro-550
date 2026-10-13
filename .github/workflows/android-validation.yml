@@ -196,6 +196,11 @@ jobs:
       - name: Run XopProtector on the Obfuscapk output (combined pipeline)
         id: xopprotector
         if: always()
+        env:
+          ALVISIA_RELEASE_KEYSTORE_BASE64: ${{ secrets.ALVISIA_RELEASE_KEYSTORE_BASE64 }}
+          ALVISIA_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ALVISIA_RELEASE_KEYSTORE_PASSWORD }}
+          ALVISIA_RELEASE_KEY_ALIAS: ${{ secrets.ALVISIA_RELEASE_KEY_ALIAS }}
+          ALVISIA_RELEASE_KEY_PASSWORD: ${{ secrets.ALVISIA_RELEASE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           git clone https://github.com/xopJack/XopProtector.git xop-src
@@ -303,16 +308,42 @@ jobs:
                   os.remove(apk)
               raise
           PY
-          # Sign the experimental output so Android can verify/install it for testing.
-          # This certificate is ephemeral and is NOT the ALVISIA production certificate.
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
-            --ks "$RUNNER_TEMP/xop-ci-test.jks" --ks-key-alias xop-ci-test \
-            --ks-pass pass:xop-ci-only --key-pass pass:xop-ci-only \
-            --out "$GITHUB_WORKSPACE/candidates/ALVISIA_COMBINED_OBFUSCAPK_XOPPROTECTOR.apk" \
-            "$GITHUB_WORKSPACE/candidates/ALVISIA_COMBINED_OBFUSCAPK_XOPPROTECTOR_UNSIGNED.apk"
-          rm -f "$GITHUB_WORKSPACE/candidates/ALVISIA_COMBINED_OBFUSCAPK_XOPPROTECTOR_UNSIGNED.apk"
+          # Prefer the ALVISIA production certificate when repository Actions secrets are configured.
+          # Never print or upload keystore/password material. Otherwise publish only a clearly
+          # test-signed candidate; it is not a production release and may fail the app cert pin.
+          FINAL_APK="$GITHUB_WORKSPACE/candidates/ALVISIA_COMBINED_OBFUSCAPK_XOPPROTECTOR.apk"
+          UNSIGNED_APK="$GITHUB_WORKSPACE/candidates/ALVISIA_COMBINED_OBFUSCAPK_XOPPROTECTOR_UNSIGNED.apk"
+          if [[ -n "${ALVISIA_RELEASE_KEYSTORE_BASE64:-}" &&
+                -n "${ALVISIA_RELEASE_KEYSTORE_PASSWORD:-}" &&
+                -n "${ALVISIA_RELEASE_KEY_ALIAS:-}" &&
+                -n "${ALVISIA_RELEASE_KEY_PASSWORD:-}" ]]; then
+            KEYSTORE="$RUNNER_TEMP/alvisia-production-release.jks"
+            printf '%s' "$ALVISIA_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
+            chmod 600 "$KEYSTORE"
+            "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
+              --ks "$KEYSTORE" --ks-key-alias "$ALVISIA_RELEASE_KEY_ALIAS" \
+              --ks-pass env:ALVISIA_RELEASE_KEYSTORE_PASSWORD \
+              --key-pass env:ALVISIA_RELEASE_KEY_PASSWORD \
+              --out "$FINAL_APK" "$UNSIGNED_APK"
+            CERTS="$RUNNER_TEMP/alvisia-production-certs.txt"
+            "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$FINAL_APK" > "$CERTS"
+            if ! grep -qiF 'Signer #1 certificate SHA-256 digest: 99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c' "$CERTS"; then
+              echo "::error::Production APK signer does not match the pinned ALVISIA certificate."
+              rm -f "$FINAL_APK" "$KEYSTORE" "$CERTS"
+              exit 1
+            fi
+            echo "Production certificate SHA-256 matches the pinned ALVISIA certificate."
+            rm -f "$KEYSTORE" "$CERTS"
+          else
+            echo "::warning::Production signing secrets are not all configured; signing this candidate with the ephemeral CI test key only."
+            "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
+              --ks "$RUNNER_TEMP/xop-ci-test.jks" --ks-key-alias xop-ci-test \
+              --ks-pass pass:xop-ci-only --key-pass pass:xop-ci-only \
+              --out "$FINAL_APK" "$UNSIGNED_APK"
+          fi
+          rm -f "$UNSIGNED_APK"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
-            --verbose --min-sdk-version 26 "$GITHUB_WORKSPACE/candidates/ALVISIA_COMBINED_OBFUSCAPK_XOPPROTECTOR.apk"
+            --verbose --min-sdk-version 26 "$FINAL_APK"
           # Static release gate: verify identity and runtime-critical libraries after BOTH protectors.
           FINAL_APK="$GITHUB_WORKSPACE/candidates/ALVISIA_COMBINED_OBFUSCAPK_XOPPROTECTOR.apk"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$FINAL_APK" > "$RUNNER_TEMP/alvisia-badging.txt"
