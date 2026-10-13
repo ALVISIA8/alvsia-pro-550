@@ -12,6 +12,7 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         maven { url = uri("https://chaquo.com/maven") }
+        maven { url = uri("https://artifactory.talsec.app/artifactory/freerasp") }
     }
 }
 rootProject.name = "ALVISIA_PREMIUM_TOOL"
