@@ -199,12 +199,20 @@ class PanelClient {
         license: String = lastLicense,
         hwid: String = lastHwid,
     ): FetchResult {
+        val normalizedLicense = license.trim()
+        val normalizedHwid = hwid.trim()
+        val activeToken = sessionToken.trim()
+        if (normalizedLicense.isBlank() || normalizedHwid.isBlank() ||
+            normalizedLicense != lastLicense || normalizedHwid != lastHwid ||
+            !activeToken.matches(Regex("^[0-9A-Fa-f]{64}$"))) {
+            return FetchResult(false, "No valid license-bound panel session; sign in again")
+        }
         return try {
             ensureGate()
             val fetchJson = JSONObject()
-                .put("license", license)
-                .put("hwid", hwid)
-                .put("session_token", sessionToken)
+                .put("license", normalizedLicense)
+                .put("hwid", normalizedHwid)
+                .put("session_token", activeToken)
                 .toString()
             var bytes = postJsonBytes(base() + Vault.pathFetch(), fetchJson)
             if (bytes == null) {
