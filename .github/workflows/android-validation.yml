@@ -159,13 +159,22 @@ jobs:
           import re
           p = Path("xop-src/settings.gradle.kts")
           source = p.read_text()
-          # Drop any hard-coded Windows drive path that points at a local SDK/libs directory.
-          pattern = r'(?m)^\s*file\(["\'][A-Za-z]:[/\\\\].*?SDK[/\\\\]libs["\']\),?\s*\n'
-          patched, count = re.subn(pattern, "", source)
-          if count:
-              p.write_text(patched)
-              print(f"Removed {count} Windows-local SDK path candidate(s).")
-          if re.search(r'[A-Za-z]:[/\\\\].*?SDK[/\\\\]libs', p.read_text()):
+          # Remove Windows drive paths robustly, regardless of slash direction or escaping.
+          lines = source.splitlines()
+          kept_settings = []
+          removed = 0
+          for line in lines:
+              has_drive_path = re.search(r'(?i)[A-Z]:[\\\\/]', line) is not None
+              mentions_sdk_libs = 'SDK' in line and 'libs' in line
+              if has_drive_path and mentions_sdk_libs and ('file(' in line or 'libs' in line):
+                  removed += 1
+                  continue
+              kept_settings.append(line)
+          if removed:
+              p.write_text("\\n".join(kept_settings) + "\\n")
+              print(f"Removed {removed} Windows-local SDK path candidate(s).")
+          remaining = p.read_text()
+          if re.search(r'(?i)[A-Z]:[\\\\/].*(?:SDK|\\\\SDK|/SDK).*(?:libs)', remaining):
               raise SystemExit("A Windows-local SDK path remains in settings.gradle.kts.")
           # Also override a machine-specific unimp.sdk.libs value from gradle.properties.
           gp = Path("xop-src/gradle.properties")
