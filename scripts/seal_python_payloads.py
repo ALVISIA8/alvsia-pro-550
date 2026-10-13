@@ -51,7 +51,9 @@ def main() -> None:
 
     if not args.source.is_dir():
         raise SystemExit("seal: source Python directory does not exist")
-    seed_hex = args.seed_hex or ("00" * 32)
+    seed_hex = args.seed_hex
+    if not seed_hex:
+        raise SystemExit("seal: ALVSIA_SEAL_SEED_HEX or --seed-hex is required; refusing an insecure default seed")
     if len(seed_hex) != 64 or any(c not in "0123456789abcdefABCDEF" for c in seed_hex):
         raise SystemExit("seal: seed must be exactly 64 hexadecimal characters")
     cert_hex = args.cert_sha256.lower()
