@@ -26,12 +26,6 @@ data class LoginResult(
     val product: String = "",
 )
 
-data class OtpResult(
-    val ok: Boolean,
-    val message: String,
-    val toolTicket: String = "",
-)
-
 data class FetchResult(
     val ok: Boolean,
     val message: String,
@@ -86,8 +80,6 @@ class PanelClient {
     var lastLicense: String = ""
         private set
     var lastHwid: String = ""
-        private set
-    var toolTicket: String = ""
         private set
 
     private fun callWithPinFallback(req: Request): okhttp3.Response {
@@ -191,68 +183,9 @@ class PanelClient {
         }
     }
 
-    fun requestOtp(license: String = lastLicense, hwid: String = lastHwid): OtpResult {
-        return try {
-            ensureGate()
-            val json = JSONObject()
-                .put("action", "request")
-                .put("license", license)
-                .put("hwid", hwid)
-                .put("session_token", sessionToken)
-                .toString()
-            val raw = postJson(base() + Vault.pathOtp(), json)
-                ?: return OtpResult(false, "OTP request failed")
-            if (raw.trimStart().startsWith("<")) return OtpResult(false, "Gateway blocked OTP")
-            val j = JSONObject(raw)
-            val ok = j.optString("status") == "ok" || j.optBoolean("ok", false)
-            OtpResult(ok, j.optString("msg", if (ok) "OTP sent to owner" else "OTP failed"))
-        } catch (e: Exception) {
-            OtpResult(false, e.message ?: "otp error")
-        }
-    }
-
-    fun verifyOtp(otp: String, license: String = lastLicense, hwid: String = lastHwid): OtpResult {
-        return try {
-            ensureGate()
-            val json = JSONObject()
-                .put("action", "verify")
-                .put("license", license)
-                .put("hwid", hwid)
-                .put("otp", otp)
-                .put("session_token", sessionToken)
-                .toString()
-            val raw = postJson(base() + Vault.pathOtp(), json)
-                ?: return OtpResult(false, "OTP verify failed")
-            if (raw.trimStart().startsWith("<")) return OtpResult(false, "Gateway blocked OTP")
-            val j = JSONObject(raw)
-            val ok = j.optString("status") == "ok"
-            if (!ok) {
-                toolTicket = ""
-                return OtpResult(false, j.optString("msg", "Invalid OTP"), "")
-            }
-
-            // OTP may rotate the authenticated session.  Keep the session
-            // token and tool ticket as two completely separate credentials.
-            val rotatedSession = j.optString("session_token", "").trim()
-            if (rotatedSession.isNotEmpty()) {
-                if (!rotatedSession.matches(Regex("^[0-9A-Fa-f]{64}$"))) {
-                    toolTicket = ""
-                    return OtpResult(false, "Invalid session token from server", "")
-                }
-                sessionToken = rotatedSession
-            }
-
-            toolTicket = j.optString("tool_ticket", "").trim()
-            OtpResult(true, j.optString("msg", "OTP OK"), toolTicket)
-        } catch (e: Exception) {
-            OtpResult(false, e.message ?: "otp verify error")
-        }
-    }
-
     fun fetchCore(
         license: String = lastLicense,
         hwid: String = lastHwid,
-        ticket: String = toolTicket,
     ): FetchResult {
         return try {
             ensureGate()
@@ -260,7 +193,6 @@ class PanelClient {
                 .put("license", license)
                 .put("hwid", hwid)
                 .put("session_token", sessionToken)
-                .put("tool_ticket", ticket)
                 .toString()
             var bytes = postJsonBytes(base() + Vault.pathFetch(), fetchJson)
             if (bytes == null) {
@@ -270,7 +202,6 @@ class PanelClient {
                         "license" to license,
                         "hwid" to hwid,
                         "session_token" to sessionToken,
-                        "tool_ticket" to ticket,
                     )
                 )
             }
