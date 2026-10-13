@@ -133,7 +133,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
+          # This job downloads artifacts but does not check out the Android project.
+          # Gradle dependency caching requires a wrapper/build file and fails without one.
+          # XopProtector has its own wrapper in xop-src and is built in its own step.
 
       - name: Set up Android SDK for XopProtector
         if: always()
