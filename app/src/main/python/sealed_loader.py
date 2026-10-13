@@ -13,6 +13,7 @@ _MAP = {
     "alvsia_bridge_impl": "alvsia_bridge_impl.alv",
     "alvsia_core": "alvsia_core.alv",
     "alvsia_ultimate": "alvsia_ultimate.alv",
+    "alvsia_ultimate_compat": "alvsia_ultimate_compat.alv",
     "alvsia_features": "alvsia_features.alv",
     "lua_output_validator": "lua_output_validator.alv",
     "lua_string_recover": "lua_string_recover.alv",
