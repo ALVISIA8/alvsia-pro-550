@@ -190,6 +190,7 @@ jobs:
           # Upstream may include a machine-local local.properties that overrides ANDROID_HOME.
           # Pin the SDK to the runner's installed Android SDK and verify d8 before Gradle runs.
           test -n "${ANDROID_HOME:-}"
+          rm -f local.properties
           printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
           export ANDROID_SDK_ROOT="$ANDROID_HOME"
           echo "ANDROID_HOME=$ANDROID_HOME"
