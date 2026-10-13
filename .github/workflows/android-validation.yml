@@ -167,6 +167,31 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0 ndk;27.0.12077973 cmake;3.22.1'
 
+      - name: Validate Obfuscapk candidate identity and runtime libraries
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="$GITHUB_WORKSPACE/candidates/ALVISIA_OBFUSCAPK_CANDIDATE.apk"
+          if [[ ! -s "$APK" ]]; then
+            echo "::warning::Obfuscapk produced no candidate; nothing to validate."
+            exit 0
+          fi
+          BADGING="$RUNNER_TEMP/alvisia-obfuscapk-badging.txt"
+          if ! "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > "$BADGING" ||
+             ! grep -F "name='com.alvsia.pro'" "$BADGING" ||
+             ! grep -F "versionCode='96'" "$BADGING" ||
+             ! grep -F "versionName='5.5.0-upgrade'" "$BADGING" ||
+             ! unzip -Z1 "$APK" | grep -Fx 'lib/arm64-v8a/librasp_guard.so' >/dev/null ||
+             ! unzip -Z1 "$APK" | grep -Fx 'lib/arm64-v8a/libchaquopy_java.so' >/dev/null ||
+             ! unzip -Z1 "$APK" | grep -Fx 'lib/arm64-v8a/libpython3.8.so' >/dev/null ||
+             ! "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --min-sdk-version 26 "$APK"; then
+            echo "::warning::Obfuscapk candidate failed static identity/library/signature checks; removing it from downloadable candidates."
+            rm -f "$APK"
+            exit 0
+          fi
+          echo "Obfuscapk candidate passed static identity, runtime-library and APK signature checks. Device compatibility remains unverified."
+
       - name: Run XopProtector on a separate isolated copy
         id: xopprotector
         if: always()
