@@ -221,6 +221,7 @@ jobs:
             --shell-dir "$GITHUB_WORKSPACE/xop-src/executable/shell-files" \
             --profile balanced \
             --protect-so \
+            --protect-so-mode max \
             --protect-so-exclude librasp_guard.so,libchaquopy_java.so,libpython3.8.so
           # The report is embedded in the APK, not emitted as a sidecar. Validate
           # that exact artifact and discard it if native protection is ineffective.
