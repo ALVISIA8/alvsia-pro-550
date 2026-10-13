@@ -130,3 +130,30 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 }
+
+
+// VANTA release gate: fail the release packaging task if sealed payloads are absent.
+// This deliberately blocks release until the runtime actually emits .alv payloads.
+tasks.register("verifyReleaseSecurity") {
+    group = "verification"
+    description = "Verify sealed Python payloads in the release APK before signing."
+    doLast {
+        val apkDir = layout.buildDirectory.dir("outputs/apk/release").get().asFile
+        val apk = apkDir.walkTopDown()
+            .filter { it.isFile && it.extension.equals("apk", ignoreCase = true) }
+            .maxByOrNull { it.lastModified() }
+            ?: throw GradleException("VANTA gate: no release APK found under ${apkDir.absolutePath}")
+
+        val verifier = rootProject.file("scripts/verify_release_security.py")
+        if (!verifier.isFile) {
+            throw GradleException("VANTA gate: missing ${verifier.path}")
+        }
+        exec {
+            commandLine("python3", verifier.absolutePath, apk.absolutePath)
+        }
+    }
+}
+
+tasks.matching { it.name == "packageRelease" }.configureEach {
+    finalizedBy("verifyReleaseSecurity")
+}
