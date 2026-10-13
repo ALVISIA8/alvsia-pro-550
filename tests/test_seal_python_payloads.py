@@ -1,9 +1,13 @@
 import hashlib
+import subprocess
+import sys
+import tempfile
 import unittest
+from pathlib import Path
 
 from Crypto.Cipher import AES
 
-from scripts.seal_python_payloads import MAGIC, seal
+from scripts.seal_python_payloads import MAGIC, MODULES, seal
 
 
 class SealPayloadTests(unittest.TestCase):
@@ -38,6 +42,33 @@ class SealPayloadTests(unittest.TestCase):
     def test_random_nonce_changes_payload(self):
         args = (b"source", bytes(32), bytes([1]) * 32, "build-1")
         self.assertNotEqual(seal(*args), seal(*args))
+
+    def test_staging_seals_modules_and_removes_plaintext(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "source"
+            output = root / "generated"
+            source.mkdir()
+            (source / "alvsia_bridge.py").write_text("def bridge_run_sub(*args): pass")
+            (source / "sealed").mkdir()
+            (source / "sealed" / "__init__.py").write_text('"""payload resources"""')
+            (source / "lua_engine").mkdir()
+            (source / "lua_engine" / "__init__.py").write_text('"""lua package"""')
+            for relative in MODULES.values():
+                path = source / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("VALUE = 'test payload'\n")
+            script = Path(__file__).resolve().parents[1] / "scripts" / "seal_python_payloads.py"
+            subprocess.run([
+                sys.executable, str(script), "--source", str(source),
+                "--output", str(output), "--seed-hex", self.seed.hex(),
+                "--cert-sha256", self.cert.hex(), "--build-id", self.build_id,
+            ], check=True, capture_output=True, text=True)
+            payloads = list((output / "sealed").glob("*.alv"))
+            self.assertEqual(len(payloads), len(MODULES))
+            self.assertTrue((output / "alvsia_bridge.py").is_file())
+            for relative in MODULES.values():
+                self.assertFalse((output / relative).exists(), relative)
 
 
 if __name__ == "__main__":
