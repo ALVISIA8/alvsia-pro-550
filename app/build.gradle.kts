@@ -132,6 +132,35 @@ dependencies {
 }
 
 
+// Generate authenticated payloads and stage only the bootstrap plus .alv resources.
+// The same seed is passed to CMake/nativeSealSeed; it is an obfuscation input, not
+// a server-side secret. CI must supply a fresh seed for each release build.
+val generatedSealedPython = layout.buildDirectory.dir("generated/sealedPython/main")
+tasks.register("prepareSealedPython") {
+    group = "security"
+    description = "Seal protected Python modules before Chaquopy packages app.imy."
+    inputs.dir(file("src/main/python"))
+    outputs.dir(generatedSealedPython)
+    doLast {
+        val generator = rootProject.file("scripts/seal_python_payloads.py")
+        if (!generator.isFile) throw GradleException("Missing sealed payload generator: ${generator.path}")
+        exec {
+            commandLine(
+                "python3", generator.absolutePath,
+                "--source", file("src/main/python").absolutePath,
+                "--output", generatedSealedPython.get().asFile.absolutePath,
+                "--cert-sha256", "99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c",
+                "--build-id", "ALVISIA-20261010-MAIN-SEAL1"
+            )
+        }
+    }
+}
+tasks.matching { it.name == "preBuild" }.configureEach {
+    dependsOn("prepareSealedPython")
+}
+
+
+
 // VANTA release gate: fail the release packaging task if sealed payloads are absent.
 // This deliberately blocks release until the runtime actually emits .alv payloads.
 tasks.register("verifyReleaseSecurity") {
