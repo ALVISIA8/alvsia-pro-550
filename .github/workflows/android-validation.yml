@@ -221,7 +221,7 @@ jobs:
             -o "$GITHUB_WORKSPACE/candidates/ALVISIA_XOPPROTECTOR_CANDIDATE_UNSIGNED.apk" \
             --shell-dir "$GITHUB_WORKSPACE/xop-src/executable/shell-files" \
             --profile balanced \
-            --protect-so-exclude librasp_guard.so
+            --protect-so-exclude librasp_guard.so,libchaquopy_java.so,libpython3.8.so
           # Fail closed if Xop ignores the exclusion or disables SO protection.
           python3 - <<'PY'
           import glob, json, os, sys
