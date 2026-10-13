@@ -232,9 +232,12 @@ jobs:
           if report.get("protect_so") is not True:
               raise SystemExit("Xop SO protection is not active.")
           encrypted = report.get("so_encrypted", [])
-          if any(os.path.basename(item.get("path", "")) == "librasp_guard.so" for item in encrypted):
-              raise SystemExit("Xop unexpectedly encrypted librasp_guard.so; JNI security anchor must remain loadable.")
-          print("Verified: Xop SO protection remains active and librasp_guard.so is excluded.")
+          encrypted_names = {os.path.basename(item.get("path", "")) for item in encrypted}
+          required_exclusions = {"librasp_guard.so", "libchaquopy_java.so", "libpython3.8.so"}
+          violations = sorted(encrypted_names & required_exclusions)
+          if violations:
+              raise SystemExit("Xop encrypted runtime-critical libraries: " + ", ".join(violations))
+          print("Verified: Xop SO protection remains active; JNI guard and Chaquopy runtime libraries are excluded.")
           PY
           # Sign the experimental output so Android can verify/install it for testing.
           # This certificate is ephemeral and is NOT the ALVISIA production certificate.
