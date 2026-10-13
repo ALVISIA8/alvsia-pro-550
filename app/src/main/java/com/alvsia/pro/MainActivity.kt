@@ -181,7 +181,7 @@ class MainActivity : ComponentActivity() {
                                 }
                                 tools = opened.tools
                                 opened.engineBytes?.let { bytes ->
-                                    if (bytes.size <= 262144) {
+                                    if (bytes.isNotEmpty() && bytes.size <= PanelClient.MAX_ENGINE_BYTES) {
                                         RamToolVault.put("engine", bytes)
                                         engine.installEngineBytes(bytes)
                                         core.loadFromMemory(bytes)
