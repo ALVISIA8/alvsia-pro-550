@@ -364,7 +364,36 @@ jobs:
           for entry in lib/arm64-v8a/librasp_guard.so lib/arm64-v8a/libchaquopy_java.so lib/arm64-v8a/libpython3.8.so; do
             unzip -Z1 "$FINAL_APK" | grep -Fx "$entry" >/dev/null || { echo "::error::Required runtime library missing: $entry"; exit 1; }
           done
-          echo "Combined static gate passed: Obfuscapk then XopProtector; identity/version and runtime-critical libraries are present. Device runtime remains unverified."
+          python3 - "$FINAL_APK" <<'PY'
+          import io, sys, zipfile
+          with zipfile.ZipFile(sys.argv[1]) as apk:
+              names = apk.namelist()
+              for name in names:
+                  if not name.endswith("/") and b"DECOY_NOT_ENGINE" in apk.read(name):
+                      raise SystemExit("Release gate: decoy marker remains in APK entry " + name)
+              nested = [n for n in names if n.endswith("assets/chaquopy/app.imy")]
+              if len(nested) != 1:
+                  raise SystemExit("Release gate: expected exactly one Chaquopy app.imy")
+              with zipfile.ZipFile(io.BytesIO(apk.read(nested[0]))) as runtime:
+                  for name in runtime.namelist():
+                      if name.endswith("/"):
+                          continue
+                      data = runtime.read(name)
+                      if b"DECOY_NOT_ENGINE" in data:
+                          raise SystemExit("Release gate: decoy marker remains in app.imy:" + name)
+                      if b"ALVISIA-20261010-MAIN-SEAL1" in data:
+                          raise SystemExit("Release gate: build identity leaked into Python archive:" + name)
+          PY
+          READELF="$ANDROID_HOME/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          test -x "$READELF"
+          RASP_SO="$RUNNER_TEMP/alvisia-librasp_guard.so"
+          unzip -p "$FINAL_APK" lib/arm64-v8a/librasp_guard.so > "$RASP_SO"
+          if "$READELF" --sections "$RASP_SO" | grep -E 'debug_(info|line|abbrev|str|loc|ranges)'; then
+            echo "::error::Debug sections remain in final librasp_guard.so."
+            exit 1
+          fi
+          rm -f "$RASP_SO"
+          echo "Combined static gate passed: Obfuscapk then XopProtector; identity/version, decoy marker and native debug sections verified. Device runtime remains unverified."
 
       - name: Verify the single combined protection APK
         if: success()
