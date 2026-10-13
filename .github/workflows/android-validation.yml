@@ -217,7 +217,10 @@ jobs:
           java -jar "$PACKER" "$GITHUB_WORKSPACE/xop-work/xop-signed.apk" \
             -o "$GITHUB_WORKSPACE/candidates/ALVISIA_XOPPROTECTOR_CANDIDATE_UNSIGNED.apk" \
             --shell-dir "$GITHUB_WORKSPACE/xop-src/executable/shell-files" \
-            --profile balanced --protect-so
+            # Keep librasp_guard.so unwrapped: NativeGuard loads this library
+            # directly via System.loadLibrary and depends on stable JNI exports.
+            # Native SO packing remains disabled until device-level JNI regression passes.
+            --profile balanced
           # Sign the experimental output so Android can verify/install it for testing.
           # This certificate is ephemeral and is NOT the ALVISIA production certificate.
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
