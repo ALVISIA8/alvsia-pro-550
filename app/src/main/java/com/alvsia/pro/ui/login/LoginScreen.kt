@@ -124,7 +124,7 @@ fun LoginScreen(
                 }
             }
             Spacer(Modifier.height(16.dp))
-            Text("OTP will be sent to owner Telegram", color = AlvisiaSilver.copy(alpha = 0.45f), fontSize = 11.sp)
+            Text("License key verified by panel", color = AlvisiaSilver.copy(alpha = 0.45f), fontSize = 11.sp)
         }
     }
 }
