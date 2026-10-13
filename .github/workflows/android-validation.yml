@@ -2,7 +2,7 @@ name: ALVISIA PRO Android Release Build
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'security/vanta-audit-50-layer-20261013']
   pull_request:
     branches: [main]
   workflow_dispatch:
