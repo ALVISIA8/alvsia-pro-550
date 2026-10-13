@@ -6,11 +6,6 @@ plugins {
 }
 
 android {
-    // Chaquopy must package the staged tree, not the plaintext source tree.
-    sourceSets.getByName("main").python.setSrcDirs(
-        listOf(layout.buildDirectory.dir("generated/sealedPython/main").get().asFile)
-    )
-
     namespace = "com.alvsia.pro"
     compileSdk = 35
     ndkVersion = "27.0.12077973"
@@ -118,6 +113,11 @@ chaquopy {
             install("zstandard")
         }
     }
+    sourceSets {
+        getByName("main") {
+            setSrcDirs(listOf(layout.buildDirectory.dir("generated/sealedPython/main").get().asFile))
+        }
+    }
 }
 
 dependencies {
@@ -145,9 +145,16 @@ tasks.register("prepareSealedPython") {
     group = "security"
     description = "Seal protected Python modules before Chaquopy packages app.imy."
     inputs.dir(file("src/main/python"))
+    val generator = rootProject.file("scripts/seal_python_payloads.py")
+    inputs.file(generator)
+    val seedFingerprint = java.security.MessageDigest.getInstance("SHA-256")
+        .digest(System.getenv("ALVSIA_SEAL_SEED_HEX").orEmpty().toByteArray())
+        .joinToString("") { "%02x".format(it) }
+    inputs.property("sealSeedFingerprint", seedFingerprint)
+    inputs.property("sealCertSha256", "99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c")
+    inputs.property("sealBuildId", "ALVISIA-20261010-MAIN-SEAL1")
     outputs.dir(generatedSealedPython)
     doLast {
-        val generator = rootProject.file("scripts/seal_python_payloads.py")
         if (!generator.isFile) throw GradleException("Missing sealed payload generator: ${generator.path}")
         exec {
             commandLine(
