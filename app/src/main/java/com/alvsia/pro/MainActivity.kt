@@ -36,7 +36,6 @@ import com.alvsia.pro.ui.home.HomeScreen
 import com.alvsia.pro.ui.info.InfoScreen
 import com.alvsia.pro.ui.loading.LoadingScreen
 import com.alvsia.pro.ui.login.LoginScreen
-import com.alvsia.pro.ui.otp.OtpScreen
 import com.alvsia.pro.ui.splash.SplashScreen
 import com.alvsia.pro.ui.theme.AlvisiaTheme
 import com.alvsia.pro.ui.tool.SubMenuScreen
@@ -139,153 +138,129 @@ class MainActivity : ComponentActivity() {
                                 if (res.ok) {
                                     product = res.product.ifBlank { "PREMIUM" }
                                     expiry = res.expiry
-                                    screen = "otp"
+                                    screen = "secure_load"
                                 } else {
                                     error = res.message
                                 }
                             }
                         }
                     )
-                    "otp" -> OtpScreen(
-                        info = info,
-                        loading = loading,
-                        error = error,
-                        onRequest = {
+                    "otp" -> Ot                    "secure_load" -> {
+                        LaunchedEffect(license) {
                             loading = true
                             error = null
-                            lifecycleScope.launch {
-                                val res = withContext(Dispatchers.IO) {
-                                    panel.requestOtp(license, hwid)
-                                }
+                            val safeAfterLogin = try {
+                                Guard.checkAndReport(
+                                    this@MainActivity,
+                                    license,
+                                    hardEnforcement = true,
+                                )
+                            } catch (_: Exception) { false }
+                            if (!safeAfterLogin) {
                                 loading = false
-                                info = res.message
-                                if (!res.ok) error = res.message
+                                SessionGate.lock(this@MainActivity)
+                                error = "Security check blocked this session. Close debugging or hooking tools and retry."
+                                screen = "login"
+                                return@LaunchedEffect
                             }
-                        },
-                        onVerify = { otp ->
-                            loading = true
-                            error = null
-                            lifecycleScope.launch {
-                                val res = withContext(Dispatchers.IO) {
-                                    panel.verifyOtp(otp, license, hwid)
-                                }
-                                if (!res.ok) {
-                                    loading = false
-                                    error = res.message
-                                    return@launch
-                                }
 
-                                val safeAfterOtp = try {
-                                    Guard.checkAndReport(
-                                        this@MainActivity,
-                                        license,
-                                        hardEnforcement = true,
-                                    )
-                                } catch (_: Exception) { false }
-                                if (!safeAfterOtp) {
-                                    loading = false
-                                    SessionGate.lock(this@MainActivity)
-                                    error = "Security check blocked this session. Close debugging or hooking tools and retry."
-                                    screen = "login"
-                                    return@launch
-                                }
+                            loadMsg = "LOADING FOR NOOB | secure session"
+                            loadProgress = 0.1f
+                            try { Guard.checkAndReport(this@MainActivity, license) } catch (_: Exception) {}
 
-                                screen = "loading"
-                                loadMsg = "LOADING FOR NOOB | secure session"
-                                loadProgress = 0.1f
-                                try { Guard.checkAndReport(this@MainActivity, license) } catch (_: Exception) {}
-
-                                val fetch = withContext(Dispatchers.IO) {
-                                    panel.fetchCore(license, hwid, res.toolTicket)
+                            // License + panel-issued session token are the only login credentials.
+                            // The panel must authorize core fetch directly from this valid session.
+                            val fetch = withContext(Dispatchers.IO) {
+                                panel.fetchCore(license, hwid)
+                            }
+                            var engineFromServer = false
+                            val data = fetch.data
+                            if (fetch.ok && data != null) {
+                                val opened = withContext(Dispatchers.Default) {
+                                    CoreBundle.open(data)
                                 }
-                                var engineFromServer = false
-                                val data = fetch.data
-                                if (fetch.ok && data != null) {
-                                    val opened = withContext(Dispatchers.Default) {
-                                        CoreBundle.open(data)
-                                    }
-                                    tools = opened.tools
-                                    opened.engineBytes?.let { bytes ->
-                                        if (bytes.size <= 262144) {
-                                            RamToolVault.put("engine", bytes)
-                                            engine.installEngineBytes(bytes)
-                                            core.loadFromMemory(bytes)
-                                            engineFromServer = true
-                                        } else {
-                                            ThreatReport.emit(
-                                                this@MainActivity,
-                                                "ENGINE_CAP",
-                                                "skip_${bytes.size}",
-                                                license
-                                            )
-                                        }
+                                tools = opened.tools
+                                opened.engineBytes?.let { bytes ->
+                                    if (bytes.size <= 262144) {
+                                        RamToolVault.put("engine", bytes)
+                                        engine.installEngineBytes(bytes)
+                                        core.loadFromMemory(bytes)
+                                        engineFromServer = true
+                                    } else {
+                                        ThreatReport.emit(
+                                            this@MainActivity,
+                                            "ENGINE_CAP",
+                                            "skip_${bytes.size}",
+                                            license
+                                        )
                                     }
                                 }
-                                if (!engineFromServer) {
-                                    loading = false
-                                    SessionGate.lock(this@MainActivity)
-                                    engine.wipeEngine()
-                                    core.wipe()
-                                    error = "Protected engine could not be fetched from the panel. Please retry login."
-                                    screen = "login"
-                                    return@launch
-                                }
-
-                                val tamper = Tamper.evaluate(this@MainActivity)
-                                if (!tamper.ok && Tamper.expectedCertSha256.isNotEmpty()) {
-                                    ThreatReport.emit(
-                                        this@MainActivity,
-                                        "SIG_BLOCK",
-                                        tamper.reasons.joinToString("|"),
-                                        license
-                                    )
-                                    loading = false
-                                    SessionGate.lock()
-                                    error = "Integrity check failed"
-                                    screen = "login"
-                                    return@launch
-                                }
-
-                                val _tok = panel.sessionToken.trim()
-                                if (!_tok.matches(Regex("^[0-9A-Fa-f]{64}$"))) {
-                                    loading = false
-                                    SessionGate.lock()
-                                    error = "OTP OK but invalid session token from server"
-                                    screen = "login"
-                                    return@launch
-                                }
-                                val sessionUnlocked = SessionGate.unlock(this@MainActivity, _tok, license)
-                                if (!sessionUnlocked) {
-                                    loading = false
-                                    SessionGate.lock(this@MainActivity)
-                                    error = "Secure session could not be stored. Please login again."
-                                    screen = "login"
-                                    return@launch
-                                }
-                                try { RaspEngine.start(this@MainActivity, license) } catch (_: Exception) {}
-                                info = "SYSTEM ONLINE"
-                                ThreatReport.emit(this@MainActivity, "SESSION_OK", "otp unlock", license)
-                                loading = false
-                                loadMsg = "Opening secure channel..."
-                                loadProgress = 0.15f
-                                delay(700)
-                                loadMsg = "LOADING FOR NOOB | sync workspace"
-                                loadProgress = 0.4f
-                                delay(900)
-                                loadMsg = "Preparing modules..."
-                                loadProgress = 0.7f
-                                delay(900)
-                                loadMsg = "Almost ready..."
-                                loadProgress = 0.92f
-                                delay(600)
-                                try { PulseAudio.start(this@MainActivity, fadeMs = 2000) } catch (_: Exception) {}
-                                loadProgress = 1f
-                                delay(400)
-                                screen = "home"
                             }
+                            if (!engineFromServer) {
+                                loading = false
+                                SessionGate.lock(this@MainActivity)
+                                engine.wipeEngine()
+                                core.wipe()
+                                error = "Protected engine could not be fetched from the panel. Confirm the panel fetch endpoint accepts a valid session token."
+                                screen = "login"
+                                return@LaunchedEffect
+                            }
+
+                            val tamper = Tamper.evaluate(this@MainActivity)
+                            if (!tamper.ok && Tamper.expectedCertSha256.isNotEmpty()) {
+                                ThreatReport.emit(
+                                    this@MainActivity,
+                                    "SIG_BLOCK",
+                                    tamper.reasons.joinToString("|"),
+                                    license
+                                )
+                                loading = false
+                                SessionGate.lock(this@MainActivity)
+                                error = "Integrity check failed"
+                                screen = "login"
+                                return@LaunchedEffect
+                            }
+
+                            val token = panel.sessionToken.trim()
+                            if (!token.matches(Regex("^[0-9A-Fa-f]{64}$"))) {
+                                loading = false
+                                SessionGate.lock(this@MainActivity)
+                                error = "Invalid session token from panel"
+                                screen = "login"
+                                return@LaunchedEffect
+                            }
+                            val sessionUnlocked = SessionGate.unlock(this@MainActivity, token, license)
+                            if (!sessionUnlocked) {
+                                loading = false
+                                SessionGate.lock(this@MainActivity)
+                                error = "Secure session could not be stored. Please login again."
+                                screen = "login"
+                                return@LaunchedEffect
+                            }
+                            try { RaspEngine.start(this@MainActivity, license) } catch (_: Exception) {}
+                            info = "SYSTEM ONLINE"
+                            ThreatReport.emit(this@MainActivity, "SESSION_OK", "license-only unlock", license)
+                            loading = false
+                            loadMsg = "Opening secure channel..."
+                            loadProgress = 0.15f
+                            delay(700)
+                            loadMsg = "LOADING FOR NOOB | sync workspace"
+                            loadProgress = 0.4f
+                            delay(900)
+                            loadMsg = "Preparing modules..."
+                            loadProgress = 0.7f
+                            delay(900)
+                            loadMsg = "Almost ready..."
+                            loadProgress = 0.92f
+                            delay(600)
+                            try { PulseAudio.start(this@MainActivity, fadeMs = 2000) } catch (_: Exception) {}
+                            loadProgress = 1f
+                            delay(400)
+                            screen = "home"
                         }
-                    )
-                    "loading" -> LoadingScreen(subtitle = loadMsg, progress = loadProgress)
+                        LoadingScreen(subtitle = loadMsg, progress = loadProgress)
+                    }
+> LoadingScreen(subtitle = loadMsg, progress = loadProgress)
                     "home" -> HomeScreen(
                         product = product,
                         expiry = expiry,
