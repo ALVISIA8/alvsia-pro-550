@@ -44,7 +44,7 @@ jobs:
           test -f ./gradlew
           test -f app/build.gradle.kts
           chmod +x ./gradlew
-          python -m compileall -q app/src/main/python
+          python -m pip install --disable-pip-version-check pycryptodome\n          python -m unittest discover -s tests -v\n          python -m compileall -q app/src/main/python scripts
           java -version
           ./gradlew --version
 
