@@ -146,7 +146,6 @@ jobs:
       - name: Run XopProtector on a separate isolated copy
         id: xopprotector
         if: always()
-        continue-on-error: true
         run: |
           set -euo pipefail
           git clone https://github.com/xopJack/XopProtector.git xop-src
@@ -220,15 +219,16 @@ jobs:
           java -jar "$PACKER" "$GITHUB_WORKSPACE/xop-work/xop-signed.apk" \
             -o "$GITHUB_WORKSPACE/candidates/ALVISIA_XOPPROTECTOR_CANDIDATE_UNSIGNED.apk" \
             --shell-dir "$GITHUB_WORKSPACE/xop-src/executable/shell-files" \
+            --protect-so \
             --profile balanced \
             --protect-so-exclude librasp_guard.so,libchaquopy_java.so,libpython3.8.so
           # Fail closed if Xop ignores the exclusion or disables SO protection.
           python3 - <<'PY'
           import glob, json, os, sys
-          reports = glob.glob("candidates/*size_report.json")
-          if not reports:
+          report_path = "candidates/ALVISIA_XOPPROTECTOR_CANDIDATE_UNSIGNED-size_report.json"
+          if not os.path.isfile(report_path):
               raise SystemExit("Xop size report missing; cannot verify native protection policy.")
-          report = json.load(open(reports[0], encoding="utf-8"))
+          report = json.load(open(report_path, encoding="utf-8"))
           if report.get("protect_so") is not True:
               raise SystemExit("Xop SO protection is not active.")
           encrypted = report.get("so_encrypted", [])
