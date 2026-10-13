@@ -6,6 +6,11 @@ plugins {
 }
 
 android {
+    // Chaquopy must package the staged tree, not the plaintext source tree.
+    sourceSets.getByName("main").python.setSrcDirs(
+        listOf(layout.buildDirectory.dir("generated/sealedPython/main").get().asFile)
+    )
+
     namespace = "com.alvsia.pro"
     compileSdk = 35
     ndkVersion = "27.0.12077973"
