@@ -187,7 +187,16 @@ jobs:
           PY
           cd xop-src
           chmod +x ./gradlew
-          ./gradlew -Punimp.sdk.libs= :packer:jar exportShellFiles --no-daemon
+          # Upstream may include a machine-local local.properties that overrides ANDROID_HOME.
+          # Pin the SDK to the runner's installed Android SDK and verify d8 before Gradle runs.
+          test -n "${ANDROID_HOME:-}"
+          printf 'sdk.dir=%s\\n' "$ANDROID_HOME" > local.properties
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "SDK build-tools directories:"
+          find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d -print
+          test -x "$ANDROID_HOME/build-tools/35.0.0/d8"
+          ./gradlew -Punimp.sdk.libs= :packer:jar exportShellFiles --no-daemon --stacktrace
           PACKER="$(find packer/build/libs -maxdepth 1 -type f -name 'protector-packer-*.jar' | head -n 1)"
           test -n "$PACKER"
           java -jar "$PACKER" "$GITHUB_WORKSPACE/xop-work/base.apk" \
