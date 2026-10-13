@@ -282,11 +282,14 @@ Java_com_alvsia_pro_sec_NativeGuard_nativeDeriveSealKey(JNIEnv* env, jobject) {
     memcpy(material + sizeof(seed) + sizeof(cert), buildId, buildLen);
 
     jclass mdClass = env->FindClass("java/security/MessageDigest");
+    jmethodID getInstance = nullptr;
+    jmethodID digestMethod = nullptr;
+    jmethodID updateMethod = nullptr;
     if (mdClass == nullptr) goto cleanup;
-    jmethodID getInstance = env->GetStaticMethodID(
+    getInstance = env->GetStaticMethodID(
         mdClass, "getInstance", "(Ljava/lang/String;)Ljava/security/MessageDigest;");
-    jmethodID digestMethod = env->GetMethodID(mdClass, "digest", "()[B");
-    jmethodID updateMethod = env->GetMethodID(mdClass, "update", "([B)V");
+    digestMethod = env->GetMethodID(mdClass, "digest", "()[B");
+    updateMethod = env->GetMethodID(mdClass, "update", "([B)V");
     if (getInstance == nullptr || digestMethod == nullptr || updateMethod == nullptr) goto cleanup;
     {
         jstring algorithm = env->NewStringUTF("SHA-256");
