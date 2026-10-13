@@ -1,3 +1,5 @@
+import java.security.MessageDigest
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -148,7 +150,7 @@ tasks.register("prepareSealedPython") {
     inputs.dir(file("src/main/python"))
     val generator = rootProject.file("scripts/seal_python_payloads.py")
     inputs.file(generator)
-    val seedFingerprint = java.security.MessageDigest.getInstance("SHA-256")
+    val seedFingerprint = MessageDigest.getInstance("SHA-256")
         .digest(System.getenv("ALVSIA_SEAL_SEED_HEX").orEmpty().toByteArray())
         .joinToString("") { "%02x".format(it) }
     inputs.property("sealSeedFingerprint", seedFingerprint)
