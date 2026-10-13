@@ -69,6 +69,21 @@ jobs:
           mkdir -p release-candidate
           cp "$APK" release-candidate/ALVISIA_PRO_5.5.0_RELEASE_CANDIDATE_UNSIGNED.apk
           sha256sum release-candidate/*.apk | tee release-candidate/SHA256SUMS.txt
+          {
+            echo "project=ALVISIA PRO"
+            echo "package=com.alvsia.pro"
+            echo "versionName=5.5.0-upgrade"
+            echo "versionCode=96"
+            echo "artifactType=UNSIGNED_RELEASE_CANDIDATE"
+            echo "sourceCommit=$GITHUB_SHA"
+            echo "sourceRef=$GITHUB_REF"
+            echo "workflowRunId=$GITHUB_RUN_ID"
+            echo "workflowRunAttempt=$GITHUB_RUN_ATTEMPT"
+            echo "javaVersion=$(java -version 2>&1 | head -n 1)"
+            echo "gradleVersion=$(./gradlew --version | awk '/^Gradle / {print $2; exit}')"
+            echo "androidBuildTools=35.0.0"
+            echo "sha256=$(sha256sum release-candidate/ALVISIA_PRO_5.5.0_RELEASE_CANDIDATE_UNSIGNED.apk | awk '{print $1}')"
+          } > release-candidate/BUILD_PROVENANCE.txt
           unzip -Z1 release-candidate/*.apk | grep -Fx 'lib/arm64-v8a/librasp_guard.so'
           BASE_APK="release-candidate/ALVISIA_PRO_5.5.0_RELEASE_CANDIDATE_UNSIGNED.apk"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$BASE_APK" > "$RUNNER_TEMP/alvisia-base-badging.txt"
