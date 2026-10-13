@@ -2,6 +2,8 @@ name: ALVISIA PRO Android Release Build
 
 on:
   push:
+    branches: [main, 'security/vanta-audit-50-layer-20261013']
+  pull_request:
     branches: [main]
   workflow_dispatch:
 
@@ -44,7 +46,9 @@ jobs:
           test -f ./gradlew
           test -f app/build.gradle.kts
           chmod +x ./gradlew
-          python -m compileall -q app/src/main/python
+          python -m pip install --disable-pip-version-check pycryptodome
+          python -m unittest discover -s tests -v
+          python -m compileall -q app/src/main/python scripts
           java -version
           ./gradlew --version
 
@@ -65,7 +69,31 @@ jobs:
           mkdir -p release-candidate
           cp "$APK" release-candidate/ALVISIA_PRO_5.5.0_RELEASE_CANDIDATE_UNSIGNED.apk
           sha256sum release-candidate/*.apk | tee release-candidate/SHA256SUMS.txt
+          {
+            echo "project=ALVISIA PRO"
+            echo "package=com.alvsia.pro"
+            echo "versionName=5.5.0-upgrade"
+            echo "versionCode=96"
+            echo "artifactType=UNSIGNED_RELEASE_CANDIDATE"
+            echo "sourceCommit=$GITHUB_SHA"
+            echo "sourceRef=$GITHUB_REF"
+            echo "workflowRunId=$GITHUB_RUN_ID"
+            echo "workflowRunAttempt=$GITHUB_RUN_ATTEMPT"
+            echo "javaVersion=$(java -version 2>&1 | head -n 1)"
+            echo "gradleVersion=$(./gradlew --version | awk '/^Gradle / {print $2; exit}')"
+            echo "androidBuildTools=35.0.0"
+            echo "sha256=$(sha256sum release-candidate/ALVISIA_PRO_5.5.0_RELEASE_CANDIDATE_UNSIGNED.apk | awk '{print $1}')"
+          } > release-candidate/BUILD_PROVENANCE.txt
           unzip -Z1 release-candidate/*.apk | grep -Fx 'lib/arm64-v8a/librasp_guard.so'
+          BASE_APK="release-candidate/ALVISIA_PRO_5.5.0_RELEASE_CANDIDATE_UNSIGNED.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$BASE_APK" > "$RUNNER_TEMP/alvisia-base-badging.txt"
+          grep -F "name='com.alvsia.pro'" "$RUNNER_TEMP/alvisia-base-badging.txt"
+          grep -F "versionCode='96'" "$RUNNER_TEMP/alvisia-base-badging.txt"
+          grep -F "versionName='5.5.0-upgrade'" "$RUNNER_TEMP/alvisia-base-badging.txt"
+          for entry in lib/arm64-v8a/librasp_guard.so lib/arm64-v8a/libchaquopy_java.so lib/arm64-v8a/libpython3.8.so; do
+            unzip -Z1 "$BASE_APK" | grep -Fx "$entry" >/dev/null || { echo "::error::Required runtime library missing from base APK: $entry"; exit 1; }
+          done
+          echo "Base release gate passed: package/version and runtime-critical libraries verified."
 
       - name: Upload unsigned release candidate
         if: success()
@@ -85,4 +113,228 @@ jobs:
             **/build/reports/**
             **/build/outputs/**
           if-no-files-found: ignore
+          retention-days: 7
+
+  # Experimental post-build protectors run on separate copies of the unsigned APK.
+  # Their output is diagnostic only and is never promoted to the release artifact.
+  protection-candidates:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Download unsigned release candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: ALVISIA-PRO-5.5.0-RELEASE-CANDIDATE-UNSIGNED
+          path: input
+
+      - name: Prepare isolated workspaces
+        run: |
+          set -euo pipefail
+          mkdir -p obfuscapk-work/apks obfuscapk-work/output xop-work candidates
+          cp input/ALVISIA_PRO_5.5.0_RELEASE_CANDIDATE_UNSIGNED.apk obfuscapk-work/apks/base.apk
+          cp input/ALVISIA_PRO_5.5.0_RELEASE_CANDIDATE_UNSIGNED.apk xop-work/base.apk
+
+      - name: Run Obfuscapk on an isolated copy
+        id: obfuscapk
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          git clone https://github.com/Mobile-IoT-Security-Lab/Obfuscapk.git obfuscapk-src
+          git -C obfuscapk-src checkout b1ed6d153566c5b070b02e98cfd04d081504a4bd
+          docker build -t alvisia-obfuscapk obfuscapk-src
+          docker run --rm \
+            -v "$PWD/obfuscapk-work/apks:/workdir" \
+            -v "$PWD/obfuscapk-work/output:/output" \
+            alvisia-obfuscapk \
+            -o ConstStringEncryption -o Rebuild -o NewAlignment -o NewSignature \
+            --cleanup --output-dir /output /workdir/base.apk
+          find obfuscapk-work/output -type f -name '*.apk' -size +0c -exec cp {} candidates/ALVISIA_OBFUSCAPK_CANDIDATE.apk \;
+
+      - name: Set up JDK 17 for XopProtector
+        if: always()
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          # This job downloads artifacts but does not check out the Android project.
+          # Gradle dependency caching requires a wrapper/build file and fails without one.
+          # XopProtector has its own wrapper in xop-src and is built in its own step.
+
+      - name: Set up Android SDK for XopProtector
+        if: always()
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0 ndk;27.0.12077973 cmake;3.22.1'
+
+      - name: Validate Obfuscapk candidate identity and runtime libraries
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="$GITHUB_WORKSPACE/candidates/ALVISIA_OBFUSCAPK_CANDIDATE.apk"
+          if [[ ! -s "$APK" ]]; then
+            echo "::warning::Obfuscapk produced no candidate; nothing to validate."
+            exit 0
+          fi
+          BADGING="$RUNNER_TEMP/alvisia-obfuscapk-badging.txt"
+          if ! "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > "$BADGING" ||
+             ! grep -F "name='com.alvsia.pro'" "$BADGING" ||
+             ! grep -F "versionCode='96'" "$BADGING" ||
+             ! grep -F "versionName='5.5.0-upgrade'" "$BADGING" ||
+             ! unzip -Z1 "$APK" | grep -Fx 'lib/arm64-v8a/librasp_guard.so' >/dev/null ||
+             ! unzip -Z1 "$APK" | grep -Fx 'lib/arm64-v8a/libchaquopy_java.so' >/dev/null ||
+             ! unzip -Z1 "$APK" | grep -Fx 'lib/arm64-v8a/libpython3.8.so' >/dev/null ||
+             ! "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --min-sdk-version 26 "$APK"; then
+            echo "::warning::Obfuscapk candidate failed static identity/library/signature checks; removing it from downloadable candidates."
+            rm -f "$APK"
+            exit 0
+          fi
+          echo "Obfuscapk candidate passed static identity, runtime-library and APK signature checks. Device compatibility remains unverified."
+
+      - name: Run XopProtector on a separate isolated copy
+        id: xopprotector
+        if: always()
+        run: |
+          set -euo pipefail
+          git clone https://github.com/xopJack/XopProtector.git xop-src
+          git -C xop-src checkout 5990c3139542cca51271dadceab62e8731bbbf95
+          # Linux CI must ignore any local UniMP SDK path inherited from Windows.
+          # The upstream settings file supports skipping :unimp-host when SDK AARs
+          # are unavailable; this build only needs the packer/native modules.
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p = Path("xop-src/settings.gradle.kts")
+          source = p.read_text()
+          # Remove Windows drive paths robustly, regardless of slash direction or escaping.
+          lines = source.splitlines()
+          kept_settings = []
+          removed = 0
+          for line in lines:
+              has_drive_path = re.search(r'(?i)[A-Z]:[\\\\/]', line) is not None
+              mentions_sdk_libs = 'SDK' in line and 'libs' in line
+              if has_drive_path and mentions_sdk_libs and ('file(' in line or 'libs' in line):
+                  removed += 1
+                  continue
+              kept_settings.append(line)
+          if removed:
+              p.write_text(chr(10).join(kept_settings) + chr(10))
+              print(f"Removed {removed} Windows-local SDK path candidate(s).")
+          remaining = p.read_text()
+          if re.search(r'(?i)[A-Z]:[\\\\/].*(?:SDK|\\\\SDK|/SDK).*(?:libs)', remaining):
+              raise SystemExit("A Windows-local SDK path remains in settings.gradle.kts.")
+          # Also override a machine-specific unimp.sdk.libs value from gradle.properties.
+          gp = Path("xop-src/gradle.properties")
+          if gp.exists():
+              lines = gp.read_text().splitlines()
+              kept = [line for line in lines if not re.match(r'\s*unimp\.sdk\.libs\s*=', line)]
+              if kept != lines:
+                  gp.write_text(chr(10).join(kept) + chr(10))
+                  print("Removed machine-specific unimp.sdk.libs Gradle property.")
+          PY
+          cd xop-src
+          chmod +x ./gradlew
+          # Upstream may include a machine-local local.properties that overrides ANDROID_HOME.
+          # Pin the SDK to the runner's installed Android SDK and verify d8 before Gradle runs.
+          test -n "${ANDROID_HOME:-}"
+          rm -f local.properties
+          printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "SDK build-tools directories:"
+          find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d -print
+          test -x "$ANDROID_HOME/build-tools/35.0.0/d8"
+          ./gradlew -Punimp.sdk.libs= :packer:jar exportShellFiles --no-daemon --stacktrace
+          # XopProtector reads the input APK's v2/v3 certificate block. The baseline
+          # release candidate is intentionally unsigned, so sign only this isolated copy
+          # with an ephemeral CI key; never use the production release keystore here.
+          keytool -genkeypair -v -keystore "$RUNNER_TEMP/xop-ci-test.jks" \
+            -storepass xop-ci-only -keypass xop-ci-only -alias xop-ci-test \
+            -keyalg RSA -keysize 2048 -validity 2 \
+            -dname "CN=ALVISIA CI Xop Test, OU=CI, O=ALVISIA PRO, C=ID"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
+            --ks "$RUNNER_TEMP/xop-ci-test.jks" --ks-key-alias xop-ci-test \
+            --ks-pass pass:xop-ci-only --key-pass pass:xop-ci-only \
+            --out "$GITHUB_WORKSPACE/xop-work/xop-signed.apk" \
+            "$GITHUB_WORKSPACE/xop-work/base.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
+            --verbose --min-sdk-version 26 "$GITHUB_WORKSPACE/xop-work/xop-signed.apk"
+          PACKER="$(find packer/build/libs -maxdepth 1 -type f -name 'protector-packer-*.jar' | head -n 1)"
+          test -n "$PACKER"
+          # Keep the app's JNI security anchor intact, but keep Xop SO protection
+          # active for compatible libraries (including Chaquopy/Python). Xop's own
+          # report must confirm librasp_guard.so is excluded from SO encryption.
+          java -jar "$PACKER" "$GITHUB_WORKSPACE/xop-work/xop-signed.apk" \
+            -o "$GITHUB_WORKSPACE/candidates/ALVISIA_XOPPROTECTOR_CANDIDATE_UNSIGNED.apk" \
+            --shell-dir "$GITHUB_WORKSPACE/xop-src/executable/shell-files" \
+            --profile balanced \
+            --protect-so \
+            --protect-so-mode max \
+            --protect-so-exclude librasp_guard.so,libchaquopy_java.so,libpython3.8.so
+          # The report is embedded in the APK, not emitted as a sidecar. Validate
+          # that exact artifact and discard it if native protection is ineffective.
+          python3 - <<'PY'
+          import json, os, zipfile
+          # This step runs while cwd is xop-src; inspect the workspace artifact by absolute path.
+          apk = os.path.join(os.environ["GITHUB_WORKSPACE"], "candidates", "ALVISIA_XOPPROTECTOR_CANDIDATE_UNSIGNED.apk")
+          try:
+              with zipfile.ZipFile(apk) as zf:
+                  report = json.loads(zf.read("assets/protector/size_report.json"))
+              if report.get("protect_so") is not True:
+                  raise RuntimeError("Xop SO protection is not active.")
+              encrypted = report.get("so_encrypted", [])
+              encrypted_names = {os.path.basename(item.get("path", "")) for item in encrypted}
+              required_exclusions = {"librasp_guard.so", "libchaquopy_java.so", "libpython3.8.so"}
+              violations = sorted(encrypted_names & required_exclusions)
+              if violations:
+                  raise RuntimeError("Xop encrypted runtime-critical libraries: " + ", ".join(violations))
+              if not encrypted:
+                  raise RuntimeError("Xop reported zero encrypted SO files; candidate is not eligible for testing.")
+              print("Verified: Xop SO protection is enabled and encrypted compatible SO files; runtime-critical libraries remain excluded.")
+          except Exception:
+              if os.path.exists(apk):
+                  os.remove(apk)
+              raise
+          PY
+          # Sign the experimental output so Android can verify/install it for testing.
+          # This certificate is ephemeral and is NOT the ALVISIA production certificate.
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
+            --ks "$RUNNER_TEMP/xop-ci-test.jks" --ks-key-alias xop-ci-test \
+            --ks-pass pass:xop-ci-only --key-pass pass:xop-ci-only \
+            --out "$GITHUB_WORKSPACE/candidates/ALVISIA_XOPPROTECTOR_CANDIDATE.apk" \
+            "$GITHUB_WORKSPACE/candidates/ALVISIA_XOPPROTECTOR_CANDIDATE_UNSIGNED.apk"
+          rm -f "$GITHUB_WORKSPACE/candidates/ALVISIA_XOPPROTECTOR_CANDIDATE_UNSIGNED.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
+            --verbose --min-sdk-version 26 "$GITHUB_WORKSPACE/candidates/ALVISIA_XOPPROTECTOR_CANDIDATE.apk"
+          # Static release gate: verify identity and runtime-critical libraries after packing.
+          FINAL_APK="$GITHUB_WORKSPACE/candidates/ALVISIA_XOPPROTECTOR_CANDIDATE.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$FINAL_APK" > "$RUNNER_TEMP/alvisia-badging.txt"
+          grep -F "name='com.alvsia.pro'" "$RUNNER_TEMP/alvisia-badging.txt"
+          grep -F "versionCode='96'" "$RUNNER_TEMP/alvisia-badging.txt"
+          grep -F "versionName='5.5.0-upgrade'" "$RUNNER_TEMP/alvisia-badging.txt"
+          for entry in lib/arm64-v8a/librasp_guard.so lib/arm64-v8a/libchaquopy_java.so lib/arm64-v8a/libpython3.8.so; do
+            unzip -Z1 "$FINAL_APK" | grep -Fx "$entry" >/dev/null || { echo "::error::Required runtime library missing: $entry"; exit 1; }
+          done
+          echo "Static candidate gate passed: identity/version and runtime-critical libraries are present."
+
+      - name: Verify and upload protector candidates
+        if: always()
+        run: |
+          set -euo pipefail
+          for apk in candidates/*.apk; do
+            [ -s "$apk" ] || continue
+            echo "===== $(basename "$apk") ====="
+            sha256sum "$apk"
+            unzip -t "$apk"
+          done
+          ls -la candidates
+
+      - name: Upload experimental protection candidates
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ALVISIA-PRO-5.5.0-PROTECTION-CANDIDATES
+          path: candidates/*.apk
+          if-no-files-found: warn
           retention-days: 7

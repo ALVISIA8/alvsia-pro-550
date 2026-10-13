@@ -77,9 +77,28 @@ object IntegrityBomb {
     private fun dexSizeOk(ctx: Context): Boolean {
         return try {
             val apk = File(ctx.applicationInfo.sourceDir)
-            val size = apk.length()
-            size in DEX_MIN..DEX_MAX
-        } catch (_: Exception) { true }
+            if (!apk.isFile || apk.length() <= 0L) return false
+
+            // Check actual DEX payload sizes, not the whole APK container.
+            // Repackers may add assets/native wrappers that increase APK size
+            // without changing the app's DEX payload; comparing apk.length()
+            // against DEX_MAX falsely marks such builds as tampered.
+            java.util.zip.ZipFile(apk).use { zip ->
+                var dexCount = 0
+                var totalDexBytes = 0L
+                val entries = zip.entries()
+                while (entries.hasMoreElements()) {
+                    val entry = entries.nextElement()
+                    if (entry.name.matches(Regex("^classes(\\d*)\\.dex$"))) {
+                        if (entry.size <= 0L) return@use false
+                        totalDexBytes += entry.size
+                        dexCount++
+                        if (totalDexBytes > DEX_MAX) return@use false
+                    }
+                }
+                dexCount > 0 && totalDexBytes in DEX_MIN..DEX_MAX
+            }
+        } catch (_: Exception) { false }
     }
 
     private fun isClone(ctx: Context): Boolean {

@@ -1,3 +1,5 @@
+import java.security.MessageDigest
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -113,6 +115,11 @@ chaquopy {
             install("zstandard")
         }
     }
+    sourceSets {
+        getByName("main") {
+            setSrcDirs(listOf(layout.buildDirectory.dir("generated/sealedPython/main").get().asFile))
+        }
+    }
 }
 
 dependencies {
@@ -127,6 +134,76 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.3")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.3")
+    implementation("com.aheaditec.talsec.security:TalsecSecurity-Community:19.2.3")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+}
+
+
+// Generate authenticated payloads and stage only the bootstrap plus .alv resources.
+// The same seed is passed to CMake/nativeSealSeed; it is an obfuscation input, not
+// a server-side secret. CI must supply a fresh seed for each release build.
+val generatedSealedPython = layout.buildDirectory.dir("generated/sealedPython/main")
+tasks.register("prepareSealedPython") {
+    group = "security"
+    description = "Seal protected Python modules before Chaquopy packages app.imy."
+    inputs.dir(file("src/main/python"))
+    val generator = rootProject.file("scripts/seal_python_payloads.py")
+    inputs.file(generator)
+    val seedFingerprint = MessageDigest.getInstance("SHA-256")
+        .digest(System.getenv("ALVSIA_SEAL_SEED_HEX").orEmpty().toByteArray())
+        .joinToString("") { "%02x".format(it) }
+    inputs.property("sealSeedFingerprint", seedFingerprint)
+    inputs.property("sealCertSha256", "99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c")
+    inputs.property("sealBuildId", "ALVISIA-20261010-MAIN-SEAL1")
+    outputs.dir(generatedSealedPython)
+    doLast {
+        if (!generator.isFile) throw GradleException("Missing sealed payload generator: ${generator.path}")
+        exec {
+            commandLine(
+                "python3", generator.absolutePath,
+                "--source", file("src/main/python").absolutePath,
+                "--output", generatedSealedPython.get().asFile.absolutePath,
+                "--cert-sha256", "99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c",
+                "--build-id", "ALVISIA-20261010-MAIN-SEAL1"
+            )
+        }
+    }
+}
+tasks.matching { it.name == "preBuild" }.configureEach {
+    dependsOn("prepareSealedPython")
+}
+
+// Chaquopy reads generated sealed sources in this task; declare the producer dependency
+// directly so Gradle 8+ validation cannot schedule the consumer before sealing completes.
+tasks.matching { it.name == "mergeReleasePythonSources" }.configureEach {
+    dependsOn("prepareSealedPython")
+}
+
+
+
+// VANTA release gate: fail the release packaging task if sealed payloads are absent.
+// This deliberately blocks release until the runtime actually emits .alv payloads.
+tasks.register("verifyReleaseSecurity") {
+    group = "verification"
+    description = "Verify sealed Python payloads in the release APK before signing."
+    doLast {
+        val apkDir = layout.buildDirectory.dir("outputs/apk/release").get().asFile
+        val apk = apkDir.walkTopDown()
+            .filter { it.isFile && it.extension.equals("apk", ignoreCase = true) }
+            .maxByOrNull { it.lastModified() }
+            ?: throw GradleException("VANTA gate: no release APK found under ${apkDir.absolutePath}")
+
+        val verifier = rootProject.file("scripts/verify_release_security.py")
+        if (!verifier.isFile) {
+            throw GradleException("VANTA gate: missing ${verifier.path}")
+        }
+        exec {
+            commandLine("python3", verifier.absolutePath, apk.absolutePath)
+        }
+    }
+}
+
+tasks.matching { it.name == "packageRelease" }.configureEach {
+    finalizedBy("verifyReleaseSecurity")
 }
