@@ -70,7 +70,10 @@ object ThreatReport {
 
         try {
             val manager = ctx.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
-                ?: return body.put("location_available", false).let { }
+            if (manager == null) {
+                body.put("location_available", false)
+                return
+            }
             val locations = manager.getProviders(true).mapNotNull { provider ->
                 try {
                     @Suppress("MissingPermission")
