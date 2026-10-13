@@ -198,12 +198,36 @@ jobs:
           find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d -print
           test -x "$ANDROID_HOME/build-tools/35.0.0/d8"
           ./gradlew -Punimp.sdk.libs= :packer:jar exportShellFiles --no-daemon --stacktrace
+          # XopProtector reads the input APK's v2/v3 certificate block. The baseline
+          # release candidate is intentionally unsigned, so sign only this isolated copy
+          # with an ephemeral CI key; never use the production release keystore here.
+          keytool -genkeypair -v -keystore "$RUNNER_TEMP/xop-ci-test.jks" \
+            -storepass xop-ci-only -keypass xop-ci-only -alias xop-ci-test \
+            -keyalg RSA -keysize 2048 -validity 2 \
+            -dname "CN=ALVISIA CI Xop Test, OU=CI, O=ALVISIA PRO, C=ID"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
+            --ks "$RUNNER_TEMP/xop-ci-test.jks" --ks-key-alias xop-ci-test \
+            --ks-pass pass:xop-ci-only --key-pass pass:xop-ci-only \
+            --out "$GITHUB_WORKSPACE/xop-work/xop-signed.apk" \
+            "$GITHUB_WORKSPACE/xop-work/base.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
+            --verbose --min-sdk-version 26 "$GITHUB_WORKSPACE/xop-work/xop-signed.apk"
           PACKER="$(find packer/build/libs -maxdepth 1 -type f -name 'protector-packer-*.jar' | head -n 1)"
           test -n "$PACKER"
-          java -jar "$PACKER" "$GITHUB_WORKSPACE/xop-work/base.apk" \
-            -o "$GITHUB_WORKSPACE/candidates/ALVISIA_XOPPROTECTOR_CANDIDATE.apk" \
+          java -jar "$PACKER" "$GITHUB_WORKSPACE/xop-work/xop-signed.apk" \
+            -o "$GITHUB_WORKSPACE/candidates/ALVISIA_XOPPROTECTOR_CANDIDATE_UNSIGNED.apk" \
             --shell-dir "$GITHUB_WORKSPACE/xop-src/executable/shell-files" \
             --profile balanced --protect-so
+          # Sign the experimental output so Android can verify/install it for testing.
+          # This certificate is ephemeral and is NOT the ALVISIA production certificate.
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
+            --ks "$RUNNER_TEMP/xop-ci-test.jks" --ks-key-alias xop-ci-test \
+            --ks-pass pass:xop-ci-only --key-pass pass:xop-ci-only \
+            --out "$GITHUB_WORKSPACE/candidates/ALVISIA_XOPPROTECTOR_CANDIDATE.apk" \
+            "$GITHUB_WORKSPACE/candidates/ALVISIA_XOPPROTECTOR_CANDIDATE_UNSIGNED.apk"
+          rm -f "$GITHUB_WORKSPACE/candidates/ALVISIA_XOPPROTECTOR_CANDIDATE_UNSIGNED.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
+            --verbose --min-sdk-version 26 "$GITHUB_WORKSPACE/candidates/ALVISIA_XOPPROTECTOR_CANDIDATE.apk"
 
       - name: Verify and upload protector candidates
         if: always()
