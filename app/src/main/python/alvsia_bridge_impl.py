@@ -25,7 +25,7 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
     try:
         # Hard gate
         if not _valid_apk_session():
-            return "X AUTH: no valid APK session — complete license + OTP first"
+            return "X AUTH: no valid APK session — sign in with a valid panel license"
         lines.append("ALVSIA PRO 5.5.0 PREMIUM · engine")
         lines.append("m=%s sub=%s" % (module_id, sub_id))
         import alvsia_core as core
