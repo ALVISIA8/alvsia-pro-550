@@ -70,6 +70,7 @@ jobs:
               raise SystemExit("\n".join(failures))
           print("License-only auth source gate passed: no client OTP screen, methods, navigation, or tool_ticket flow.")
           PY
+          python3 scripts/verify_license_only_auth.py
           python -m pip install --disable-pip-version-check pycryptodome
           python -m unittest discover -s tests -v
           python -m compileall -q app/src/main/python scripts
