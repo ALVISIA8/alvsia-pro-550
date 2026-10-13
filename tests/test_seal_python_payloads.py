@@ -43,6 +43,25 @@ class SealPayloadTests(unittest.TestCase):
         args = (b"source", bytes(32), bytes([1]) * 32, "build-1")
         self.assertNotEqual(seal(*args), seal(*args))
 
+    def test_missing_seed_fails_closed(self):
+        import os
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "source"
+            source.mkdir()
+            (source / "example.py").write_text("VALUE = 1\\n")
+            output = root / "generated"
+            script = Path(__file__).resolve().parents[1] / "scripts" / "seal_python_payloads.py"
+            env = os.environ.copy()
+            env.pop("ALVSIA_SEAL_SEED_HEX", None)
+            result = subprocess.run([
+                sys.executable, str(script), "--source", str(source),
+                "--output", str(output), "--cert-sha256", self.cert.hex(),
+                "--build-id", self.build_id,
+            ], env=env, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("refusing an insecure default seed", result.stderr)
+
     def test_staging_seals_modules_and_removes_plaintext(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
