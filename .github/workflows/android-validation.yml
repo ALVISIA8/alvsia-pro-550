@@ -258,6 +258,16 @@ jobs:
           rm -f "$GITHUB_WORKSPACE/candidates/ALVISIA_XOPPROTECTOR_CANDIDATE_UNSIGNED.apk"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
             --verbose --min-sdk-version 26 "$GITHUB_WORKSPACE/candidates/ALVISIA_XOPPROTECTOR_CANDIDATE.apk"
+          # Static release gate: verify identity and runtime-critical libraries after packing.
+          FINAL_APK="$GITHUB_WORKSPACE/candidates/ALVISIA_XOPPROTECTOR_CANDIDATE.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$FINAL_APK" > "$RUNNER_TEMP/alvisia-badging.txt"
+          grep -F "name='com.alvsia.pro'" "$RUNNER_TEMP/alvisia-badging.txt"
+          grep -F "versionCode='96'" "$RUNNER_TEMP/alvisia-badging.txt"
+          grep -F "versionName='5.5.0-upgrade'" "$RUNNER_TEMP/alvisia-badging.txt"
+          for entry in lib/arm64-v8a/librasp_guard.so lib/arm64-v8a/libchaquopy_java.so lib/arm64-v8a/libpython3.8.so; do
+            unzip -Z1 "$FINAL_APK" | grep -Fx "$entry" >/dev/null || { echo "::error::Required runtime library missing: $entry"; exit 1; }
+          done
+          echo "Static candidate gate passed: identity/version and runtime-critical libraries are present."
 
       - name: Verify and upload protector candidates
         if: always()
