@@ -25,7 +25,7 @@ class AlvisiaApp : Application() {
                     override fun onDebuggerDetected() = reportThreat("debugger")
                     override fun onEmulatorDetected() = reportThreat("emulator")
                     override fun onTamperDetected() = reportThreat("tamper")
-                    override fun onUntrustedInstallationDetected() = reportThreat("untrusted-install")
+                    override fun onUntrustedInstallationSourceDetected() = reportThreat("untrusted-install")
                     override fun onHookDetected() = reportThreat("hook")
                     override fun onDeviceBindingDetected() = reportThreat("device-binding")
                     override fun onObfuscationIssuesDetected() = reportThreat("obfuscation")
