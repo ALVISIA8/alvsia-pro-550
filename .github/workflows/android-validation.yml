@@ -151,17 +151,23 @@ jobs:
           set -euo pipefail
           git clone https://github.com/xopJack/XopProtector.git xop-src
           git -C xop-src checkout 5990c3139542cca51271dadceab62e8731bbbf95
-          # The pinned upstream commit contains a Windows-only E:/ SDK path that
-          # throws URISyntaxException on Linux before Gradle can configure projects.
+          # Remove only the optional Windows-local UniMP SDK candidate. XopProtector
+          # explicitly supports skipping :unimp-host when those proprietary SDK AARs
+          # are absent; the packer/native modules do not need that local Windows path.
           python3 - <<'PY'
           from pathlib import Path
+          import re
           p = Path("xop-src/settings.gradle.kts")
           source = p.read_text()
-          old = '    file("E:/Android/SDK-Android@5.14-20260706/SDK/libs"),'
-          new = '    if (System.getProperty("os.name").startsWith("Windows")) file("E:/Android/SDK-Android@5.14-20260706/SDK/libs") else null,'
-          if old not in source:
-              raise SystemExit("Expected pinned XopProtector Windows SDK path was not found; refusing an unverified patch")
-          p.write_text(source.replace(old, new, 1))
+          pattern = r'(?m)^\\s*file\\("E:/Android/SDK-Android@5\\.14-20260706/SDK/libs"\\),?\\s*\\n'
+          patched, count = re.subn(pattern, "", source, count=1)
+          if count:
+              p.write_text(patched)
+              print("Removed optional Windows-only SDK path for Linux CI.")
+          elif 'E:/Android/SDK-Android@5.14-20260706/SDK/libs' not in source:
+              print("Windows-only SDK path already absent; no patch needed.")
+          else:
+              raise SystemExit("Found the Windows SDK path but could not safely isolate its line.")
           PY
           cd xop-src
           chmod +x ./gradlew
