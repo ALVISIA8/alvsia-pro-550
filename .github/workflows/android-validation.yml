@@ -372,7 +372,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: ALVISIA-PRO-5.5.0-COMBINED-PROTECTION-APK
+          name: ${{ secrets.ALVISIA_RELEASE_KEYSTORE_BASE64 != '' && secrets.ALVISIA_RELEASE_KEYSTORE_PASSWORD != '' && secrets.ALVISIA_RELEASE_KEY_ALIAS != '' && secrets.ALVISIA_RELEASE_KEY_PASSWORD != '' && 'ALVISIA-PRO-5.5.0-COMBINED-PRODUCTION-SIGNED' || 'ALVISIA-PRO-5.5.0-COMBINED-TEST-SIGNED-NOT-FOR-RELEASE' }}
           path: candidates/ALVISIA_COMBINED_OBFUSCAPK_XOPPROTECTOR.apk
           if-no-files-found: error
           retention-days: 7
