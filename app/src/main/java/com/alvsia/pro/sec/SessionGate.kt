@@ -268,7 +268,7 @@ object SessionGate {
         return true
     }
 
-    /** 2-arg overload — called by MainActivity after OTP verify */
+    /** 2-arg overload — called after successful panel license authentication. */
     fun unlock(token: String, license: String): Boolean {
         val ctx = _appCtx ?: return false
         return unlock(ctx, token, license)
