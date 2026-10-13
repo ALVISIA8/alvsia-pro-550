@@ -3779,6 +3779,8 @@ from rich import box
 
 console = Console()
 
+MAX_PINNED_DOWNLOAD_BYTES = 64 * 1024 * 1024
+
 _PINNED_GIT_BLOBS = {
     "SKIN_TOOL.zip": (13886893, "cbd3d0e257963b54f34a908b6864040c7f96fbb1"),
     "PUBG.csv": (20930952, "2601457787bd2d793880fb1a8c485d0e76144942"),
@@ -3850,6 +3852,8 @@ def download_skin_tool():
             response.raise_for_status()
             
             total_size = int(response.headers.get('content-length', 0))
+            if total_size > MAX_PINNED_DOWNLOAD_BYTES:
+                raise ValueError("Pinned download exceeds 64 MiB limit")
             task = progress.add_task(
                 f"Downloading",
                 total=total_size,
@@ -3862,6 +3866,9 @@ def download_skin_tool():
                     if chunk:
                         f.write(chunk)
                         downloaded += len(chunk)
+                        if downloaded > MAX_PINNED_DOWNLOAD_BYTES:
+                            zip_path.unlink(missing_ok=True)
+                            raise ValueError("Pinned download exceeded 64 MiB limit")
                         if total_size > 0:
                             file_size_mb = downloaded / (1024 * 1024)
                             progress.update(
@@ -8118,6 +8125,8 @@ def run_lua_tool():
                             response = requests.get(url, stream=True, timeout=30)
                             if response.status_code == 200:
                                 total_size = int(response.headers.get('content-length', 0))
+                                if total_size > MAX_PINNED_DOWNLOAD_BYTES:
+                                    raise ValueError("Pinned download exceeds 64 MiB limit: " + filename)
                                 file_path = BGMI_CSV_folder / filename
                                 downloaded = 0
                                 
@@ -8126,6 +8135,9 @@ def run_lua_tool():
                                         if chunk:
                                             f.write(chunk)
                                             downloaded += len(chunk)
+                                            if downloaded > MAX_PINNED_DOWNLOAD_BYTES:
+                                                file_path.unlink(missing_ok=True)
+                                                raise ValueError("Pinned download exceeded 64 MiB limit: " + filename)
                                             if total_size > 0:
                                                 percent = int((downloaded / total_size) * 100)
                                                 file_size_mb = downloaded / (1024 * 1024)
@@ -8463,6 +8475,8 @@ def run_lua_tool():
                             response = requests.get(url, stream=True, timeout=30)
                             if response.status_code == 200:
                                 total_size = int(response.headers.get('content-length', 0))
+                                if total_size > MAX_PINNED_DOWNLOAD_BYTES:
+                                    raise ValueError("Pinned download exceeds 64 MiB limit: " + filename)
                                 file_path  = BGMI_CSV_folder / filename
                                 downloaded = 0
                                 with open(file_path, 'wb') as f:
@@ -8470,6 +8484,9 @@ def run_lua_tool():
                                         if chunk:
                                             f.write(chunk)
                                             downloaded += len(chunk)
+                                            if downloaded > MAX_PINNED_DOWNLOAD_BYTES:
+                                                file_path.unlink(missing_ok=True)
+                                                raise ValueError("Pinned download exceeded 64 MiB limit: " + filename)
                                             if total_size > 0:
                                                 percent = int((downloaded / total_size) * 100)
                                                 progress.update(task, completed=percent, file_size=f"{downloaded/(1024*1024):.2f} MB")
