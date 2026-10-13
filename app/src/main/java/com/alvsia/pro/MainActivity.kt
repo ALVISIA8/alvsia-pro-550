@@ -145,7 +145,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     )
-                    "otp" -> Ot                    "secure_load" -> {
+                    "secure_load" -> {
                         LaunchedEffect(license) {
                             loading = true
                             error = null
@@ -260,7 +260,6 @@ class MainActivity : ComponentActivity() {
                         }
                         LoadingScreen(subtitle = loadMsg, progress = loadProgress)
                     }
-> LoadingScreen(subtitle = loadMsg, progress = loadProgress)
                     "home" -> HomeScreen(
                         product = product,
                         expiry = expiry,
