@@ -2,21 +2,43 @@ package com.alvsia.pro
 
 import android.app.Application
 import android.util.Log
-import com.aheaditec.talsec_security.security.api.SuspiciousAppInfo
-import com.aheaditec.talsec_security.security.api.Talsec
-import com.aheaditec.talsec_security.security.api.TalsecConfig
-import com.aheaditec.talsec_security.security.api.ThreatListener
+import app.talsec.rasp.security.api.SuspiciousAppInfo
+import app.talsec.rasp.security.api.Talsec
+import app.talsec.rasp.security.api.TalsecConfig
+import app.talsec.rasp.security.api.ThreatListener
 import com.alvsia.pro.sec.EnvProbe
 import com.alvsia.pro.sec.Guard
 import com.alvsia.pro.sec.RaspEngine
 import com.alvsia.pro.tool.PythonBridgeRunner
 
-class AlvisiaApp : Application(), ThreatListener.ThreatDetected {
+class AlvisiaApp : Application() {
+    private val threatDetected = object : ThreatListener.ThreatDetected() {
+        override fun onPrivilegedAccess() = reportThreat("root")
+        override fun onDebug() = reportThreat("debugger")
+        override fun onSimulator() = reportThreat("emulator")
+        override fun onAppIntegrity() = reportThreat("tamper")
+        override fun onUnofficialStore() = reportThreat("untrusted-install")
+        override fun onHooks() = reportThreat("hook")
+        override fun onDeviceBinding() = reportThreat("device-binding")
+        override fun onObfuscationIssues() = reportThreat("obfuscation")
+        override fun onAutomation() = reportThreat("automation")
+        override fun onScreenshot() = reportThreat("screenshot")
+        override fun onScreenRecording() = reportThreat("screen-recording")
+        override fun onMultiInstance() = reportThreat("multi-instance")
+        override fun onUnsecureWifi() = reportThreat("unsecure-wifi")
+        override fun onTimeSpoofing() = reportThreat("time-spoofing")
+        override fun onLocationSpoofing() = reportThreat("location-spoofing")
+        override fun onBootloader() = reportThreat("bootloader")
+
+        override fun onMalware(suspiciousApps: List<SuspiciousAppInfo>) {
+            reportThreat("malware-count-" + suspiciousApps.size)
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
 
-        // Runtime detection is defense-in-depth. A single heuristic does not grant
-        // or revoke licenses; existing server/session/operation-grant checks remain authoritative.
+        // RASP is defense-in-depth; server/session/operation-grant checks remain authoritative.
         try {
             val config = TalsecConfig.Builder(
                 "com.alvsia.pro",
@@ -26,7 +48,7 @@ class AlvisiaApp : Application(), ThreatListener.ThreatDetected {
                 .prod(!BuildConfig.DEBUG)
                 .killOnBypass(false)
                 .build()
-            ThreatListener(this).registerListener(this)
+            ThreatListener(threatDetected).registerListener(this)
             Talsec.start(this, config)
         } catch (e: Exception) {
             Log.w("ALVISIA-RASP", "freeRASP initialization unavailable; existing guards remain active", e)
@@ -44,26 +66,6 @@ class AlvisiaApp : Application(), ThreatListener.ThreatDetected {
         } catch (e: Exception) {
             Log.e("ALVISIA-RASP", "Python bridge initialization failed", e)
         }
-    }
-
-    override fun onRootDetected() = reportThreat("root")
-    override fun onDebuggerDetected() = reportThreat("debugger")
-    override fun onEmulatorDetected() = reportThreat("emulator")
-    override fun onTamperDetected() = reportThreat("tamper")
-    override fun onUntrustedInstallationSourceDetected() = reportThreat("untrusted-install")
-    override fun onHookDetected() = reportThreat("hook")
-    override fun onDeviceBindingDetected() = reportThreat("device-binding")
-    override fun onObfuscationIssuesDetected() = reportThreat("obfuscation")
-    override fun onAutomationDetected() = reportThreat("automation")
-    override fun onScreenshotDetected() = reportThreat("screenshot")
-    override fun onScreenRecordingDetected() = reportThreat("screen-recording")
-    override fun onMultiInstanceDetected() = reportThreat("multi-instance")
-    override fun onUnsecureWifiDetected() = reportThreat("unsecure-wifi")
-    override fun onTimeSpoofingDetected() = reportThreat("time-spoofing")
-    override fun onLocationSpoofingDetected() = reportThreat("location-spoofing")
-
-    override fun onMalwareDetected(suspiciousApps: MutableList<SuspiciousAppInfo>?) {
-        reportThreat("malware-count-" + (suspiciousApps?.size ?: 0))
     }
 
     private fun reportThreat(type: String) {
