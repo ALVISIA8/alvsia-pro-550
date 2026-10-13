@@ -324,23 +324,24 @@ jobs:
           done
           echo "Combined static gate passed: Obfuscapk then XopProtector; identity/version and runtime-critical libraries are present. Device runtime remains unverified."
 
-      - name: Verify and upload protector candidates
-        if: always()
+      - name: Verify the single combined protection APK
+        if: success()
         run: |
           set -euo pipefail
-          for apk in candidates/*.apk; do
-            [ -s "$apk" ] || continue
-            echo "===== $(basename "$apk") ====="
-            sha256sum "$apk"
-            unzip -t "$apk"
-          done
+          FINAL_APK="candidates/ALVISIA_COMBINED_OBFUSCAPK_XOPPROTECTOR.apk"
+          test -s "$FINAL_APK"
+          sha256sum "$FINAL_APK"
+          unzip -t "$FINAL_APK"
+          # Do not package the intermediate Obfuscapk-only APK as a competing deliverable.
+          rm -f candidates/ALVISIA_OBFUSCAPK_CANDIDATE.apk
+          test "$(find candidates -maxdepth 1 -type f -name '*.apk' | wc -l)" -eq 1
           ls -la candidates
 
-      - name: Upload experimental protection candidates
-        if: always()
+      - name: Upload single combined protection APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: ALVISIA-PRO-5.5.0-COMBINED-PROTECTION-CANDIDATE
-          path: candidates/*.apk
-          if-no-files-found: warn
+          name: ALVISIA-PRO-5.5.0-COMBINED-PROTECTION-APK
+          path: candidates/ALVISIA_COMBINED_OBFUSCAPK_XOPPROTECTOR.apk
+          if-no-files-found: error
           retention-days: 7
