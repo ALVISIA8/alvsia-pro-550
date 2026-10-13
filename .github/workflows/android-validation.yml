@@ -320,11 +320,22 @@ jobs:
             KEYSTORE="$RUNNER_TEMP/alvisia-production-release.jks"
             printf '%s' "$ALVISIA_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
             chmod 600 "$KEYSTORE"
-            "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
+            # Try the dedicated private-key password first. Some valid JKS files use
+            # the same password for the store and private key; fall back to the store
+            # password only if the configured key password cannot recover the alias.
+            if ! "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
               --ks "$KEYSTORE" --ks-key-alias "$ALVISIA_RELEASE_KEY_ALIAS" \
               --ks-pass env:ALVISIA_RELEASE_KEYSTORE_PASSWORD \
               --key-pass env:ALVISIA_RELEASE_KEY_PASSWORD \
-              --out "$FINAL_APK" "$UNSIGNED_APK"
+              --out "$FINAL_APK" "$UNSIGNED_APK"; then
+              rm -f "$FINAL_APK"
+              echo "::warning::Configured private-key password failed; retrying with the keystore password without printing either secret."
+              "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
+                --ks "$KEYSTORE" --ks-key-alias "$ALVISIA_RELEASE_KEY_ALIAS" \
+                --ks-pass env:ALVISIA_RELEASE_KEYSTORE_PASSWORD \
+                --key-pass env:ALVISIA_RELEASE_KEYSTORE_PASSWORD \
+                --out "$FINAL_APK" "$UNSIGNED_APK"
+            fi
             CERTS="$RUNNER_TEMP/alvisia-production-certs.txt"
             "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$FINAL_APK" > "$CERTS"
             if ! grep -qiF 'Signer #1 certificate SHA-256 digest: 99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c' "$CERTS"; then
