@@ -25,3 +25,11 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
         return alvsia_bridge_impl.run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir)
     except Exception as exc:
         return "X BRIDGE BOOTSTRAP ERROR: %s" % exc
+
+
+def bridge_run_sub(module_id, sub_id, input_path, extra_name, work_dir_path, jars_dir_path):
+    """Compatibility entry point expected by PythonBridgeRunner in the Android app."""
+    work_root = str(work_dir_path or extra_name or "")
+    if not work_root:
+        return "X BRIDGE: workspace path missing"
+    return run_tool(module_id, sub_id, input_path, work_root, work_root, jars_dir_path)
