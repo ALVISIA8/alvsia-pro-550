@@ -171,7 +171,7 @@ jobs:
                   continue
               kept_settings.append(line)
           if removed:
-              p.write_text("\\n".join(kept_settings) + "\\n")
+              p.write_text(chr(10).join(kept_settings) + chr(10))
               print(f"Removed {removed} Windows-local SDK path candidate(s).")
           remaining = p.read_text()
           if re.search(r'(?i)[A-Z]:[\\\\/].*(?:SDK|\\\\SDK|/SDK).*(?:libs)', remaining):
