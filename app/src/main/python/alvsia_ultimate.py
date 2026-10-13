@@ -961,6 +961,8 @@ def check_password_login():
     os._exit(1)
 
 
+from pinned_http import panel_post as _pinned_panel_post
+
 def validate_key_with_panel(license_key: str) -> dict | None:
     """
     Validate key dengan panel API.
@@ -974,7 +976,7 @@ def validate_key_with_panel(license_key: str) -> dict | None:
         device_id = get_device_id()
         
         # Handshake: request captcha challenge
-        resp_captcha = requests.post(
+        resp_captcha = _pinned_panel_post(
             f"{PANEL_API_URL}/captcha.php",
             json={},
             timeout=10,
@@ -1025,7 +1027,7 @@ def validate_key_with_panel(license_key: str) -> dict | None:
         packet_b64 = base64.b64encode(encrypted_payload).decode()
         
         # Send to connect.php
-        resp_connect = requests.post(
+        resp_connect = _pinned_panel_post(
             f"{PANEL_API_URL}/connect.php",
             json={
                 "cid": cid,
