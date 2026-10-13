@@ -227,7 +227,8 @@ jobs:
           # that exact artifact and discard it if native protection is ineffective.
           python3 - <<'PY'
           import json, os, zipfile
-          apk = "candidates/ALVISIA_XOPPROTECTOR_CANDIDATE_UNSIGNED.apk"
+          # This step runs while cwd is xop-src; inspect the workspace artifact by absolute path.
+          apk = os.path.join(os.environ["GITHUB_WORKSPACE"], "candidates", "ALVISIA_XOPPROTECTOR_CANDIDATE_UNSIGNED.apk")
           try:
               with zipfile.ZipFile(apk) as zf:
                   report = json.loads(zf.read("assets/protector/size_report.json"))
