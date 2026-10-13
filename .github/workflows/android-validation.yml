@@ -70,6 +70,15 @@ jobs:
           cp "$APK" release-candidate/ALVISIA_PRO_5.5.0_RELEASE_CANDIDATE_UNSIGNED.apk
           sha256sum release-candidate/*.apk | tee release-candidate/SHA256SUMS.txt
           unzip -Z1 release-candidate/*.apk | grep -Fx 'lib/arm64-v8a/librasp_guard.so'
+          BASE_APK="release-candidate/ALVISIA_PRO_5.5.0_RELEASE_CANDIDATE_UNSIGNED.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$BASE_APK" > "$RUNNER_TEMP/alvisia-base-badging.txt"
+          grep -F "name='com.alvsia.pro'" "$RUNNER_TEMP/alvisia-base-badging.txt"
+          grep -F "versionCode='96'" "$RUNNER_TEMP/alvisia-base-badging.txt"
+          grep -F "versionName='5.5.0-upgrade'" "$RUNNER_TEMP/alvisia-base-badging.txt"
+          for entry in lib/arm64-v8a/librasp_guard.so lib/arm64-v8a/libchaquopy_java.so lib/arm64-v8a/libpython3.8.so; do
+            unzip -Z1 "$BASE_APK" | grep -Fx "$entry" >/dev/null || { echo "::error::Required runtime library missing from base APK: $entry"; exit 1; }
+          done
+          echo "Base release gate passed: package/version and runtime-critical libraries verified."
 
       - name: Upload unsigned release candidate
         if: success()
