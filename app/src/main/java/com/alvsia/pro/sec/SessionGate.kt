@@ -195,7 +195,7 @@ object SessionGate {
         }
 
         // Re-run cheap live-process checks on EVERY tool dispatch, including an
-        // already-unlocked session. A successful OTP must not permanently bypass
+        // already-unlocked session. A successful license session must not permanently bypass
         // tracer/hook detection for the lifetime of the process.
         if (Guard.runtimeHostile(ctx)) {
             val reason = "runtime_guard:" + Guard.lastReason
