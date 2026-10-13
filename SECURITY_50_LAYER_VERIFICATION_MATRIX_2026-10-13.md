@@ -2,12 +2,12 @@
 
 This matrix is a verification plan, not a claim that all controls are implemented. Mark a control PASS only with CI, artifact inspection, or device-test evidence.
 
-1. Sealed payload generator — NEEDS IMPLEMENTATION
-2. Loader installed before protected imports — NEEDS IMPLEMENTATION
-3. AES-GCM authentication tests — NEEDS TEST
+1. Sealed payload generator — IMPLEMENTED IN PR; CI PENDING
+2. Loader installed before protected imports — SOURCE WIRED; CI/DEVICE TEST PENDING
+3. AES-GCM authentication tests — UNIT TESTS ADDED; CI PENDING
 4. Build ID authenticated with payload — NEEDS TEST
-5. Release rejects plaintext protected modules — RELEASE GATE IN PR #17
-6. Release rejects missing .alv payloads — RELEASE GATE IN PR #17
+5. Release rejects plaintext protected modules — RELEASE GATE IN PR #17; CI PENDING
+6. Release validates exact .alv inventory/header — RELEASE GATE IN PR #17; CI PENDING
 7. Remove exposed license salts from shipped bytecode — NEEDS IMPLEMENTATION
 8. Rotate license derivation safely — NEEDS IMPLEMENTATION
 9. Audit suspicious session marker usage — NEEDS IMPLEMENTATION
