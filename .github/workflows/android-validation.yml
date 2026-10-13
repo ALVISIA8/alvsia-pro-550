@@ -151,27 +151,34 @@ jobs:
           set -euo pipefail
           git clone https://github.com/xopJack/XopProtector.git xop-src
           git -C xop-src checkout 5990c3139542cca51271dadceab62e8731bbbf95
-          # Remove only the optional Windows-local UniMP SDK candidate. XopProtector
-          # explicitly supports skipping :unimp-host when those proprietary SDK AARs
-          # are absent; the packer/native modules do not need that local Windows path.
+          # Linux CI must ignore any local UniMP SDK path inherited from Windows.
+          # The upstream settings file supports skipping :unimp-host when SDK AARs
+          # are unavailable; this build only needs the packer/native modules.
           python3 - <<'PY'
           from pathlib import Path
           import re
           p = Path("xop-src/settings.gradle.kts")
           source = p.read_text()
-          pattern = r'(?m)^\s*file\("E:/Android/SDK-Android@5\.14-20260706/SDK/libs"\),?\s*\n'
-          patched, count = re.subn(pattern, "", source, count=1)
+          # Drop any hard-coded Windows drive path that points at a local SDK/libs directory.
+          pattern = r'(?m)^\s*file\(["\'][A-Za-z]:[/\\\\].*?SDK[/\\\\]libs["\']\),?\s*\n'
+          patched, count = re.subn(pattern, "", source)
           if count:
               p.write_text(patched)
-              print("Removed optional Windows-only SDK path for Linux CI.")
-          elif 'E:/Android/SDK-Android@5.14-20260706/SDK/libs' not in source:
-              print("Windows-only SDK path already absent; no patch needed.")
-          else:
-              raise SystemExit("Found the Windows SDK path but could not safely isolate its line.")
+              print(f"Removed {count} Windows-local SDK path candidate(s).")
+          if re.search(r'[A-Za-z]:[/\\\\].*?SDK[/\\\\]libs', p.read_text()):
+              raise SystemExit("A Windows-local SDK path remains in settings.gradle.kts.")
+          # Also override a machine-specific unimp.sdk.libs value from gradle.properties.
+          gp = Path("xop-src/gradle.properties")
+          if gp.exists():
+              lines = gp.read_text().splitlines()
+              kept = [line for line in lines if not re.match(r'\s*unimp\.sdk\.libs\s*=', line)]
+              if kept != lines:
+                  gp.write_text("\\n".join(kept) + "\\n")
+                  print("Removed machine-specific unimp.sdk.libs Gradle property.")
           PY
           cd xop-src
           chmod +x ./gradlew
-          ./gradlew :packer:jar exportShellFiles --no-daemon
+          ./gradlew -Punimp.sdk.libs= :packer:jar exportShellFiles --no-daemon
           PACKER="$(find packer/build/libs -maxdepth 1 -type f -name 'protector-packer-*.jar' | head -n 1)"
           test -n "$PACKER"
           java -jar "$PACKER" "$GITHUB_WORKSPACE/xop-work/base.apk" \
