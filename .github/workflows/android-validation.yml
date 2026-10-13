@@ -173,7 +173,7 @@ jobs:
               lines = gp.read_text().splitlines()
               kept = [line for line in lines if not re.match(r'\s*unimp\.sdk\.libs\s*=', line)]
               if kept != lines:
-                  gp.write_text("\\n".join(kept) + "\\n")
+                  gp.write_text(chr(10).join(kept) + chr(10))
                   print("Removed machine-specific unimp.sdk.libs Gradle property.")
           PY
           cd xop-src
