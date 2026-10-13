@@ -219,25 +219,32 @@ jobs:
           java -jar "$PACKER" "$GITHUB_WORKSPACE/xop-work/xop-signed.apk" \
             -o "$GITHUB_WORKSPACE/candidates/ALVISIA_XOPPROTECTOR_CANDIDATE_UNSIGNED.apk" \
             --shell-dir "$GITHUB_WORKSPACE/xop-src/executable/shell-files" \
-            --protect-so \
             --profile balanced \
+            --protect-so \
             --protect-so-exclude librasp_guard.so,libchaquopy_java.so,libpython3.8.so
-          # Fail closed if Xop ignores the exclusion or disables SO protection.
+          # The report is embedded in the APK, not emitted as a sidecar. Validate
+          # that exact artifact and discard it if native protection is ineffective.
           python3 - <<'PY'
-          import glob, json, os, sys
-          report_path = "candidates/ALVISIA_XOPPROTECTOR_CANDIDATE_UNSIGNED-size_report.json"
-          if not os.path.isfile(report_path):
-              raise SystemExit("Xop size report missing; cannot verify native protection policy.")
-          report = json.load(open(report_path, encoding="utf-8"))
-          if report.get("protect_so") is not True:
-              raise SystemExit("Xop SO protection is not active.")
-          encrypted = report.get("so_encrypted", [])
-          encrypted_names = {os.path.basename(item.get("path", "")) for item in encrypted}
-          required_exclusions = {"librasp_guard.so", "libchaquopy_java.so", "libpython3.8.so"}
-          violations = sorted(encrypted_names & required_exclusions)
-          if violations:
-              raise SystemExit("Xop encrypted runtime-critical libraries: " + ", ".join(violations))
-          print("Verified: Xop SO protection remains active; JNI guard and Chaquopy runtime libraries are excluded.")
+          import json, os, zipfile
+          apk = "candidates/ALVISIA_XOPPROTECTOR_CANDIDATE_UNSIGNED.apk"
+          try:
+              with zipfile.ZipFile(apk) as zf:
+                  report = json.loads(zf.read("assets/protector/size_report.json"))
+              if report.get("protect_so") is not True:
+                  raise RuntimeError("Xop SO protection is not active.")
+              encrypted = report.get("so_encrypted", [])
+              encrypted_names = {os.path.basename(item.get("path", "")) for item in encrypted}
+              required_exclusions = {"librasp_guard.so", "libchaquopy_java.so", "libpython3.8.so"}
+              violations = sorted(encrypted_names & required_exclusions)
+              if violations:
+                  raise RuntimeError("Xop encrypted runtime-critical libraries: " + ", ".join(violations))
+              if not encrypted:
+                  raise RuntimeError("Xop reported zero encrypted SO files; candidate is not eligible for testing.")
+              print("Verified: Xop SO protection is enabled and encrypted compatible SO files; runtime-critical libraries remain excluded.")
+          except Exception:
+              if os.path.exists(apk):
+                  os.remove(apk)
+              raise
           PY
           # Sign the experimental output so Android can verify/install it for testing.
           # This certificate is ephemeral and is NOT the ALVISIA production certificate.
