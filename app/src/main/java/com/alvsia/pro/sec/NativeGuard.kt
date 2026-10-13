@@ -1,8 +1,6 @@
 package com.alvsia.pro.sec
 
-import com.alvsia.pro.BuildConfig
 import java.io.File
-import java.security.MessageDigest
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
@@ -45,7 +43,7 @@ object NativeGuard {
     private external fun nativeScanFlags(): Int
     private external fun nativeWipe(buf: ByteArray)
     private external fun nativeAntiDump(): Int
-    private external fun nativeSealSeed(): ByteArray
+    private external fun nativeDeriveSealKey(): ByteArray
 
     // ── Public API ────────────────────────────────────────────────────
 
@@ -64,50 +62,32 @@ object NativeGuard {
      * instrument the process after plaintext is produced.
      */
     @JvmStatic
-    fun decryptSealedPayload(payload: ByteArray, buildId: String): ByteArray {
+    fun decryptSealedPayload(payload: ByteArray): ByteArray {
         if (!nativeLoaded) throw IllegalStateException("native security library unavailable")
         val magic = "ALVSEAL2".toByteArray(Charsets.US_ASCII)
         if (payload.size < magic.size + 12 + 16 ||
             !payload.copyOfRange(0, magic.size).contentEquals(magic)) {
             throw IllegalArgumentException("sealed payload header/length invalid")
         }
-        if (buildId.isBlank() || buildId.length > 128 ||
-            !buildId.matches(Regex("^[A-Za-z0-9_\\-\\.]{1,128}$"))) {
-            throw IllegalArgumentException("buildId format invalid")
-        }
         if (payload.size > 32 * 1024 * 1024) {
             throw IllegalArgumentException("sealed payload exceeds size limit")
         }
-        val seed = nativeSealSeed()
+        // Native code owns the seed/certificate/build identity and key-derivation recipe.
+        val key = nativeDeriveSealKey()
+        if (key.size != 32) {
+            key.fill(0)
+            throw SecurityException("native seal key derivation failed")
+        }
         try {
-            val certHex = BuildConfig.CERT_SHA256
-            if (!certHex.matches(Regex("^[0-9a-fA-F]{64}$"))) {
-                throw SecurityException("release certificate digest invalid")
-            }
-            val certBytes = ByteArray(32) { i ->
-                certHex.substring(i * 2, i * 2 + 2).toInt(16).toByte()
-            }
-            val material = ByteArray(seed.size + certBytes.size + buildId.toByteArray(Charsets.UTF_8).size)
-            var offset = 0
-            seed.copyInto(material, offset); offset += seed.size
-            certBytes.copyInto(material, offset); offset += certBytes.size
-            buildId.toByteArray(Charsets.UTF_8).copyInto(material, offset)
-            val key = MessageDigest.getInstance("SHA-256").digest(material)
-            material.fill(0)
-            certBytes.fill(0)
-            try {
-                val nonceStart = magic.size
-                val nonce = payload.copyOfRange(nonceStart, nonceStart + 12)
-                val ciphertext = payload.copyOfRange(nonceStart + 12, payload.size)
-                val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-                cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, nonce))
-                cipher.updateAAD(magic)
-                return cipher.doFinal(ciphertext)
-            } finally {
-                key.fill(0)
-            }
+            val nonceStart = magic.size
+            val nonce = payload.copyOfRange(nonceStart, nonceStart + 12)
+            val ciphertextAndTag = payload.copyOfRange(nonceStart + 12, payload.size)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, nonce))
+            cipher.updateAAD(magic)
+            return cipher.doFinal(ciphertextAndTag)
         } finally {
-            seed.fill(0)
+            key.fill(0)
         }
     }
 
