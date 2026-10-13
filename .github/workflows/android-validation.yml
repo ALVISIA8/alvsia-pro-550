@@ -46,6 +46,30 @@ jobs:
           test -f ./gradlew
           test -f app/build.gradle.kts
           chmod +x ./gradlew
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          root = Path("app/src/main")
+          forbidden = {
+              "OTP screen": re.compile(r"\bOtpScreen\b", re.I),
+              "OTP request method": re.compile(r"\brequestOtp\b", re.I),
+              "OTP verify method": re.compile(r"\bverifyOtp\b", re.I),
+              "OTP endpoint helper": re.compile(r"\bpathOtp\b", re.I),
+              "OTP-derived tool ticket": re.compile(r"\btool_ticket\b", re.I),
+              "OTP navigation state": re.compile(r"""screen\s*=\s*["']otp["']""", re.I),
+          }
+          failures = []
+          for path in root.rglob("*"):
+              if path.suffix.lower() not in {".kt", ".java", ".py"} or not path.is_file():
+                  continue
+              text = path.read_text(encoding="utf-8", errors="replace")
+              for label, pattern in forbidden.items():
+                  if pattern.search(text):
+                      failures.append(f"{path}: leftover {label}")
+          if failures:
+              raise SystemExit("\n".join(failures))
+          print("License-only auth source gate passed: no client OTP screen, methods, navigation, or tool_ticket flow.")
+          PY
           python -m pip install --disable-pip-version-check pycryptodome
           python -m unittest discover -s tests -v
           python -m compileall -q app/src/main/python scripts
