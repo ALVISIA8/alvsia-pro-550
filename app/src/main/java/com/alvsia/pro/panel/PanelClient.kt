@@ -112,8 +112,13 @@ class PanelClient {
     private fun base() = Vault.apiBase()
 
     fun login(license: String, hwid: String): LoginResult {
-        lastLicense = license
-        lastHwid = hwid
+        // Never let a failed login reuse credentials from a previous attempt.
+        sessionToken = ""
+        lastLicense = license.trim()
+        lastHwid = hwid.trim()
+        if (lastLicense.isBlank() || lastHwid.isBlank()) {
+            return LoginResult(false, "License key and device identity are required")
+        }
         return try {
             val captchaRaw = openApi(base() + Vault.pathG())
                 ?: openApi(base() + Vault.pathCaptcha())
@@ -169,11 +174,18 @@ class PanelClient {
             if (data.optString("status") != "success") {
                 return LoginResult(false, data.optString("msg", "rejected"))
             }
-            sessionToken = data.optString("session_token", "")
+            val issuedToken = data.optString("session_token", "").trim()
+            // SessionGate and the panel contract require a 256-bit hex token.
+            // Fail closed rather than accepting login success without a usable session.
+            if (!issuedToken.matches(Regex("^[0-9A-Fa-f]{64}$"))) {
+                sessionToken = ""
+                return LoginResult(false, "Panel did not issue a valid session token")
+            }
+            sessionToken = issuedToken
             LoginResult(
                 ok = true,
                 message = data.optString("msg", "OK"),
-                sessionToken = sessionToken,
+                sessionToken = issuedToken,
                 expiry = data.optString("expiry", ""),
                 seller = data.optString("seller", ""),
                 product = data.optString("product", "PREMIUM"),
