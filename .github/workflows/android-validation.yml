@@ -304,9 +304,17 @@ jobs:
             -o "$GITHUB_WORKSPACE/candidates/ALVISIA_COMBINED_OBFUSCAPK_XOPPROTECTOR_UNSIGNED.apk" \
             --shell-dir "$GITHUB_WORKSPACE/xop-src/executable/shell-files" \
             --profile balanced \
+            --true-vmp-prefix Lcom/alvsia/pro/sec/ \
             --protect-so \
             --protect-so-mode max \
-            --protect-so-exclude librasp_guard.so,libchaquopy_java.so,libpython3.8.so
+            --protect-so-exclude librasp_guard.so,libchaquopy_java.so,libpython3.8.so \
+            2>&1 | tee "$RUNNER_TEMP/alvisia-xop-packer.log"
+          # Do not claim Double VM unless the packer reports at least one admitted
+          # and successfully transformed PVM2 method from ALVISIA security code.
+          if ! grep -Eq 'PVM2 admission: candidates=[1-9][0-9]* attempted=[1-9][0-9]* success=[1-9][0-9]*' "$RUNNER_TEMP/alvisia-xop-packer.log"; then
+            echo "::error::True-VMP/PVM2 produced no successful method transformations; combined candidate rejected."
+            exit 1
+          fi
           # The report is embedded in the APK, not emitted as a sidecar. Validate
           # that exact artifact and discard it if native protection is ineffective.
           python3 - <<'PY'
