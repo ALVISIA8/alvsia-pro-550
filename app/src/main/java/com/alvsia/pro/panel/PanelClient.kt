@@ -131,14 +131,15 @@ class PanelClient {
             val cid = r1.getString("cid")
             val nonce = r1.getString("nonce")
             val captchaSeal = r1.optString("seal", "") // forward seal for nonce integrity verification
-            val solution = Crypto.solveMechanic(r1.getString("mechanic"))
+            val equation = r1.optString("equation", r1.optString("mechanic", ""))
+            val solution = Crypto.solveMechanic(equation)
             val powNonce = Crypto.solvePow(
                 r1.optString("pow_prefix", ""),
                 r1.optInt("pow_diff", 0)
             )
             val payload = JSONObject()
                 .put("license", lastLicense)
-                .put("game", "PYTHON")
+                .put("game", "")
                 .put("hwid", lastHwid)
                 .put("solution", solution)
                 .put("pow_nonce", powNonce)
