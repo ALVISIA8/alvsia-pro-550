@@ -18,6 +18,7 @@ MODULES = {
     "alvsia_ultimate": "alvsia_ultimate.py",
     "alvsia_ultimate_compat": "alvsia_ultimate_compat.py",
     "alvsia_features": "alvsia_features.py",
+    "uasset_inspector": "uasset_inspector.py",
     "lua_output_validator": "lua_output_validator.py",
     "lua_string_recover": "lua_string_recover.py",
     "lua_engine.engine": "lua_engine/engine.py",
