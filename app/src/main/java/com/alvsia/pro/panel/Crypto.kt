@@ -22,8 +22,10 @@ object Crypto {
         return sha256(MARKER + nonce)
     }
 
-    fun aesCbcEncrypt(key: ByteArray, ivAscii16: String, plain: ByteArray): ByteArray {
-        val iv = ivAscii16.take(16).padEnd(16, '0').toByteArray()
+    fun aesCbcEncrypt(key: ByteArray, nonceHex: String, plain: ByteArray): ByteArray {
+        val nonce = hexToBytes(nonceHex)
+        require(nonce.size >= 16) { "nonce must contain at least 16 bytes" }
+        val iv = nonce.copyOfRange(0, 16)
         val c = Cipher.getInstance("AES/CBC/PKCS5Padding")
         c.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"), IvParameterSpec(iv))
         return c.doFinal(plain)
@@ -45,18 +47,23 @@ object Crypto {
         if (prefix.isEmpty() || diff <= 0) return "0"
         val need = "0".repeat(diff)
         for (i in 0 until 5_000_000) {
-            val n = i.toString(16)
+            val n = i.toString()
             if (sha256Hex(prefix + n).startsWith(need)) return n
         }
         return "0"
     }
 
-    fun solveMechanic(mechanicB64: String): Int {
-        val expr = String(b64d(mechanicB64)).trim()
-        val m = Regex("""^(-?\d+)\s*([+\-*/])\s*(-?\d+)$""").matchEntire(expr)
-            ?: return 0
-        val a = m.groupValues[1].toInt()
-        val b = m.groupValues[3].toInt()
+    fun solveMechanic(challenge: String): Int {
+        val pattern = Regex("""^(-?\\d+)\\s*([+\\-*/])\\s*(-?\\d+)$""")
+        val direct = challenge.trim()
+        val expr = if (pattern.matches(direct)) direct else try {
+            String(b64d(challenge)).trim()
+        } catch (_: Exception) {
+            direct
+        }
+        val m = pattern.matchEntire(expr) ?: return 0
+        val a = m.groupValues[1].toIntOrNull() ?: return 0
+        val b = m.groupValues[3].toIntOrNull() ?: return 0
         return when (m.groupValues[2]) {
             "+" -> a + b
             "-" -> a - b
