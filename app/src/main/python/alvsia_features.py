@@ -1237,3 +1237,8 @@ def run_export_report(input_path, out_dir):
     out_file = out_dir / ("report_%s.txt" % p.stem)
     out_file.write_text("\n".join(lines), encoding="utf-8")
     return {"ok": True, "out": str(out_file), "sha256": sha256}
+
+def run_uasset_inspect(input_path, out_dir):
+    """Read-only UAsset/UEXP header and companion-file inspection."""
+    from uasset_inspector import inspect_asset
+    return inspect_asset(input_path, out_dir)
