@@ -44,7 +44,7 @@ checks = {
     "fetch requires a valid active token": r'activeToken\.matches\(Regex\("\^\[0-9A-Fa-f\]\{64\}\$"\)\)',
     "fetch sends session_token": r'put\(\s*"session_token"\s*,\s*activeToken\s*\)',
     "app fetches core before secure session unlock": r'panel\.fetchCore\(license,\s*hwid\)[\s\S]{0,12000}?SessionGate\.unlock\(this@MainActivity,\s*token,\s*license\)',
-    "failed engine fetch fails closed": r'if\s*\(!engineFromServer\)[\s\S]{0,700}?SessionGate\.lock\(this@MainActivity\)[\s\S]{0,500}?screen\s*=\s*"login"',
+    "remote core failure retains licensed local runtime": r'if\s*\(!remoteCoreLoaded\)[\s\S]{0,1200}?REMOTE_CORE_UNAVAILABLE[\s\S]{0,600}?LOCAL_SEALED_RUNTIME',
     "tool dispatch checks SessionGate": r'SessionGate\.allowTools\(context\)',
     "session gate exposes tool authorization": r'fun\s+allowTools\s*\(',
 }
@@ -61,7 +61,7 @@ sources = {
     "fetch requires a valid active token": panel,
     "fetch sends session_token": panel,
     "app fetches core before secure session unlock": activity,
-    "failed engine fetch fails closed": activity,
+    "remote core failure retains licensed local runtime": activity,
     "tool dispatch checks SessionGate": engine,
     "session gate exposes tool authorization": session,
 }
