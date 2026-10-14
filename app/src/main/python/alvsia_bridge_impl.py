@@ -531,7 +531,6 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
 
         # ── 17  Anti-RE Audit ────────────────────────────────────────────
         if mid == 17 or sid.startswith("audit_"):
-            import alvsia_ultimate as ult
             if not need_file(): return "\n".join(lines)
             dest_audit = out_dir("AUDIT")
             if sid == "audit_uasset":
@@ -544,6 +543,7 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                     lines.append("TXT -> %s" % r.get("report_txt", ""))
                     lines.append("JSON -> %s" % r.get("report_json", ""))
                 return "\n".join(lines)
+            import alvsia_ultimate as ult
             if sid == "audit_apk":
                 r = ult.audit_apk(ip, dest_audit)
                 lines.append(str(r))
