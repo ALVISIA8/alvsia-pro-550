@@ -17,11 +17,15 @@ def read(rel: str) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 panel = read("java/com/alvsia/pro/panel/PanelClient.kt")
+vault = read("java/com/alvsia/pro/panel/Vault.kt")
+crypto = read("java/com/alvsia/pro/panel/Crypto.kt")
 activity = read("java/com/alvsia/pro/MainActivity.kt")
 session = read("java/com/alvsia/pro/sec/SessionGate.kt")
 engine = read("java/com/alvsia/pro/tool/ToolEngine.kt")
 
 checks = {
+    "API base targets api.alvsiapro.cc.cd": r'return\s+"https://api\.\$host/api"',
+    "TLS pin covers the API subdomain": r'\.add\("\*\.alvsiapro\.cc\.cd",\s*PIN_SPKI\)',
     "login clears prior session token": r"fun login\s*\([^)]*\)\s*:\s*LoginResult\s*\{[\s\S]{0,500}?sessionToken\s*=\s*\"\"",
     "login consumes panel-issued session_token": r'data\.optString\(\s*"session_token"\s*,\s*""\s*\)',
     "login requires 64-char hexadecimal token": r'issuedToken\.matches\(Regex\("\^\[0-9A-Fa-f\]\{64\}\$"\)\)',
@@ -35,6 +39,8 @@ checks = {
     "session gate exposes tool authorization": r'fun\s+allowTools\s*\(',
 }
 sources = {
+    "API base targets api.alvsiapro.cc.cd": vault,
+    "TLS pin covers the API subdomain": vault,
     "login clears prior session token": panel,
     "login consumes panel-issued session_token": panel,
     "login requires 64-char hexadecimal token": panel,
@@ -51,6 +57,10 @@ failed = []
 for label, pattern in checks.items():
     if not re.search(pattern, sources[label]):
         failed.append(label)
+
+for label, source in (("PanelClient.kt", panel), ("Vault.kt", vault), ("Crypto.kt", crypto)):
+    if re.search(r"\bAPI[_-]?SECRET\b|api[_-]?secret\s*=", source, re.I):
+        failed.append(f"static shared API secret reference found in client auth source: {label}")
 
 for path in APP.rglob("*"):
     if not path.is_file() or path.suffix.lower() not in {".kt", ".java", ".py"}:
