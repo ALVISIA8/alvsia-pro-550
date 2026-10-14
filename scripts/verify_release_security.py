@@ -12,7 +12,7 @@ APK = Path(sys.argv[1]) if len(sys.argv) > 1 else None
 APP_IMY_SUFFIX = "assets/chaquopy/app.imy"
 BUILD_PAYLOADS = {
     "alvsia_bridge_impl.alv", "alvsia_core.alv", "alvsia_ultimate.alv",
-    "alvsia_ultimate_compat.alv", "alvsia_features.alv",
+    "alvsia_ultimate_compat.alv", "alvsia_features.alv", "uasset_inspector.alv",
     "lua_output_validator.alv", "lua_string_recover.alv",
     "lua_engine_engine.alv", "lua_engine_decompiler53.alv",
     "lua_engine_bgmi.alv", "lua_engine_luajit_decompiler.alv",
