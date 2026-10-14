@@ -91,7 +91,7 @@ def main() -> None:
     except (OSError, zipfile.BadZipFile) as exc:
         fail("app.imy is not a readable ZIP archive: " + str(exc))
 
-    print("RELEASE SECURITY GATE: PASS: exact 15-payload inventory; authenticated-format headers; no protected plaintext")
+    print("RELEASE SECURITY GATE: PASS: exact 16-payload inventory; authenticated-format headers; no protected plaintext")
 
 
 if __name__ == "__main__":
