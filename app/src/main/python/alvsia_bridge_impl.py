@@ -534,6 +534,16 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
             import alvsia_ultimate as ult
             if not need_file(): return "\n".join(lines)
             dest_audit = out_dir("AUDIT")
+            if sid == "audit_uasset":
+                r = feat.run_uasset_inspect(ip, dest_audit)
+                if not r.get("ok"):
+                    lines.append("X UAsset/UEXP inspection failed: %s" % r.get("error", "unknown error"))
+                else:
+                    lines.append("OK UAsset/UEXP read-only inspection")
+                    lines.append("SHA-256: %s" % r.get("sha256", "unknown"))
+                    lines.append("TXT -> %s" % r.get("report_txt", ""))
+                    lines.append("JSON -> %s" % r.get("report_json", ""))
+                return "\n".join(lines)
             if sid == "audit_apk":
                 r = ult.audit_apk(ip, dest_audit)
                 lines.append(str(r))
