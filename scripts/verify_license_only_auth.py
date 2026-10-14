@@ -26,6 +26,8 @@ engine = read("java/com/alvsia/pro/tool/ToolEngine.kt")
 checks = {
     "API base targets api.alvsiapro.cc.cd": r'return\s+"https://api\.\$host/api"',
     "TLS pin covers the API subdomain": r'\.add\("\*\.alvsiapro\.cc\.cd",\s*PIN_SPKI\)',
+    "captcha.php is the primary handshake endpoint": r'val captchaRaw = openApi\(base\(\) \+ Vault\.pathCaptcha\(\)\)[\s\S]{0,120}?openApi\(base\(\) \+ Vault\.pathG\(\)\)',
+    "connect.php is the primary login endpoint": r'var raw2 = postJson\(base\(\) \+ Vault\.pathConnect\(\), loginJson\)[\s\S]{0,200}?raw2 = postJson\(base\(\) \+ Vault\.pathS\(\), loginJson\)'
     "login clears prior session token": r"fun login\s*\([^)]*\)\s*:\s*LoginResult\s*\{[\s\S]{0,500}?sessionToken\s*=\s*\"\"",
     "login consumes panel-issued session_token": r'data\.optString\(\s*"session_token"\s*,\s*""\s*\)',
     "login requires 64-char hexadecimal token": r'issuedToken\.matches\(Regex\("\^\[0-9A-Fa-f\]\{64\}\$"\)\)',
@@ -41,6 +43,8 @@ checks = {
 sources = {
     "API base targets api.alvsiapro.cc.cd": vault,
     "TLS pin covers the API subdomain": vault,
+    "captcha.php is the primary handshake endpoint": panel,
+    "connect.php is the primary login endpoint": panel,
     "login clears prior session token": panel,
     "login consumes panel-issued session_token": panel,
     "login requires 64-char hexadecimal token": panel,
