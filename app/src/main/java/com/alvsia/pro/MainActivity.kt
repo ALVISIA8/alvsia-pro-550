@@ -173,7 +173,7 @@ class MainActivity : ComponentActivity() {
                             val fetch = withContext(Dispatchers.IO) {
                                 panel.fetchCore(license, hwid)
                             }
-                            var engineFromServer = false
+                            var remoteCoreLoaded = false
                             val data = fetch.data
                             if (fetch.ok && data != null) {
                                 val opened = withContext(Dispatchers.Default) {
@@ -185,7 +185,7 @@ class MainActivity : ComponentActivity() {
                                         RamToolVault.put("engine", bytes)
                                         engine.installEngineBytes(bytes)
                                         core.loadFromMemory(bytes)
-                                        engineFromServer = true
+                                        remoteCoreLoaded = true
                                     } else {
                                         ThreatReport.emit(
                                             this@MainActivity,
@@ -195,15 +195,28 @@ class MainActivity : ComponentActivity() {
                                         )
                                     }
                                 }
+                            } else {
+                                tools = ToolCatalog.defaults()
                             }
-                            if (!engineFromServer) {
-                                loading = false
-                                SessionGate.lock(this@MainActivity)
+
+                            // The license login and panel-issued token are the authorization gate.
+                            // The packaged sealed bridge is the recovery path when the optional
+                            // remote engine endpoint is unavailable or returns no compatible core.
+                            if (!remoteCoreLoaded) {
                                 engine.wipeEngine()
                                 core.wipe()
-                                error = "Protected engine could not be fetched from the panel. Confirm the panel fetch endpoint accepts a valid session token."
-                                screen = "login"
-                                return@LaunchedEffect
+                                ThreatReport.emit(
+                                    this@MainActivity,
+                                    "REMOTE_CORE_UNAVAILABLE",
+                                    if (fetch.ok) "no compatible engine payload" else fetch.message,
+                                    license
+                                )
+                                ThreatReport.emit(
+                                    this@MainActivity,
+                                    "LOCAL_SEALED_RUNTIME",
+                                    "bundled bridge selected after successful panel license login",
+                                    license
+                                )
                             }
 
                             val tamper = Tamper.evaluate(this@MainActivity)
