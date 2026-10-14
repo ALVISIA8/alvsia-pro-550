@@ -229,17 +229,55 @@ class PanelClient {
                 )
             }
             if (bytes == null) return FetchResult(false, "empty fetch")
-            if (bytes.size > 16) {
-                val n = minOf(32, bytes.size)
-                val head = String(bytes, 0, n, Charsets.ISO_8859_1)
-                if (head.trimStart().startsWith("<")) {
-                    return FetchResult(false, "gateway blocked fetch")
-                }
-            }
-            FetchResult(true, "ok ${bytes.size}b", bytes)
+            decodeCoreFetchResponse(bytes)
         } catch (e: Exception) {
             FetchResult(false, e.message ?: "fetch error")
         }
+    }
+
+    /**
+     * The deployed panel returns a JSON envelope for tool_fetch.php. Never pass the
+     * JSON document itself to the Python engine: unwrap its base64 enc_data first.
+     * Raw binary responses remain supported for older compatible deployments.
+     */
+    private fun decodeCoreFetchResponse(body: ByteArray): FetchResult {
+        if (body.isEmpty()) return FetchResult(false, "empty fetch")
+        val text = String(body, Charsets.UTF_8)
+        val trimmed = text.trimStart()
+        if (trimmed.startsWith("<")) {
+            return FetchResult(false, "gateway blocked fetch")
+        }
+        if (trimmed.startsWith("{")) {
+            val envelope = try {
+                JSONObject(text)
+            } catch (_: Exception) {
+                return FetchResult(false, "Panel returned malformed fetch JSON")
+            }
+            if (envelope.optString("status") != "success") {
+                return FetchResult(
+                    false,
+                    envelope.optString("msg", "Panel rejected core fetch").ifBlank { "Panel rejected core fetch" }
+                )
+            }
+            val encoded = envelope.optString("enc_data", "").trim()
+            if (encoded.isBlank()) {
+                return FetchResult(false, "Panel response has no encrypted core payload")
+            }
+            val payload = try {
+                Crypto.b64d(encoded)
+            } catch (_: Exception) {
+                return FetchResult(false, "Panel core payload is not valid base64")
+            }
+            if (payload.isEmpty()) return FetchResult(false, "Panel core payload is empty")
+            if (payload.size > MAX_ENGINE_BYTES) {
+                return FetchResult(false, "Panel core payload exceeds the configured size limit")
+            }
+            return FetchResult(true, "ok ${payload.size}b", payload)
+        }
+        if (body.size > MAX_ENGINE_BYTES) {
+            return FetchResult(false, "Panel core payload exceeds the configured size limit")
+        }
+        return FetchResult(true, "ok ${body.size}b", body)
     }
 
     private fun openApi(url: String): String? {
