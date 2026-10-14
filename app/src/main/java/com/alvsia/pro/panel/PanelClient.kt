@@ -120,8 +120,9 @@ class PanelClient {
             return LoginResult(false, "License key and device identity are required")
         }
         return try {
-            val captchaRaw = openApi(base() + Vault.pathG())
-                ?: openApi(base() + Vault.pathCaptcha())
+            // Match the deployed panel's verified client flow: captcha.php first.
+            val captchaRaw = openApi(base() + Vault.pathCaptcha())
+                ?: openApi(base() + Vault.pathG())
                 ?: return LoginResult(false, "Network error")
             if (captchaRaw.trimStart().startsWith("<")) {
                 return LoginResult(false, "Gateway still blocked after cookie")
@@ -152,9 +153,10 @@ class PanelClient {
                 .put("proto", 2)
                 .apply { if (captchaSeal.isNotEmpty()) put("seal", captchaSeal) }
                 .toString()
-            var raw2 = postJson(base() + Vault.pathS(), loginJson)
+            // connect.php is the endpoint verified by the owner's CF-aware login test.
+            var raw2 = postJson(base() + Vault.pathConnect(), loginJson)
             if (raw2.isNullOrBlank() || raw2.trimStart().startsWith("<") || raw2.contains("Update required")) {
-                raw2 = postJson(base() + Vault.pathConnect(), loginJson)
+                raw2 = postJson(base() + Vault.pathS(), loginJson)
             }
             if (raw2.isNullOrBlank()) return LoginResult(false, "Empty login response")
             if (raw2.trimStart().startsWith("<")) return LoginResult(false, "Gateway blocked login")
