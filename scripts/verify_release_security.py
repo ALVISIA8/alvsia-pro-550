@@ -21,7 +21,7 @@ BUILD_PAYLOADS = {
 }
 PROTECTED_MODULES = {
     "alvsia_bridge_impl", "alvsia_core", "alvsia_ultimate",
-    "alvsia_ultimate_compat", "alvsia_features",
+    "alvsia_ultimate_compat", "alvsia_features", "uasset_inspector",
     "lua_output_validator", "lua_string_recover",
     "lua_engine.engine", "lua_engine.decompiler53", "lua_engine.bgmi",
     "lua_engine.luajit_decompiler", "lua_engine.container",
