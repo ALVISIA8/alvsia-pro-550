@@ -216,6 +216,8 @@ object SubMenus {
                 "Select .lua / .luac → OUT/AUDIT/lua_report.txt"),
             SubTool("audit_so",        "SO Coverage",       "Check native lib for exported symbols, debug info",
                 "Select .so → OUT/AUDIT/so_report.txt"),
+            SubTool("audit_uasset",    "UAsset/UEXP Inspector", "Read-only Unreal asset header + sidecar audit",
+                "Select .uasset/.uexp → OUT/AUDIT/*_asset_inspection.txt and .json"),
         )
 
         else -> emptyList()

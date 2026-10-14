@@ -13,7 +13,7 @@ def _valid_apk_session() -> bool:
 
 def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
     if not _valid_apk_session():
-        return "X AUTH: no valid APK session — complete license + OTP first"
+        return "X AUTH: no valid APK session — sign in with a valid panel license"
     if os.environ.get("ALVSIA_SEALED_RUNTIME") == "1":
         try:
             import sealed_loader

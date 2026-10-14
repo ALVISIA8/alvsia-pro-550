@@ -11,12 +11,12 @@ import javax.crypto.spec.SecretKeySpec
 
 /**
  * Asset blob unpack. Root material assembled from fragments + optional session overlay.
- * Prefer server tool_fetch after OTP; this is offline companion only.
+ * Prefer the authenticated panel core fetch; this is an offline companion only.
  */
 object FaunaPack {
     private val MAGIC = byteArrayOf(0x46, 0x41, 0x55, 0x4E, 0x41, 0x31, 0x00)
 
-    /** Optional server-provided wrap (set after OTP loader_key). */
+    /** Optional server-provided wrap (set after a successful panel license session). */
     @Volatile
     var sessionOverlay: ByteArray? = null
 

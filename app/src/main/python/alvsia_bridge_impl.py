@@ -25,7 +25,7 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
     try:
         # Hard gate
         if not _valid_apk_session():
-            return "X AUTH: no valid APK session — complete license + OTP first"
+            return "X AUTH: no valid APK session — sign in with a valid panel license"
         lines.append("ALVSIA PRO 5.5.0 PREMIUM · engine")
         lines.append("m=%s sub=%s" % (module_id, sub_id))
         import alvsia_core as core
@@ -531,9 +531,19 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
 
         # ── 17  Anti-RE Audit ────────────────────────────────────────────
         if mid == 17 or sid.startswith("audit_"):
-            import alvsia_ultimate as ult
             if not need_file(): return "\n".join(lines)
             dest_audit = out_dir("AUDIT")
+            if sid == "audit_uasset":
+                r = feat.run_uasset_inspect(ip, dest_audit)
+                if not r.get("ok"):
+                    lines.append("X UAsset/UEXP inspection failed: %s" % r.get("error", "unknown error"))
+                else:
+                    lines.append("OK UAsset/UEXP read-only inspection")
+                    lines.append("SHA-256: %s" % r.get("sha256", "unknown"))
+                    lines.append("TXT -> %s" % r.get("report_txt", ""))
+                    lines.append("JSON -> %s" % r.get("report_json", ""))
+                return "\n".join(lines)
+            import alvsia_ultimate as ult
             if sid == "audit_apk":
                 r = ult.audit_apk(ip, dest_audit)
                 lines.append(str(r))

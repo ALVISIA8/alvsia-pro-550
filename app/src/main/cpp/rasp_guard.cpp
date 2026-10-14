@@ -253,20 +253,77 @@ Java_com_alvsia_pro_sec_NativeGuard_nativeAntiDump(JNIEnv*, jobject) {
 }
 
 JNIEXPORT jbyteArray JNICALL
-Java_com_alvsia_pro_sec_NativeGuard_nativeSealSeed(JNIEnv* env, jobject) {
-    // Unique per-build obfuscation input; this is not a server-side secret.
+Java_com_alvsia_pro_sec_NativeGuard_nativeDeriveSealKey(JNIEnv* env, jobject) {
+    // The key-derivation recipe and release identity live in this native library.
+    // This is defense-in-depth, not a substitute for server-side license authorization.
     static const char seedHex[] = ALVSIA_SEAL_SEED_HEX;
+    static const char certHex[] = ALVSIA_SEAL_CERT_SHA256;
+    static const char buildId[] = ALVSIA_SEAL_BUILD_ID;
+    unsigned char material[32 + 32 + 128] = {};
     unsigned char seed[32] = {};
+    unsigned char cert[32] = {};
+    if (strlen(buildId) == 0 || strlen(buildId) > 128 ||
+        strlen(certHex) != 64 || strlen(seedHex) != 64) return nullptr;
     for (size_t i = 0; i < 32; ++i) {
-        unsigned int value = 0;
-        if (sscanf(seedHex + (i * 2), "%2x", &value) != 1) return nullptr;
-        seed[i] = static_cast<unsigned char>(value);
+        unsigned int sv = 0, cv = 0;
+        if (sscanf(seedHex + i * 2, "%2x", &sv) != 1 ||
+            sscanf(certHex + i * 2, "%2x", &cv) != 1) {
+            memset(material, 0, sizeof(material));
+            memset(seed, 0, sizeof(seed));
+            memset(cert, 0, sizeof(cert));
+            return nullptr;
+        }
+        seed[i] = static_cast<unsigned char>(sv);
+        cert[i] = static_cast<unsigned char>(cv);
     }
-    jbyteArray out = env->NewByteArray(32);
-    if (out == nullptr) return nullptr;
-    env->SetByteArrayRegion(out, 0, 32, reinterpret_cast<const jbyte*>(seed));
+    const size_t buildLen = strlen(buildId);
+    memcpy(material, seed, sizeof(seed));
+    memcpy(material + sizeof(seed), cert, sizeof(cert));
+    memcpy(material + sizeof(seed) + sizeof(cert), buildId, buildLen);
+
+    jclass mdClass = env->FindClass("java/security/MessageDigest");
+    jmethodID getInstance = nullptr;
+    jmethodID digestMethod = nullptr;
+    jmethodID updateMethod = nullptr;
+    if (mdClass == nullptr) goto cleanup;
+    getInstance = env->GetStaticMethodID(
+        mdClass, "getInstance", "(Ljava/lang/String;)Ljava/security/MessageDigest;");
+    digestMethod = env->GetMethodID(mdClass, "digest", "()[B");
+    updateMethod = env->GetMethodID(mdClass, "update", "([B)V");
+    if (getInstance == nullptr || digestMethod == nullptr || updateMethod == nullptr) goto cleanup;
+    {
+        jstring algorithm = env->NewStringUTF("SHA-256");
+        jobject md = env->CallStaticObjectMethod(mdClass, getInstance, algorithm);
+        env->DeleteLocalRef(algorithm);
+        if (md == nullptr || env->ExceptionCheck()) goto cleanup;
+        jbyteArray input = env->NewByteArray(static_cast<jsize>(sizeof(seed) + sizeof(cert) + buildLen));
+        if (input == nullptr) {
+            env->DeleteLocalRef(md);
+            goto cleanup;
+        }
+        env->SetByteArrayRegion(input, 0,
+            static_cast<jsize>(sizeof(seed) + sizeof(cert) + buildLen),
+            reinterpret_cast<const jbyte*>(material));
+        env->CallVoidMethod(md, updateMethod, input);
+        jbyteArray result = static_cast<jbyteArray>(env->CallObjectMethod(md, digestMethod));
+        env->DeleteLocalRef(input);
+        env->DeleteLocalRef(md);
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+            if (result != nullptr) env->DeleteLocalRef(result);
+            result = nullptr;
+        }
+        memset(material, 0, sizeof(material));
+        memset(seed, 0, sizeof(seed));
+        memset(cert, 0, sizeof(cert));
+        return result;
+    }
+cleanup:
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    memset(material, 0, sizeof(material));
     memset(seed, 0, sizeof(seed));
-    return out;
+    memset(cert, 0, sizeof(cert));
+    return nullptr;
 }
 
 // Library load init — called by dynamic linker

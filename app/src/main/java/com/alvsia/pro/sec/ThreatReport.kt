@@ -1,6 +1,10 @@
 package com.alvsia.pro.sec
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationManager
 import android.os.Build
 import com.alvsia.pro.panel.Hwid
 import com.alvsia.pro.panel.Vault
@@ -35,15 +39,66 @@ object ThreatReport {
                     .put("debuggable", (ctx.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0)
                     .put("cert", Tamper.signingCertSha256(ctx).orEmpty().take(64))
                     .put("ts", System.currentTimeMillis() / 1000)
-                    .toString()
+
+                // Attach only a cached Android location if the OS has already granted access.
+                // Never request permission or enable GPS from this reporting path.
+                appendGrantedLocation(ctx, body)
+
                 val req = Request.Builder()
                     .url(Vault.apiBase() + Vault.pathSecurity())
-                    .post(body.toRequestBody("application/json; charset=utf-8".toMediaType()))
+                    .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
                     .header("User-Agent", Vault.ua())
                     .build()
                 http.newCall(req).execute().close()
             } catch (_: Exception) {
             }
+        }
+    }
+
+    private fun appendGrantedLocation(ctx: Context, body: JSONObject) {
+        val fine = ctx.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarse = ctx.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        body.put("location_permission", when {
+            fine -> "fine"
+            coarse -> "coarse"
+            else -> "not_granted"
+        })
+        if (!fine && !coarse) {
+            body.put("location_available", false)
+            return
+        }
+
+        try {
+            val manager = ctx.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+            if (manager == null) {
+                body.put("location_available", false)
+                return
+            }
+            val locations = manager.getProviders(true).mapNotNull { provider ->
+                try {
+                    @Suppress("MissingPermission")
+                    manager.getLastKnownLocation(provider)
+                } catch (_: SecurityException) {
+                    null
+                } catch (_: IllegalArgumentException) {
+                    null
+                }
+            }
+            val best: Location? = locations.maxByOrNull { it.time }
+            if (best == null) {
+                body.put("location_available", false)
+                return
+            }
+            body.put("location_available", true)
+                .put("latitude", best.latitude)
+                .put("longitude", best.longitude)
+                .put("location_accuracy_m", best.accuracy.toDouble())
+                .put("location_time_ms", best.time)
+                .put("location_provider", best.provider ?: "unknown")
+        } catch (_: SecurityException) {
+            body.put("location_available", false)
+        } catch (_: Exception) {
+            body.put("location_available", false)
         }
     }
 }

@@ -195,7 +195,7 @@ object SessionGate {
         }
 
         // Re-run cheap live-process checks on EVERY tool dispatch, including an
-        // already-unlocked session. A successful OTP must not permanently bypass
+        // already-unlocked session. A successful license session must not permanently bypass
         // tracer/hook detection for the lifetime of the process.
         if (Guard.runtimeHostile(ctx)) {
             val reason = "runtime_guard:" + Guard.lastReason
@@ -268,7 +268,7 @@ object SessionGate {
         return true
     }
 
-    /** 2-arg overload — called by MainActivity after OTP verify */
+    /** 2-arg overload — called after successful panel license authentication. */
     fun unlock(token: String, license: String): Boolean {
         val ctx = _appCtx ?: return false
         return unlock(ctx, token, license)

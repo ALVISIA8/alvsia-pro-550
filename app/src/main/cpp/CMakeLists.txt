@@ -47,7 +47,7 @@ add_library(
     SHARED
     rasp_guard.cpp
 )
-target_compile_definitions(rasp_guard PRIVATE ALVSIA_SEAL_SEED_HEX=\"${ALVSIA_SEAL_SEED_HEX}\")
+target_compile_definitions(rasp_guard PRIVATE ALVSIA_SEAL_SEED_HEX=\"${ALVSIA_SEAL_SEED_HEX}\" ALVSIA_SEAL_CERT_SHA256=\"99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c\" ALVSIA_SEAL_BUILD_ID=\"ALVISIA-20261010-MAIN-SEAL1\")
 
 target_link_libraries(
     rasp_guard

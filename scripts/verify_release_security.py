@@ -12,7 +12,7 @@ APK = Path(sys.argv[1]) if len(sys.argv) > 1 else None
 APP_IMY_SUFFIX = "assets/chaquopy/app.imy"
 BUILD_PAYLOADS = {
     "alvsia_bridge_impl.alv", "alvsia_core.alv", "alvsia_ultimate.alv",
-    "alvsia_ultimate_compat.alv", "alvsia_features.alv",
+    "alvsia_ultimate_compat.alv", "alvsia_features.alv", "uasset_inspector.alv",
     "lua_output_validator.alv", "lua_string_recover.alv",
     "lua_engine_engine.alv", "lua_engine_decompiler53.alv",
     "lua_engine_bgmi.alv", "lua_engine_luajit_decompiler.alv",
@@ -21,7 +21,7 @@ BUILD_PAYLOADS = {
 }
 PROTECTED_MODULES = {
     "alvsia_bridge_impl", "alvsia_core", "alvsia_ultimate",
-    "alvsia_ultimate_compat", "alvsia_features",
+    "alvsia_ultimate_compat", "alvsia_features", "uasset_inspector",
     "lua_output_validator", "lua_string_recover",
     "lua_engine.engine", "lua_engine.decompiler53", "lua_engine.bgmi",
     "lua_engine.luajit_decompiler", "lua_engine.container",
@@ -53,9 +53,12 @@ def main() -> None:
         fail("usage: verify_release_security.py /path/to/unsigned-release.apk")
     try:
         with zipfile.ZipFile(APK) as apk:
-            matches = [n for n in apk.namelist() if n.endswith(APP_IMY_SUFFIX)]
+            apk_names = apk.namelist()
+            matches = [n for n in apk_names if n.endswith(APP_IMY_SUFFIX)]
             if len(matches) != 1:
                 fail("expected exactly one " + APP_IMY_SUFFIX + "; found " + str(len(matches)))
+            if any(b"DECOY_NOT_ENGINE" in apk.read(name) for name in apk_names if not name.endswith("/")):
+                fail("decoy marker remains in a packaged APK entry")
             app_imy = apk.read(matches[0])
     except (OSError, zipfile.BadZipFile, KeyError) as exc:
         fail("cannot inspect APK/app.imy: " + str(exc))
@@ -63,6 +66,10 @@ def main() -> None:
     try:
         with zipfile.ZipFile(io.BytesIO(app_imy)) as runtime:
             names = runtime.namelist()
+            if any(b"DECOY_NOT_ENGINE" in runtime.read(name) for name in names if not name.endswith("/")):
+                fail("decoy marker remains inside Chaquopy app.imy")
+            if any(b"ALVISIA-20261010-MAIN-SEAL1" in runtime.read(name) for name in names if not name.endswith("/")):
+                fail("native-only build identity leaked into Python runtime archive")
             alv = [n for n in names if n.lower().endswith(".alv")]
             actual = {n.rsplit("/", 1)[-1].lower() for n in alv}
             if actual != BUILD_PAYLOADS:
@@ -84,7 +91,7 @@ def main() -> None:
     except (OSError, zipfile.BadZipFile) as exc:
         fail("app.imy is not a readable ZIP archive: " + str(exc))
 
-    print("RELEASE SECURITY GATE: PASS: exact 15-payload inventory; authenticated-format headers; no protected plaintext")
+    print("RELEASE SECURITY GATE: PASS: exact 16-payload inventory; authenticated-format headers; no protected plaintext")
 
 
 if __name__ == "__main__":

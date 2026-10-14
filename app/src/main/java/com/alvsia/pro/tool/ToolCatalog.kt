@@ -1,5 +1,6 @@
 package com.alvsia.pro.tool
 
+import com.alvsia.pro.BuildConfig
 import com.alvsia.pro.ui.home.ToolItem
 import org.json.JSONArray
 import org.json.JSONObject
@@ -29,7 +30,7 @@ object ToolCatalog {
         ToolItem(15, "String Recover",  "Obfuscated string restore · constant pool dump"),
         ToolItem(16, "Lua Inject",      "Patch lua bytecode · inject hook · mod repack"),
         ToolItem(17, "Anti-RE Audit",   "Detect weak points in target APK · generate report"),
-    )
+    ).filterNot { it.id == 11 && !BuildConfig.ENABLE_DEV_TRACER }
 
     fun parseCore(bytes: ByteArray?): List<ToolItem> {
         if (bytes == null || bytes.size < 16) return defaults()
@@ -48,7 +49,8 @@ object ToolCatalog {
                     desc  = o.optString("desc", "")
                 ))
             }
-            if (out.isEmpty()) defaults() else out
+            val filtered = out.filterNot { it.id == 11 && !BuildConfig.ENABLE_DEV_TRACER }
+            if (filtered.isEmpty()) defaults() else filtered
         } catch (_: Exception) {
             defaults()
         }
