@@ -44,7 +44,9 @@ object Crypto {
     fun b64d(s: String): ByteArray = Base64.decode(s, Base64.DEFAULT)
 
     fun solvePow(prefix: String, diff: Int): String {
-        require(prefix.isNotBlank()) { "PoW prefix is missing" }
+        // Match the panel's reference client: when PoW is not enabled/configured,
+        // send the sentinel nonce "0" instead of rejecting an otherwise valid captcha.
+        if (prefix.isBlank() || diff <= 0) return "0"
         require(diff in 1..6) { "Unsupported PoW difficulty: $diff" }
         val need = "0".repeat(diff)
         for (i in 0 until 5_000_000) {
