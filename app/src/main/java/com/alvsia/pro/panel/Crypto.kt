@@ -54,7 +54,7 @@ object Crypto {
     }
 
     fun solveMechanic(challenge: String): Int {
-        val pattern = Regex("""^(-?\\d+)\\s*([+\\-*/])\\s*(-?\\d+)$""")
+        val pattern = Regex("""^(-?[0-9]+)\s*([+*/-])\s*(-?[0-9]+)$""")
         val direct = challenge.trim()
         val expr = if (pattern.matches(direct)) direct else try {
             String(b64d(challenge)).trim()
