@@ -26,12 +26,6 @@ data class LoginResult(
     val product: String = "",
 )
 
-data class OtpResult(
-    val ok: Boolean,
-    val message: String,
-    val toolTicket: String = "",
-)
-
 data class FetchResult(
     val ok: Boolean,
     val message: String,
@@ -87,8 +81,6 @@ class PanelClient {
         private set
     var lastHwid: String = ""
         private set
-    var toolTicket: String = ""
-        private set
 
     private fun callWithPinFallback(req: Request): okhttp3.Response {
         return try {
@@ -120,11 +112,17 @@ class PanelClient {
     private fun base() = Vault.apiBase()
 
     fun login(license: String, hwid: String): LoginResult {
-        lastLicense = license
-        lastHwid = hwid
+        // Never let a failed login reuse credentials from a previous attempt.
+        sessionToken = ""
+        lastLicense = license.trim()
+        lastHwid = hwid.trim()
+        if (lastLicense.isBlank() || lastHwid.isBlank()) {
+            return LoginResult(false, "License key and device identity are required")
+        }
         return try {
-            val captchaRaw = openApi(base() + Vault.pathG())
-                ?: openApi(base() + Vault.pathCaptcha())
+            // Match the deployed panel's verified client flow: captcha.php first.
+            val captchaRaw = openApi(base() + Vault.pathCaptcha())
+                ?: openApi(base() + Vault.pathG())
                 ?: return LoginResult(false, "Network error")
             if (captchaRaw.trimStart().startsWith("<")) {
                 return LoginResult(false, "Gateway still blocked after cookie")
@@ -133,15 +131,16 @@ class PanelClient {
             val cid = r1.getString("cid")
             val nonce = r1.getString("nonce")
             val captchaSeal = r1.optString("seal", "") // forward seal for nonce integrity verification
-            val solution = Crypto.solveMechanic(r1.getString("mechanic"))
+            val equation = r1.optString("equation", r1.optString("mechanic", ""))
+            val solution = Crypto.solveMechanic(equation)
             val powNonce = Crypto.solvePow(
                 r1.optString("pow_prefix", ""),
                 r1.optInt("pow_diff", 0)
             )
             val payload = JSONObject()
-                .put("license", license)
-                .put("game", "PYTHON")
-                .put("hwid", hwid)
+                .put("license", lastLicense)
+                .put("game", "")
+                .put("hwid", lastHwid)
                 .put("solution", solution)
                 .put("pow_nonce", powNonce)
                 .put("ts", System.currentTimeMillis() / 1000)
@@ -155,9 +154,10 @@ class PanelClient {
                 .put("proto", 2)
                 .apply { if (captchaSeal.isNotEmpty()) put("seal", captchaSeal) }
                 .toString()
-            var raw2 = postJson(base() + Vault.pathS(), loginJson)
+            // connect.php is the endpoint verified by the owner's CF-aware login test.
+            var raw2 = postJson(base() + Vault.pathConnect(), loginJson)
             if (raw2.isNullOrBlank() || raw2.trimStart().startsWith("<") || raw2.contains("Update required")) {
-                raw2 = postJson(base() + Vault.pathConnect(), loginJson)
+                raw2 = postJson(base() + Vault.pathS(), loginJson)
             }
             if (raw2.isNullOrBlank()) return LoginResult(false, "Empty login response")
             if (raw2.trimStart().startsWith("<")) return LoginResult(false, "Gateway blocked login")
@@ -177,11 +177,18 @@ class PanelClient {
             if (data.optString("status") != "success") {
                 return LoginResult(false, data.optString("msg", "rejected"))
             }
-            sessionToken = data.optString("session_token", "")
+            val issuedToken = data.optString("session_token", "").trim()
+            // SessionGate and the panel contract require a 256-bit hex token.
+            // Fail closed rather than accepting login success without a usable session.
+            if (!issuedToken.matches(Regex("^[0-9A-Fa-f]{64}$"))) {
+                sessionToken = ""
+                return LoginResult(false, "Panel did not issue a valid session token")
+            }
+            sessionToken = issuedToken
             LoginResult(
                 ok = true,
                 message = data.optString("msg", "OK"),
-                sessionToken = sessionToken,
+                sessionToken = issuedToken,
                 expiry = data.optString("expiry", ""),
                 seller = data.optString("seller", ""),
                 product = data.optString("product", "PREMIUM"),
@@ -191,76 +198,24 @@ class PanelClient {
         }
     }
 
-    fun requestOtp(license: String = lastLicense, hwid: String = lastHwid): OtpResult {
-        return try {
-            ensureGate()
-            val json = JSONObject()
-                .put("action", "request")
-                .put("license", license)
-                .put("hwid", hwid)
-                .put("session_token", sessionToken)
-                .toString()
-            val raw = postJson(base() + Vault.pathOtp(), json)
-                ?: return OtpResult(false, "OTP request failed")
-            if (raw.trimStart().startsWith("<")) return OtpResult(false, "Gateway blocked OTP")
-            val j = JSONObject(raw)
-            val ok = j.optString("status") == "ok" || j.optBoolean("ok", false)
-            OtpResult(ok, j.optString("msg", if (ok) "OTP sent to owner" else "OTP failed"))
-        } catch (e: Exception) {
-            OtpResult(false, e.message ?: "otp error")
-        }
-    }
-
-    fun verifyOtp(otp: String, license: String = lastLicense, hwid: String = lastHwid): OtpResult {
-        return try {
-            ensureGate()
-            val json = JSONObject()
-                .put("action", "verify")
-                .put("license", license)
-                .put("hwid", hwid)
-                .put("otp", otp)
-                .put("session_token", sessionToken)
-                .toString()
-            val raw = postJson(base() + Vault.pathOtp(), json)
-                ?: return OtpResult(false, "OTP verify failed")
-            if (raw.trimStart().startsWith("<")) return OtpResult(false, "Gateway blocked OTP")
-            val j = JSONObject(raw)
-            val ok = j.optString("status") == "ok"
-            if (!ok) {
-                toolTicket = ""
-                return OtpResult(false, j.optString("msg", "Invalid OTP"), "")
-            }
-
-            // OTP may rotate the authenticated session.  Keep the session
-            // token and tool ticket as two completely separate credentials.
-            val rotatedSession = j.optString("session_token", "").trim()
-            if (rotatedSession.isNotEmpty()) {
-                if (!rotatedSession.matches(Regex("^[0-9A-Fa-f]{64}$"))) {
-                    toolTicket = ""
-                    return OtpResult(false, "Invalid session token from server", "")
-                }
-                sessionToken = rotatedSession
-            }
-
-            toolTicket = j.optString("tool_ticket", "").trim()
-            OtpResult(true, j.optString("msg", "OTP OK"), toolTicket)
-        } catch (e: Exception) {
-            OtpResult(false, e.message ?: "otp verify error")
-        }
-    }
-
     fun fetchCore(
         license: String = lastLicense,
         hwid: String = lastHwid,
-        ticket: String = toolTicket,
     ): FetchResult {
+        val normalizedLicense = license.trim()
+        val normalizedHwid = hwid.trim()
+        val activeToken = sessionToken.trim()
+        if (normalizedLicense.isBlank() || normalizedHwid.isBlank() ||
+            normalizedLicense != lastLicense || normalizedHwid != lastHwid ||
+            !activeToken.matches(Regex("^[0-9A-Fa-f]{64}$"))) {
+            return FetchResult(false, "No valid license-bound panel session; sign in again")
+        }
         return try {
             ensureGate()
             val fetchJson = JSONObject()
-                .put("license", license)
-                .put("hwid", hwid)
-                .put("session_token", sessionToken)
-                .put("tool_ticket", ticket)
+                .put("license", normalizedLicense)
+                .put("hwid", normalizedHwid)
+                .put("session_token", activeToken)
                 .toString()
             var bytes = postJsonBytes(base() + Vault.pathFetch(), fetchJson)
             if (bytes == null) {
@@ -270,7 +225,6 @@ class PanelClient {
                         "license" to license,
                         "hwid" to hwid,
                         "session_token" to sessionToken,
-                        "tool_ticket" to ticket,
                     )
                 )
             }

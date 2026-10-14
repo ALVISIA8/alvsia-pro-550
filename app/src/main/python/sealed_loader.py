@@ -7,7 +7,6 @@ import pkgutil
 import re
 import sys
 
-_BUILD_ID = "ALVISIA-20261010-MAIN-SEAL1"
 _MAGIC = b"ALVSEAL2"
 _MAP = {
     "alvsia_bridge_impl": "alvsia_bridge_impl.alv",
@@ -47,12 +46,12 @@ class _SealedLoader(importlib.abc.Loader):
             raise ImportError("sealed runtime authorization missing")
         try:
             # Keep the seed, certificate-derived key, and AES key derivation out
-            # of Python. The Kotlin/JNI bridge performs authenticated decryption.
+            # of Python. The native/JNI bridge performs authenticated decryption.
             from com.alvsia.pro.sec import NativeGuard
             raw = pkgutil.get_data("sealed", self.blob)
             if raw is None:
                 raise FileNotFoundError("sealed payload resource missing")
-            source = bytes(NativeGuard.decryptSealedPayload(raw, _BUILD_ID))
+            source = bytes(NativeGuard.decryptSealedPayload(raw))
         except Exception as exc:
             raise ImportError("sealed payload authentication/decryption failed") from exc
         module.__file__ = "<ALVISIA-SEALED:%s>" % self.fullname

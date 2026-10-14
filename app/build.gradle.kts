@@ -19,6 +19,7 @@ android {
         versionCode = 96
         versionName = "5.5.0-upgrade"
         buildConfigField("int", "PROTO", "2")
+        buildConfigField("boolean", "ENABLE_DEV_TRACER", "false")
         buildConfigField("String", "CERT_SHA256", "\"99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c\"")
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -43,6 +44,7 @@ android {
         }
         debug {
             isMinifyEnabled = false
+            buildConfigField("boolean", "ENABLE_DEV_TRACER", "true")
         }
     }
 

@@ -53,9 +53,12 @@ def main() -> None:
         fail("usage: verify_release_security.py /path/to/unsigned-release.apk")
     try:
         with zipfile.ZipFile(APK) as apk:
-            matches = [n for n in apk.namelist() if n.endswith(APP_IMY_SUFFIX)]
+            apk_names = apk.namelist()
+            matches = [n for n in apk_names if n.endswith(APP_IMY_SUFFIX)]
             if len(matches) != 1:
                 fail("expected exactly one " + APP_IMY_SUFFIX + "; found " + str(len(matches)))
+            if any(b"DECOY_NOT_ENGINE" in apk.read(name) for name in apk_names if not name.endswith("/")):
+                fail("decoy marker remains in a packaged APK entry")
             app_imy = apk.read(matches[0])
     except (OSError, zipfile.BadZipFile, KeyError) as exc:
         fail("cannot inspect APK/app.imy: " + str(exc))
@@ -63,6 +66,10 @@ def main() -> None:
     try:
         with zipfile.ZipFile(io.BytesIO(app_imy)) as runtime:
             names = runtime.namelist()
+            if any(b"DECOY_NOT_ENGINE" in runtime.read(name) for name in names if not name.endswith("/")):
+                fail("decoy marker remains inside Chaquopy app.imy")
+            if any(b"ALVISIA-20261010-MAIN-SEAL1" in runtime.read(name) for name in names if not name.endswith("/")):
+                fail("native-only build identity leaked into Python runtime archive")
             alv = [n for n in names if n.lower().endswith(".alv")]
             actual = {n.rsplit("/", 1)[-1].lower() for n in alv}
             if actual != BUILD_PAYLOADS:

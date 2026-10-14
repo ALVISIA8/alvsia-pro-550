@@ -16,7 +16,7 @@ This matrix is a verification plan, not a claim that all controls are implemente
 12. Server validates licenses — SERVER-SIDE CONTROL
 13. Session token entropy and expiry — NEEDS TEST
 14. Reject forged environment-only session — NEEDS TEST
-15. Login and OTP regression tests — NEEDS TEST
+15. License-only login regression tests; client OTP flow removed — NEEDS TEST
 16. Operation grant enforced at each dispatch — NEEDS TEST
 17. Native library loaded in release — NEEDS TEST
 18. Missing native library cannot authorize protected tools — NEEDS IMPLEMENTATION
@@ -57,4 +57,4 @@ This matrix is a verification plan, not a claim that all controls are implemente
 - Android permissions cannot be silently bypassed or made universally unrestricted. Request only required access, use SAF where feasible, and explain any special all-files access setting.
 - Client-side encryption/obfuscation raises extraction cost but cannot guarantee plaintext stays secret while code executes on a device controlled by an attacker.
 - A seed compiled into native code is not a server-side secret; never use it as the sole license authorization mechanism.
-- Keep the release gate failing until sealed payload generation and imports are actually integrated. Preserve login, OTP, session grants and tool dispatch with regression tests before merging.
+- Keep the release gate failing until sealed payload generation and imports are actually integrated. Preserve license login, session grants and tool dispatch with regression tests before merging; do not reintroduce the removed client OTP flow.
