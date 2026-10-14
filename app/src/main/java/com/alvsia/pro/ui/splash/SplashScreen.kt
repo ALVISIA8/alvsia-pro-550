@@ -30,7 +30,6 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -85,12 +84,14 @@ fun SplashScreen(onFinished: () -> Unit) {
         onDispose { }
     }
 
+    // Keep the matrix backdrop from forcing a full Compose recomposition on
+    // every display frame. On low-memory devices the old frame-synchronous
+    // loop could starve the splash animation and delay navigation to login.
     LaunchedEffect(Unit) {
         val t0 = System.nanoTime()
         while (true) {
-            withFrameNanos { now ->
-                tick = ((now - t0) / 1_000_000_000f)
-            }
+            tick = ((System.nanoTime() - t0) / 1_000_000_000f)
+            delay(50) // 20 updates/sec is sufficient for this decorative layer.
         }
     }
 
