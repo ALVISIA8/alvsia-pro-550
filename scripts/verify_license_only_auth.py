@@ -22,6 +22,9 @@ crypto = read("java/com/alvsia/pro/panel/Crypto.kt")
 activity = read("java/com/alvsia/pro/MainActivity.kt")
 session = read("java/com/alvsia/pro/sec/SessionGate.kt")
 engine = read("java/com/alvsia/pro/tool/ToolEngine.kt")
+info_screen = read("java/com/alvsia/pro/ui/info/InfoScreen.kt")
+readme_path = ROOT / "README.md"
+readme_text = readme_path.read_text(encoding="utf-8", errors="replace") if readme_path.is_file() else ""
 
 checks = {
     "API base targets api.alvsiapro.cc.cd": r'return\s+"https://api\.\$host/api"',
@@ -58,6 +61,16 @@ sources = {
     "session gate exposes tool authorization": session,
 }
 failed = []
+if re.search(r"OTP Gate|Telegram delivery.*session rotation", info_screen, re.I):
+    failed.append("InfoScreen still advertises the removed client OTP gate")
+if not re.search(r"License Session.*license/HWID-bound session token", info_screen, re.I):
+    failed.append("InfoScreen does not describe license/session authorization")
+if not re.search(r"UAsset/UEXP", info_screen, re.I):
+    failed.append("InfoScreen does not list UAsset/UEXP inspection")
+if re.search(r"OTP Gate|Telegram delivery.*session rotation", readme_text, re.I):
+    failed.append("README still documents the removed client OTP gate")
+if not re.search(r"UAsset/UEXP", readme_text, re.I):
+    failed.append("README does not document UAsset/UEXP inspection")
 for label, pattern in checks.items():
     if not re.search(pattern, sources[label]):
         failed.append(label)
