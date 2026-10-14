@@ -1,87 +1,59 @@
-# ALVSIA PREMIUM TOOL 5.5.0
+# ALVISIA PRO 5.5.0
 
-> **Channel**: [t.me/ALVSIA_PRO](https://t.me/ALVSIA_PRO)  
-> **Owner / Developer**: [@OriginalOnwerALV](https://t.me/OriginalOnwerALV)
+> **Telegram channel:** https://t.me/ALVSIA_PRO  
+> **Developer / owner:** @OriginalOnwerALV — https://t.me/OriginalOnwerALV
 
----
+## Project status
 
-## Overview
+This repository contains the ALVISIA PRO Android source. The current license-only-login and UAsset/UEXP-inspector work is being validated on a development branch; it must not be treated as a production release until CI and on-device regression tests pass.
 
-ALVSIA PRO is a hardened Android toolkit for PAK/OBB/Lua file analysis and manipulation. It ships with a 7-layer RASP security stack, AES-256-GCM session encryption backed by Android Keystore TEE, TLS 1.3 certificate pinning, and a full 17-module tool catalog.
+## Authentication
 
-## Build — CodeMagic
+- The client UI uses a panel license key; the client OTP screen and OTP-derived `tool_ticket` flow are removed on the license-only branch.
+- A successful panel login must issue a valid session token. Core fetch is bound to the same license and HWID and fails closed without a valid session.
+- The panel's live login and core-fetch endpoints must enforce token validity, license/HWID binding, expiry, and device limits. Client-side checks are not a replacement for server authorization.
+- The challenge/captcha handshake, if required by the deployed panel, is separate from the removed OTP screen.
 
-Set the following environment variables in CodeMagic before triggering a build:
+## Tool catalog
 
-| Variable | Description |
-|---|---|
-| `ALVSIA_SEAL_SEED_HEX` | 64-char hex seal seed (from owner) |
-| `ALVSIA_KEYSTORE_PASSWORD` | Keystore password |
-| `ALVSIA_KEY_ALIAS` | Key alias |
-| `ALVSIA_KEY_PASSWORD` | Key password |
-
-Build command (CodeMagic `scripts` step):
-```bash
-./gradlew assembleRelease
-```
-
-## Build — Termux (manual push & sign)
-
-```bash
-# 1. Push to GitHub
-cd <project-root>
-git init
-git remote add origin https://github.com/<user>/<repo>.git
-git add .
-git commit -m "ALVSIA PRO 5.5.0 R5_4_HARDENED"
-git push -u origin main
-
-# 2. Sign locally (if keystore available)
-bash RELEASE_SIGN_TERMUX.sh
-```
-
-## Module Catalog
-
-| # | Module | Function |
+| # | Tool | Function |
 |---|---|---|
-| 01 | PAK Unpack | Extract · list · info · CSV |
-| 02 | PAK Rebuild | Repack · inject · encrypt · decrypt |
-| 03 | PAK Compact | Delete entry · empty · clean |
-| 04 | OBB Tools | Unzip · rezip · info |
-| 05 | LUA Tools | Detect · analyze · decompile · clean · XOR |
-| 06 | File Scan | Strings · MD5/SHA-1/SHA-256 |
-| 07 | Workspace | Clear WORK/OUT tree |
-| 08 | Export Report | Session / file summary |
-| 09 | Rebrand | Auto brand/channel injection |
-| 10 | SO Analyzer | XOR-brute 256 keys · URL extract · AES probe · binary patch |
-| 11 | Frida Tracer | Live JNI hook · JS script export · spawn+trace |
-| 12 | XOR Suite | Single-byte scan · custom key · LuaS strip · batch |
-| 13 | Decrypt Engine | AES-CBC/ECB · ZUC · SM4 · SIMPLE1 · auto-detect |
-| 14 | PAK Deep | AES-SHA1 · Zstd · ZUC · SM4 · deep auto-probe |
-| 15 | String Recover | Obfuscated string restore · constant pool dump · XRef |
-| 16 | Lua Inject | Patch bytecode · inject hook function · mod repack |
-| 17 | Anti-RE Audit | APK · LUA · SO posture analysis report |
+| 01 | PAK Unpack | Extract, list, info, CSV |
+| 02 | PAK Rebuild | Repack, inject, encrypt, decrypt |
+| 03 | PAK Compact | Delete entry, empty, clean |
+| 04 | OBB Tools | Unzip, rezip, info |
+| 05 | Lua Tools | Detect, analyze, decompile, clean, XOR |
+| 06 | File Scan | Strings and hashes |
+| 07 | Workspace | Clear WORK/OUT |
+| 08 | Export Report | Session/file summary |
+| 09 | Rebrand | Brand/channel replacement |
+| 10 | SO Analyzer | Static binary inspection and string/XOR probes |
+| 11 | Frida Tracer | Instrumentation helpers for authorized testing |
+| 12 | XOR Suite | Single-byte/custom-key scans |
+| 13 | Decrypt Engine | Supported AES/ZUC/SM4/SIMPLE1 operations |
+| 14 | PAK Deep | Additional PAK format probes |
+| 15 | String Recover | String and constant inspection |
+| 16 | Lua Inject | Lua bytecode modification helpers |
+| 17 | Anti-RE Audit | APK/Lua/SO posture reports; read-only UAsset/UEXP header and sidecar inspection |
 
-## Security Architecture
+The UAsset/UEXP inspector writes TXT and JSON reports with file size, SHA-256, raw header words, standard package-magic status, and companion-file detection. It does not modify the selected asset and does not claim to fully parse every Unreal Engine version or encrypted game format.
 
-- **RASP Engine** — 8-second tick · deep scan 60s · hard-kill on instrumentation
-- **Session Gate** — AES-256-GCM · Android Keystore TEE · 12h TTL · HMAC-tagged strike counter
-- **Native Guard** — `librasp_guard.so` · 8-flag bitmask (TracerPid/maps/ptrace/hwbp/hook/cap/hash/timing)
-- **TLS Pinning** — SPKI SHA-256 pin · blocks MITM in release builds
-- **Integrity Bomb** — cert SHA-256 · DEX count · clone container check
-- **Frida Probe** — `/proc/maps` · port 27042 · hook package scan
-- **OTP Gate** — Telegram delivery · session token rotation after verify
+## Build and release
 
-## Output Structure
+- GitHub Actions validates the source and builds an **unsigned release candidate** plus separate experimental obfuscation/protection candidates.
+- Obfuscapk and XopProtector outputs are diagnostic candidates; a successful packer run does not prove device compatibility.
+- Production signing requires the configured release secrets and must be verified against the expected production certificate fingerprint before distribution.
+- Do not publish an APK as final until CI passes, the APK identity/signature are checked, and login plus representative Lua/PAK/OBB/Game Patch workflows have been tested on a real Android device.
 
-All tool output lands at:
-```
-/sdcard/Download/ALVSIA/
-  IN/<MODULE>/    # optional input drop zone
-  WORK/<MODULE>/  # intermediate / temp
-  OUT/<MODULE>/   # final results ← always check here
-```
+For the current build and downloadable artifacts, open the repository's Actions tab:
+https://github.com/ALVISIA8/alvsia-pro-550/actions
+
+## Security and validation
+
+The project uses defense-in-depth controls including TLS pinning, session gating, integrity checks, and native/runtime checks. These controls need regression testing to avoid false positives and must not be described as a guarantee that every tool works or as equivalent to commercial virtualization products.
+
+Tool output is written under the app's configured workspace `IN/`, `WORK/`, and `OUT/` directories. Always verify the operation result and generated output rather than relying on a success-looking log line.
 
 ---
 
-© 2024–2026 ALVSIA PREMIUM TOOL · All rights reserved
+© 2024–2026 ALVISIA PRO
