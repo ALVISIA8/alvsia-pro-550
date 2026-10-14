@@ -44,32 +44,39 @@ object Crypto {
     fun b64d(s: String): ByteArray = Base64.decode(s, Base64.DEFAULT)
 
     fun solvePow(prefix: String, diff: Int): String {
-        if (prefix.isEmpty() || diff <= 0) return "0"
+        require(prefix.isNotBlank()) { "PoW prefix is missing" }
+        require(diff in 1..6) { "Unsupported PoW difficulty: $diff" }
         val need = "0".repeat(diff)
         for (i in 0 until 5_000_000) {
             val n = i.toString()
             if (sha256Hex(prefix + n).startsWith(need)) return n
         }
-        return "0"
+        throw IllegalStateException("PoW solution not found within search limit")
     }
 
     fun solveMechanic(challenge: String): Int {
-        val pattern = Regex("""^(-?[0-9]+)\s*([+*/-])\s*(-?[0-9]+)$""")
+        val pattern = Regex("""^(-?[0-9]+)\\s*([+*/-])\\s*(-?[0-9]+)$""")
         val direct = challenge.trim()
         val expr = if (pattern.matches(direct)) direct else try {
-            String(b64d(challenge)).trim()
+            String(b64d(challenge), Charsets.UTF_8).trim()
         } catch (_: Exception) {
             direct
         }
-        val m = pattern.matchEntire(expr) ?: return 0
-        val a = m.groupValues[1].toIntOrNull() ?: return 0
-        val b = m.groupValues[3].toIntOrNull() ?: return 0
+        val m = pattern.matchEntire(expr)
+            ?: throw IllegalArgumentException("Unsupported captcha expression")
+        val a = m.groupValues[1].toIntOrNull()
+            ?: throw IllegalArgumentException("Captcha operand is out of range")
+        val b = m.groupValues[3].toIntOrNull()
+            ?: throw IllegalArgumentException("Captcha operand is out of range")
         return when (m.groupValues[2]) {
-            "+" -> a + b
-            "-" -> a - b
-            "*" -> a * b
-            "/" -> if (b != 0) a / b else 0
-            else -> 0
+            "+" -> Math.addExact(a, b)
+            "-" -> Math.subtractExact(a, b)
+            "*" -> Math.multiplyExact(a, b)
+            "/" -> {
+                require(b != 0 && a % b == 0) { "Invalid captcha division" }
+                a / b
+            }
+            else -> throw IllegalArgumentException("Unsupported captcha operator")
         }
     }
 
