@@ -192,7 +192,7 @@ fun InfoScreen(onBack: () -> Unit) {
                     "14" to "PAK Deep          — AES-SHA1 · Zstd · ZUC · SM4",
                     "15" to "String Recover    — obfuscated restore · XRef",
                     "16" to "Lua Inject        — patch bytecode · hook · repack",
-                    "17" to "Anti-RE Audit     — APK/LUA/SO posture report"
+                    "17" to "Anti-RE Audit     — APK/LUA/SO + UAsset/UEXP inspection"
                 )
                 Column(Modifier.fillMaxWidth()) {
                     modules.forEach { (num, desc) ->
@@ -237,7 +237,7 @@ fun InfoScreen(onBack: () -> Unit) {
                     "Memory Guard      ptrace · /proc/mem foreign-pid detect",
                     "Frida Probe       /proc/maps · port 27042 · pkg scan",
                     "Anti-Dump         native nativeAntiDump() call",
-                    "OTP Gate          Telegram delivery · session rotation",
+                    "License Session    Panel key · license/HWID-bound session token",
                     "Strike Counter    HMAC-SHA256 integrity tag · max 2 strikes"
                 )
                 Column(Modifier.fillMaxWidth()) {
