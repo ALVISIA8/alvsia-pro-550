@@ -13,6 +13,7 @@ object Vault {
     fun certPinner(): CertificatePinner =
         CertificatePinner.Builder()
             .add("alvsiapro.cc.cd", PIN_SPKI)
+            .add("api.alvsiapro.cc.cd", PIN_SPKI)
             .add("*.alvsiapro.cc.cd", PIN_SPKI)
             .build()
 
