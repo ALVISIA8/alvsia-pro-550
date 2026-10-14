@@ -50,7 +50,7 @@ object Vault {
         // "pro.cc.cd" — key=0x71 step=0x0B
         val bEnc = intArrayOf(0x01, 0x08, 0x08, 0x7E, 0x3E, 0x25, 0x1D, 0x5F, 0x4D)
         val host = decPart(aEnc, 0x3D, 0x07) + decPart(bEnc, 0x71, 0x0B)
-        return "https://$host/api"
+        return "https://api.$host/api"
     }
 
     private fun decPart(enc: IntArray, k: Int, step: Int): String =
