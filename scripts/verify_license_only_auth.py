@@ -22,6 +22,11 @@ crypto = read("java/com/alvsia/pro/panel/Crypto.kt")
 activity = read("java/com/alvsia/pro/MainActivity.kt")
 session = read("java/com/alvsia/pro/sec/SessionGate.kt")
 engine = read("java/com/alvsia/pro/tool/ToolEngine.kt")
+bridge = read("python/alvsia_bridge_impl.py")
+features = read("python/alvsia_features.py")
+inspector_path = APP / "python/uasset_inspector.py"
+inspector = inspector_path.read_text(encoding="utf-8", errors="replace") if inspector_path.is_file() else ""
+submenus = read("java/com/alvsia/pro/tool/SubMenus.kt")
 info_screen = read("java/com/alvsia/pro/ui/info/InfoScreen.kt")
 readme_path = ROOT / "README.md"
 readme_text = readme_path.read_text(encoding="utf-8", errors="replace") if readme_path.is_file() else ""
@@ -61,6 +66,14 @@ sources = {
     "session gate exposes tool authorization": session,
 }
 failed = []
+if "def inspect_asset(" not in inspector:
+    failed.append("UAsset/UEXP inspector implementation is missing")
+if "def run_uasset_inspect(" not in features:
+    failed.append("UAsset/UEXP feature adapter is missing")
+if 'sid == "audit_uasset"' not in bridge or "feat.run_uasset_inspect(ip, dest_audit)" not in bridge:
+    failed.append("UAsset/UEXP Anti-RE dispatch is not wired")
+if 'SubTool("audit_uasset"' not in submenus:
+    failed.append("UAsset/UEXP menu item is missing")
 if re.search(r"OTP Gate|Telegram delivery.*session rotation", info_screen, re.I):
     failed.append("InfoScreen still advertises the removed client OTP gate")
 if not re.search(r"License Session.*license/HWID-bound session token", info_screen, re.I):
