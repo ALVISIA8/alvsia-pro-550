@@ -69,10 +69,14 @@ class MainActivity : ComponentActivity() {
                 var activeSub by remember { mutableStateOf<SubTool?>(null) }
                 var logs by remember { mutableStateOf(listOf<String>()) }
                 var running by remember { mutableStateOf(false) }
+                var engineAssetsReady by remember { mutableStateOf(false) }
                 val ctx = LocalContext.current
                 val hwid = remember { Hwid.deviceId(ctx) }
-                val engine = remember {
-                    ToolEngine(ctx).also { it.installJarsFromAssets() }
+                // Move runtime asset extraction off the UI thread to prevent a frozen splash.
+                val engine = remember { ToolEngine(ctx) }
+                LaunchedEffect(engine) {
+                    withContext(Dispatchers.IO) { engine.installJarsFromAssets() }
+                    engineAssetsReady = true
                 }
 
                 // Back handler — info screen goes back to home; tool/submenu as before
