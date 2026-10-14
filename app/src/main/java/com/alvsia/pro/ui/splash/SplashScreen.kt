@@ -1,6 +1,7 @@
 package com.alvsia.pro.ui.splash
 
-import android.media.MediaPlayer
+import android.media.AudioManager
+import android.media.ToneGenerator
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -30,7 +31,6 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -61,6 +61,8 @@ import kotlin.random.Random
 @Composable
 fun SplashScreen(onFinished: () -> Unit) {
     val context = LocalContext.current
+    val flashAlpha = remember { Animatable(0f) }
+    val introTone = remember { ToneGenerator(AudioManager.STREAM_MUSIC, 65) }
     val logoAlpha = remember { Animatable(0f) }
     val logoScale = remember { Animatable(0.72f) }
     val textAlpha = remember { Animatable(0f) }
@@ -80,17 +82,44 @@ fun SplashScreen(onFinished: () -> Unit) {
         }
     }
 
-    DisposableEffect(Unit) {
-        // The optional welcome audio asset is not present in this source snapshot.
-        onDispose { }
+    // Built-in startup motif avoids depending on a missing packaged audio asset.
+    DisposableEffect(introTone) {
+        onDispose {
+            introTone.stopTone()
+            introTone.release()
+        }
     }
 
     LaunchedEffect(Unit) {
+        flashAlpha.animateTo(0.72f, tween(90))
+        flashAlpha.animateTo(0f, tween(520))
+    }
+
+    LaunchedEffect(Unit) {
+        val motif = listOf(
+            ToneGenerator.TONE_DTMF_1,
+            ToneGenerator.TONE_DTMF_3,
+            ToneGenerator.TONE_DTMF_5,
+            ToneGenerator.TONE_DTMF_3,
+            ToneGenerator.TONE_DTMF_8,
+            ToneGenerator.TONE_DTMF_5,
+            ToneGenerator.TONE_DTMF_3,
+            ToneGenerator.TONE_DTMF_1
+        )
+        motif.forEach { tone ->
+            introTone.startTone(tone, 145)
+            delay(175)
+            introTone.stopTone()
+            delay(30)
+        }
+    }
+
+    // Throttle decorative matrix updates so low-memory devices can finish startup.
+    LaunchedEffect(Unit) {
         val t0 = System.nanoTime()
         while (true) {
-            withFrameNanos { now ->
-                tick = ((now - t0) / 1_000_000_000f)
-            }
+            tick = ((System.nanoTime() - t0) / 1_000_000_000f)
+            delay(50)
         }
     }
 
@@ -233,6 +262,12 @@ fun SplashScreen(onFinished: () -> Unit) {
                 fontSize = 11.sp
             )
         }
+
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color.White.copy(alpha = flashAlpha.value))
+        )
     }
 }
 
