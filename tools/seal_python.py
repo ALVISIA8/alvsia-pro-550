@@ -49,6 +49,15 @@ def _seed() -> bytes:
 def _key() -> bytes:
     return hashlib.sha256(_seed() + bytes.fromhex(CERT_HEX) + BUILD_ID.encode()).digest()
 
+def seal_payload(source: bytes, seed: bytes, cert_digest: bytes, build_id: str) -> bytes:
+    """Create the exact ALVSEAL2 envelope consumed by NativeGuard.decryptSealedPayload."""
+    if len(seed) != 32 or len(cert_digest) != 32 or not build_id or len(build_id) > 128:
+        raise ValueError("invalid seal key material")
+    key = hashlib.sha256(seed + cert_digest + build_id.encode("utf-8")).digest()
+    nonce = os.urandom(12)
+    encrypted = AESGCM(key).encrypt(nonce, source, MAGIC)
+    return MAGIC + nonce + encrypted
+
 def restore() -> None:
     manifest = BACKUP / "manifest.json"
     if not manifest.is_file():
@@ -89,13 +98,12 @@ def seal() -> None:
     (OUT / "__init__.py").write_text("\"\"\"Authenticated ALVSEAL2 payload resources.\"\"\"\n", encoding="utf-8")
     for stale_blob in OUT.glob("*.alv"):
         stale_blob.unlink()
-    aes = AESGCM(_key())
+    seed = _seed()
+    cert_digest = bytes.fromhex(CERT_HEX)
     try:
         for rel, source in zip(MODULES, sources):
             name = rel.replace("/", "_")[:-3] + ".alv"
-            nonce = os.urandom(12)
-            encrypted = aes.encrypt(nonce, source.read_bytes(), MAGIC)
-            (OUT / name).write_bytes(MAGIC + nonce + encrypted)
+            (OUT / name).write_bytes(seal_payload(source.read_bytes(), seed, cert_digest, BUILD_ID))
         for rel, source in zip(MODULES, sources):
             saved = BACKUP / rel
             saved.parent.mkdir(parents=True, exist_ok=True)
