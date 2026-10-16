@@ -181,10 +181,26 @@ workflows:
 
           "$BUILD_TOOLS/zipalign" -f 4 "$UNSIGNED" /tmp/alvsia-release-aligned.apk
           "$BUILD_TOOLS/apksigner" sign \
+            --v1-signing-enabled false \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
             --ks "$KS" --ks-key-alias "$ALIAS" \
             --ks-pass "pass:$KSPASS" --key-pass "pass:$KEYPASS" \
             --out ALVISIA_PRO_5.5.0_signed.apk /tmp/alvsia-release-aligned.apk
-          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs ALVISIA_PRO_5.5.0_signed.apk
+          VERIFY_OUTPUT="$("$BUILD_TOOLS/apksigner" verify --verbose --print-certs ALVISIA_PRO_5.5.0_signed.apk)"
+          printf '%s\n' "$VERIFY_OUTPUT"
+          printf '%s\n' "$VERIFY_OUTPUT" | grep -Eqi 'Verified using v1 scheme.*: false' || {
+            echo "ERROR: v1/JAR signing must be disabled for release APK"
+            exit 1
+          }
+          printf '%s\n' "$VERIFY_OUTPUT" | grep -Eqi 'Verified using v2 scheme.*: true' || {
+            echo "ERROR: APK v2 signature verification failed"
+            exit 1
+          }
+          printf '%s\n' "$VERIFY_OUTPUT" | grep -Eqi 'Verified using v3 scheme.*: true' || {
+            echo "ERROR: APK v3 signature verification failed"
+            exit 1
+          }
 
           EXPECTED_CERT_SHA256="$(grep -oE '[0-9a-fA-F]{64}' app/build.gradle.kts | head -n 1 | tr '[:upper:]' '[:lower:]')"
           ACTUAL_CERT_SHA256="$("$BUILD_TOOLS/apksigner" verify --print-certs ALVISIA_PRO_5.5.0_signed.apk | awk -F': ' '/certificate SHA-256 digest/ {print $NF; exit}' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
