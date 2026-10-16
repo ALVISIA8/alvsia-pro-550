@@ -65,24 +65,26 @@ object PythonBridgeRunner {
             val py = pyClass.getMethod("getInstance").invoke(null) ?: return false to listOf("... Python instance null")
             val getModule = pyClass.getMethod("getModule", String::class.java)
 
-            val osMod = getModule.invoke(py, "os") ?: return false to listOf("... os module unavailable")
             val pyObjectCls = Class.forName("com.chaquo.python.PyObject")
-            val getObj = pyObjectCls.getMethod("get", String::class.java)
             val callAttr = pyObjectCls.getMethod("callAttr", String::class.java, Array<Any?>::class.java)
-
-            val environ = getObj.invoke(osMod, "environ") ?: return false to listOf("... environ unavailable")
 
             val token = SessionGate.sessionToken.trim()
             if (!token.matches(Regex("^[0-9A-Fa-f]{64}$"))) {
                 return false to listOf("X AUTH: native session token invalid")
             }
 
-            // Bind verified session into Python environment
-            callAttr.invoke(environ, "__setitem__", arrayOf<Any?>("ALVSIA_APK_SESSION", "1"))
-            callAttr.invoke(environ, "__setitem__", arrayOf<Any?>("ALVSIA_SESSION_TOKEN", token))
-            callAttr.invoke(environ, "__setitem__", arrayOf<Any?>("ALVSIA_SEALED_RUNTIME", "1"))
-
             val bridge = getModule.invoke(py, "alvsia_bridge") ?: return false to listOf("... alvsia_bridge unavailable")
+            // Configure the authenticated Python session through a bridge function.
+            // This avoids relying on PyObject.get(String), which is not available in
+            // some Chaquopy runtimes and caused "PyObject.get" reflection failures.
+            val configure = callAttr.invoke(
+                bridge,
+                "configure_runtime",
+                arrayOf<Any?>(token, "1")
+            )
+            if (configure?.toString() != "True") {
+                return false to listOf("X AUTH: Python runtime session configuration rejected")
+            }
             val rawResult = callAttr.invoke(
                 bridge,
                 "bridge_run_sub",
