@@ -117,22 +117,9 @@ class MainActivity : ComponentActivity() {
                 ) { scr ->
                 when (scr) {
                     "splash" -> SplashScreen {
-                        // Leave the splash immediately; security scans must not block the UI thread.
+                        // Keep startup animation independent from expensive checks.
+                        // Login re-runs Guard checks; post-login performs Tamper checks and starts RASP.
                         screen = "login"
-                        lifecycleScope.launch(Dispatchers.IO) {
-                            try {
-                                Guard.checkAndReport(this@MainActivity)
-                                RaspEngine.tick(this@MainActivity)
-                                val tr = Tamper.evaluate(this@MainActivity)
-                                if (!tr.ok) {
-                                    ThreatReport.emit(
-                                        this@MainActivity, "TAMPER", tr.reasons.joinToString("|")
-                                    )
-                                }
-                            } catch (_: Exception) {
-                                // Login performs its own authorization/security checks.
-                            }
-                        }
                     }
 
                     // ── LOGIN — key only, no OTP ──────────────────────────────────────
