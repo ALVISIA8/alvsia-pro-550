@@ -58,8 +58,8 @@ def main() -> int:
             check("assets/nx/i.dat" in names, "sealed JAR index packaged")
             check(not any(n.startswith("assets/unluac/") and n.lower().endswith(".jar") for n in names),
                   "plaintext unluac JAR assets absent")
-            check(not any(n.endswith("META-INF/version-control-info.textproto") for n in names),
-                  "VCS revision metadata absent")
+            vcs_entries = sorted(n for n in names if n.endswith("version-control-info.textproto"))
+            check(not vcs_entries, "VCS revision metadata absent" if not vcs_entries else "VCS revision metadata absent; found: " + ", ".join(vcs_entries))
             dex_names = sorted(n for n in names if re.fullmatch(r"classes(?:[0-9]+)?\.dex", n))
             dex_bytes = b"".join(outer.read(n) for n in dex_names)
             check(b"com/securevale/" not in dex_bytes,
