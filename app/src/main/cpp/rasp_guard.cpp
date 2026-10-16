@@ -198,8 +198,8 @@ static int check_timing_ptrace() {
 // ─────────────────────────────────────────────────────────────────────
 extern "C" {
 
-JNIEXPORT jint JNICALL
-Java_com_alvsia_pro_sec_NativeGuard_nativeScanFlags(JNIEnv*, jobject) {
+static jint JNICALL
+native_scan_flags(JNIEnv*, jobject) {
     int flags = 0;
     flags |= check_tracer_pid();
     flags |= check_maps_frida();
@@ -212,8 +212,8 @@ Java_com_alvsia_pro_sec_NativeGuard_nativeScanFlags(JNIEnv*, jobject) {
     return (jint)flags;
 }
 
-JNIEXPORT void JNICALL
-Java_com_alvsia_pro_sec_NativeGuard_nativeWipe(JNIEnv* env, jobject, jbyteArray arr) {
+static void JNICALL
+native_wipe(JNIEnv* env, jobject, jbyteArray arr) {
     if (!arr) return;
     jsize len = env->GetArrayLength(arr);
     if (len <= 0) return;
@@ -223,8 +223,8 @@ Java_com_alvsia_pro_sec_NativeGuard_nativeWipe(JNIEnv* env, jobject, jbyteArray 
     env->ReleaseByteArrayElements(arr, p, 0);
 }
 
-JNIEXPORT jint JNICALL
-Java_com_alvsia_pro_sec_NativeGuard_nativeAntiDump(JNIEnv*, jobject) {
+static jint JNICALL
+native_anti_dump(JNIEnv*, jobject) {
     // Scan all pids: detect open fd to /proc/<self>/mem
     int selfpid = (int)getpid();
     char selfmem[64];
@@ -275,8 +275,8 @@ extern "C" {
 __attribute__((visibility("hidden")))
 static const unsigned char _alvsia_seal_seed[32] = {0};
 
-JNIEXPORT jbyteArray JNICALL
-Java_com_alvsia_pro_sec_NativeGuard_nativeSealSeed(JNIEnv* env, jobject) {
+static jbyteArray JNICALL
+native_seal_seed(JNIEnv* env, jobject) {
     // In debug/CI builds the seed is all-zero — sealed assets won't decrypt.
     // In release builds, seal_python.py patches this array before linking.
     bool all_zero = true;
@@ -289,3 +289,29 @@ Java_com_alvsia_pro_sec_NativeGuard_nativeSealSeed(JNIEnv* env, jobject) {
 }
 
 }  // extern "C"
+
+
+// Resolve JNI entry points by registration instead of exporting predictable
+// Java_com_* symbols in the dynamic symbol table.
+static JNINativeMethod kNativeMethods[] = {
+    {const_cast<char*>("nativeScanFlags"), const_cast<char*>("()I"), reinterpret_cast<void*>(native_scan_flags)},
+    {const_cast<char*>("nativeWipe"), const_cast<char*>("([B)V"), reinterpret_cast<void*>(native_wipe)},
+    {const_cast<char*>("nativeAntiDump"), const_cast<char*>("()I"), reinterpret_cast<void*>(native_anti_dump)},
+    {const_cast<char*>("nativeSealSeed"), const_cast<char*>("()[B"), reinterpret_cast<void*>(native_seal_seed)},
+};
+
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
+    JNIEnv* env = nullptr;
+    if (vm == nullptr || vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK || env == nullptr) {
+        return JNI_ERR;
+    }
+    jclass cls = env->FindClass("com/alvsia/pro/sec/NativeGuard");
+    if (cls == nullptr) {
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        return JNI_ERR;
+    }
+    const jint status = env->RegisterNatives(
+        cls, kNativeMethods, static_cast<jint>(sizeof(kNativeMethods) / sizeof(kNativeMethods[0])));
+    env->DeleteLocalRef(cls);
+    return status == JNI_OK ? JNI_VERSION_1_6 : JNI_ERR;
+}
