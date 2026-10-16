@@ -6,109 +6,62 @@ import java.io.FileReader
 
 object Guard {
 
-    // rsprotect = Reark protector native lib — intentionally whitelisted
-    private val MAP_MARKERS = listOf(
-        "frida", "xposed", "substrate", "dobby",
-        "lspatch", "lsposed", "zygisk", "edxposed",
-        "riru", "magisk", "shamiko",
-        "hookzz", "whale", "sandhook",
-        "epic", "dexposed", "andfix"
+    // Passive root/manager artifacts are deliberately excluded from hard
+    // enforcement. Only active runtime instrumentation should block a session.
+    private val RUNTIME_MARKERS = listOf(
+        "frida-agent", "frida-gadget", "frida_agent", "libfrida",
+        "libgadget", "xposed", "lsposed", "edxposed", "substrate",
+        "libsandhook", "libepic", "riru", "zygisk", "linjector",
+        "libdobby", "dobby", "shadowhook", "bhook", "bytehook",
+        "libandroid_inline_hook"
     )
 
     @Volatile var degraded: Boolean = false
-
     private var _lastReason = ""
     val lastReason: String get() = _lastReason
 
-    /**
-     * Full backward-compatible API used by AlvisiaApp, MainActivity, RaspEngine.
-     * hardEnforcement=false → return false on hostile but do NOT crash/kill.
-     */
     fun checkAndReport(
         ctx: Context,
         license: String = "",
         hardEnforcement: Boolean = true
     ): Boolean {
-        val hostile = hostile(ctx)
-        if (hostile) {
-            ThreatReport.emit(ctx, "GUARD_HOSTILE", _lastReason, license)
+        val active = hostile(ctx)
+        if (active) {
+            try { ThreatReport.emit(ctx, "GUARD_HOSTILE", _lastReason, license) } catch (_: Exception) {}
             degraded = true
             if (hardEnforcement) return false
         }
-        return !hostile
+        return !active
     }
 
     fun hostile(ctx: Context): Boolean {
-        if (tracerPidAttached()) { _lastReason = "tracer_attached"; return true }
-        if (hookInMaps()) { _lastReason = "hook_in_maps:$_mapsHit"; return true }
+        try {
+            val status = java.io.File("/proc/self/status").readText()
+            val tracer = status.lineSequence()
+                .firstOrNull { it.startsWith("TracerPid:", ignoreCase = true) }
+                ?.substringAfter(":")?.trim()?.toIntOrNull() ?: 0
+            if (tracer > 0) {
+                _lastReason = "tracer_attached"
+                return true
+            }
+        } catch (_: Exception) {
+            // Permission/OS differences are not evidence of a hostile process.
+        }
+
+        try {
+            val maps = java.io.File("/proc/self/maps").readText().lowercase()
+            val hit = RUNTIME_MARKERS.firstOrNull { it in maps }
+            if (hit != null) {
+                _lastReason = "active_hook_map:$hit"
+                return true
+            }
+        } catch (_: Exception) {
+            // Inaccessible maps must not lock out a legitimate user.
+        }
         _lastReason = ""
         return false
     }
 
-    private var _mapsHit = ""
-
-    private fun tracerPidAttached(): Boolean {
-        return try {
-            val br = BufferedReader(FileReader("/proc/self/status"))
-            var line: String?
-            var found = false
-            while (br.readLine().also { line = it } != null) {
-                if (line!!.startsWith("TracerPid:")) {
-                    val pid = line!!.substringAfter(":").trim().toLongOrNull() ?: 0L
-                    found = pid != 0L
-                    break
-                }
-            }
-            br.close()
-            found
-        } catch (_: Exception) { false }
-    }
-
-    private fun hookInMaps(): Boolean {
-        return try {
-            val br = BufferedReader(FileReader("/proc/self/maps"))
-            var line: String?
-            var found = false
-            while (br.readLine().also { line = it } != null) {
-                val lower = line!!.lowercase()
-                for (marker in MAP_MARKERS) {
-                    if (lower.contains(marker)) {
-                        _mapsHit = marker
-                        found = true
-                        break
-                    }
-                }
-                if (found) break
-            }
-            br.close()
-            found
-        } catch (_: Exception) { false }
-    }
-
-
-    /**
-     * Distinguishes active runtime instrumentation (ptrace, Frida, hooks)
-     * from passive root-only markers (su binary, root packages).
-     * Returns true ONLY for active instrumentation — root alone does not block.
-     */
-    private val RUNTIME_MARKERS = listOf(
-        "frida", "gadget", "xposed", "substrate", "dobby",
-        "shadowhook", "bhook", "pine", "lsplant", "sandhook"
-    )
-
-    fun runtimeHostile(ctx: Context): Boolean {
-        // Active instrumentation signals
-        val maps = try { java.io.File("/proc/self/maps").readText().lowercase() } catch (_: Exception) { "" }
-        if (RUNTIME_MARKERS.any { it in maps }) return true
-        val status = try { java.io.File("/proc/self/status").readText() } catch (_: Exception) { "" }
-        val tracerPid = status.lineSequence()
-            .firstOrNull { it.startsWith("TracerPid:", ignoreCase = true) }
-            ?.substringAfter(":")?.trim()?.toIntOrNull() ?: 0
-        if (tracerPid > 0) return true
-        // NativeGuard flags (active hooks, ptrace, hw-breakpoints)
-        val nf = NativeGuard.scanFlags()
-        return nf != 0
-    }
-
-
+    fun runtimeHostile(ctx: Context): Boolean =
+        hostile(ctx) || NativeGuard.scanFlags() != 0
 }
