@@ -97,7 +97,7 @@ jobs:
           name: ALVISIA_PRO_5.5.0_RELEASE_CANDIDATE
           path: validation-artifacts/
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
 
       - name: Restore source files after sealed build
         if: always()
