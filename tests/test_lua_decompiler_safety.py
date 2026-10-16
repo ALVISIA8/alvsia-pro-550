@@ -31,6 +31,32 @@ class Lua53BoundsTests(unittest.TestCase):
             self.assertIn("decompile failed", result["error"])
             self.assertFalse(dst.exists())
 
+    def test_valid_minimal_lua53_chunk_still_decompiles(self):
+        # Minimal standard Lua 5.3 chunk with one RETURN instruction and _ENV.
+        header = b"\x1bLua\x53\x00\x19\x93\x0d\x0a\x1a\x0a" + bytes([4, 4, 4, 8, 8])
+        data = bytearray(header)
+        data += struct.pack("<q", 0x5678)
+        data += struct.pack("<d", 370.5)
+        data += b"\x01"                  # main chunk has one upvalue
+        data += b"\x00"                  # no source string
+        data += struct.pack("<ii", 0, 0) # line definitions
+        data += b"\x00\x01\x02"          # params, vararg, max stack
+        data += struct.pack("<iI", 1, 38 | (1 << 23))  # RETURN A=0 B=1 C=0
+        data += struct.pack("<i", 0)     # constants
+        data += struct.pack("<i", 1) + b"\x01\x00"  # upvalue: instack, idx
+        data += struct.pack("<i", 0)     # nested prototypes
+        data += struct.pack("<i", 0)     # line info
+        data += struct.pack("<i", 0)     # local variables
+        data += struct.pack("<i", 1) + b"\x05_ENV"   # upvalue name
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / "valid.luac"
+            dst = Path(td) / "valid.lua"
+            src.write_bytes(data)
+            result = decompile_file(src, dst)
+            self.assertTrue(result["ok"], result)
+            self.assertTrue(dst.is_file())
+            self.assertIn("return", dst.read_text(encoding="utf-8"))
+
     def test_negative_instruction_count_is_rejected(self):
         # Valid Lua 5.3 header/check values followed by a negative instruction count.
         data = bytearray(b"\x1bLua\x53\x00\x19\x93\x0d\x0a\x1a\x0a")
