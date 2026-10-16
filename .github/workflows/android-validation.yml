@@ -70,6 +70,21 @@ jobs:
           ./gradlew assembleRelease --no-daemon --stacktrace
           APK="$(find app/build/outputs/apk/release -type f -name '*.apk' | head -n 1)"
           test -n "$APK"
+          # AGP injects this metadata after resource packaging; strip it from the unsigned APK
+          # before the security audit, preserving every other ZIP member byte-for-byte.
+          python3 - "$APK" <<'PY'
+          import os, sys, tempfile, zipfile
+          from pathlib import Path
+          apk = Path(sys.argv[1])
+          tmp = apk.with_suffix(".stripped.apk")
+          with zipfile.ZipFile(apk, "r") as src, zipfile.ZipFile(tmp, "w") as dst:
+              dst.comment = src.comment
+              for item in src.infolist():
+                  if item.filename.endswith("version-control-info.textproto"):
+                      continue
+                  dst.writestr(item, src.read(item.filename))
+          os.replace(tmp, apk)
+          PY
           python3 tools/audit_release_apk.py "$APK"
           mkdir -p validation-artifacts
           cp "$APK" validation-artifacts/ALVISIA_PRO_5.5.0_release_unsigned.apk
