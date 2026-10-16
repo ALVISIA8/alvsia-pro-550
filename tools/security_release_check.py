@@ -64,8 +64,10 @@ if "SessionGate.isSessionAuthorized()" not in read(PY / "alvsia_bridge_impl.py")
     fail.append("sealed tool dispatch must check the live Kotlin session gate")
 if "ALVSIA_SEAL_SEED" in tool_engine or "ALVSIA_SEAL_SEED" in loader:
     fail.append("seal seed must never be exposed through Python process environment")
-if "NativeGuard.decryptSealedPayload(raw, _BUILD_ID)" not in loader or "_CERT_SHA256" in loader:
-    fail.append("sealed loader must delegate authenticated decryption and keep certificate digest out of Python")
+if "sealBuildId()" not in loader or "_BUILD_ID" in loader or "_CERT_SHA256" in loader:
+    fail.append("sealed loader must obtain its build ID natively and keep certificate digest out of Python")
+if "fun sealBuildId(): String?" not in native_guard or "nativeSealBuildId" not in native:
+    fail.append("sealed build ID must be provided through the native bridge")
 if "fun decryptSealedPayload(payload: ByteArray, buildId: String)" not in native_guard or "nativeSealSeed()" not in native_guard:
     fail.append("Kotlin/native bridge must decrypt sealed payload without exposing the seed to Python")
 if "ALVSIA_SEALED_RUNTIME" not in tool_engine:
