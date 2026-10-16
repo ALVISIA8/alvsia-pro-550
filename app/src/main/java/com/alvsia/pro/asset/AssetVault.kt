@@ -1,7 +1,7 @@
 package com.alvsia.pro.asset
 
 import android.content.Context
-import com.alvsia.pro.sec.Tamper
+import com.alvsia.pro.sec.NativeGuard
 import java.io.File
 import java.security.MessageDigest
 import javax.crypto.Cipher
@@ -10,14 +10,6 @@ import javax.crypto.spec.SecretKeySpec
 
 object AssetVault {
     private val MAGIC = byteArrayOf(0x41, 0x4C, 0x56, 0x53, 0x41, 0x31, 0x00)
-
-    private fun key(ctx: Context): ByteArray {
-        val cert = Tamper.signingCertSha256(ctx).orEmpty().ifBlank {
-            "99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c"
-        }
-        val raw = (ctx.packageName + "|" + cert.lowercase() + "|ALV-ASSET-v1").toByteArray()
-        return MessageDigest.getInstance("SHA-256").digest(raw)
-    }
 
     private fun openBlob(blob: ByteArray, key: ByteArray): ByteArray? {
         return try {
@@ -34,7 +26,7 @@ object AssetVault {
     }
 
     fun loadSealedMap(ctx: Context): Map<String, ByteArray> {
-        val k = key(ctx)
+        val k = NativeGuard.assetSealKey() ?: return emptyMap()
         val out = mutableMapOf<String, ByteArray>()
         return try {
             val am = ctx.assets
@@ -53,6 +45,8 @@ object AssetVault {
             out
         } catch (_: Exception) {
             emptyMap()
+        } finally {
+            k.fill(0)
         }
     }
 
