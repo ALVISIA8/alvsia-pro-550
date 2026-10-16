@@ -191,6 +191,7 @@ class ToolEngine(private val context: Context) {
                 return lines
             } else {
                 lines.add("... Python runtime not ready -> native fallback")
+                lines.add("... Chaquopy diagnostic: ${PythonBridgeRunner.startupDiagnostic()}")
             }
         } catch (e: Exception) {
             lines.add("... bridge: ${e.message ?: e.javaClass.simpleName}")
