@@ -24,6 +24,17 @@ jobs:
           python3 -m pip install --disable-pip-version-check pycryptodome
           python3 tests/test_seal_python_payloads.py
 
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Build and test Android debug variant
+        run: |
+          chmod +x ./gradlew
+          ./gradlew testDebugUnitTest assembleDebug --no-daemon --stacktrace
+
       - name: Run APK pre-build audit
         run: python3 tools/audit_release_apk.py --pre-build-check || true
 
