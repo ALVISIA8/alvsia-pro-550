@@ -77,7 +77,7 @@ object RaspEngine {
 
         // Native RASP layer — consume results via flagsToReasons
         val nf = NativeGuard.scanFlags()
-        val nativeReasons = NativeGuard.flagsToReasons(NativeGuard.scanFlags())
+        val nativeReasons = NativeGuard.flagsToReasons(nf)
         nativeReasons.forEach { hard += it }
 
         // Threat level = hard count * 10 + soft count
