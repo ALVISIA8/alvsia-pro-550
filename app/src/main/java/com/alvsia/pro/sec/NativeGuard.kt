@@ -70,17 +70,23 @@ object NativeGuard {
         if (!payload.copyOfRange(0, 8).contentEquals(magic)) return null
         val seed = try { nativeSealSeed() } catch (_: Throwable) { null } ?: return null
         if (seed.size != 32) { seed.fill(0); return null }
+        var keyBytes: ByteArray? = null
+        var iv: ByteArray? = null
+        var body: ByteArray? = null
         return try {
             val certDigest = hexToBytes("99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c")
             val buildBytes = buildId.toByteArray(Charsets.UTF_8)
             val material = ByteArray(seed.size + certDigest.size + buildBytes.size)
-            System.arraycopy(seed, 0, material, 0, seed.size)
-            System.arraycopy(certDigest, 0, material, seed.size, certDigest.size)
-            System.arraycopy(buildBytes, 0, material, seed.size + certDigest.size, buildBytes.size)
-            val keyBytes = java.security.MessageDigest.getInstance("SHA-256").digest(material)
-            material.fill(0)
-            val iv = payload.copyOfRange(8, 20)
-            val body = payload.copyOfRange(20, payload.size)
+            try {
+                System.arraycopy(seed, 0, material, 0, seed.size)
+                System.arraycopy(certDigest, 0, material, seed.size, certDigest.size)
+                System.arraycopy(buildBytes, 0, material, seed.size + certDigest.size, buildBytes.size)
+                keyBytes = java.security.MessageDigest.getInstance("SHA-256").digest(material)
+            } finally {
+                material.fill(0)
+            }
+            iv = payload.copyOfRange(8, 20)
+            body = payload.copyOfRange(20, payload.size)
             val cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(javax.crypto.Cipher.DECRYPT_MODE, javax.crypto.spec.SecretKeySpec(keyBytes, "AES"), javax.crypto.spec.GCMParameterSpec(128, iv))
             cipher.updateAAD(magic)
@@ -89,6 +95,9 @@ object NativeGuard {
             null
         } finally {
             seed.fill(0)
+            keyBytes?.fill(0)
+            iv?.fill(0)
+            body?.fill(0)
         }
     }
 
@@ -122,12 +131,7 @@ object NativeGuard {
         val r = mutableListOf<String>()
         if (f and 0x01 != 0) r += "n_tracer_pid"
         if (f and 0x02 != 0) r += "n_maps_frida"
-        if (f and 0x04 != 0) r += "n_ptrace_error"
-        if (f and 0x08 != 0) r += "n_hw_breakpoint"
-        if (f and 0x10 != 0) r += "n_inline_hook"
-        if (f and 0x20 != 0) r += "n_cap_overgranted"
         if (f and 0x40 != 0) r += "n_self_hash_mismatch"
-        if (f and 0x80 != 0) r += "n_timing_ptrace"
         return r
     }
 
