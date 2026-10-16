@@ -237,13 +237,25 @@ def load_chunk(data: bytes) -> Proto:
         raise ValueError(f"expected Lua 5.3 (0x53), got {version:#x}")
     fmt = r.byte()
     luac_data = r._read(6)   # 0x19 0x93 0x0d 0x0a 0x1a 0x0a
+    if fmt != 0:
+        raise ValueError(f"unsupported Lua 5.3 chunk format {fmt}")
+    if luac_data != b"\\x19\\x93\\x0d\\x0a\\x1a\\x0a":
+        raise ValueError("Lua 5.3 header check bytes do not match; input may be wrapped or protected")
     r.int_size = r.byte()
     r.sizet_size = r.byte()
     r.instr_size = r.byte()
     r.lua_int_size = r.byte()
     r.lua_num_size = r.byte()
+    if r.int_size != 4 or r.instr_size != 4 or r.sizet_size not in (4, 8) or r.lua_int_size not in (4, 8) or r.lua_num_size not in (4, 8):
+        raise ValueError(
+            "unsupported Lua 5.3 field sizes: "
+            f"int={r.int_size}, size_t={r.sizet_size}, instruction={r.instr_size}, "
+            f"lua_Integer={r.lua_int_size}, lua_Number={r.lua_num_size}"
+        )
     _lua_int_check = r.lua_int()   # LUAC_INT  = 0x5678
     _lua_num_check = r.lua_num()   # LUAC_NUM  = 370.5
+    if _lua_int_check != 0x5678 or _lua_num_check != 370.5:
+        raise ValueError("Lua 5.3 integer/number format check failed; input may be endian-swapped or protected")
     # main upvalue count (upvalues field before main proto)
     _upval_count = r.byte()
     return load_proto(r)
