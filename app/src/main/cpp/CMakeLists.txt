@@ -14,10 +14,12 @@ add_compile_options(
     -D_FORTIFY_SOURCE=2
     -Wformat -Wformat-security
     -g0                  # disable all debug info in release build
+    -fno-ident           # omit compiler identity strings
 )
 
 add_link_options(
     -Wl,--strip-all
+    -Wl,--exclude-libs,ALL
     -Wl,--gc-sections
     -Wl,-z,relro
     -Wl,-z,now
