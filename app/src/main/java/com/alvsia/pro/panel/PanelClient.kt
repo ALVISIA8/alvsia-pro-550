@@ -260,7 +260,7 @@ class PanelClient {
             .header("Accept-Language", "en-US,en;q=0.9")
             .get()
             .build()
-        clientPinned.newCall(req).use { return it.body?.string() }
+        clientPinned.newCall(req).execute().use { return it.body?.string() }
     }
 
     private fun postJson(url: String, json: String): String? {
@@ -275,11 +275,11 @@ class PanelClient {
             .header("Content-Type", "application/json")
             .post(body)
             .build()
-        clientPinned.newCall(req).use { resp ->
+        clientPinned.newCall(req).execute().use { resp ->
             val s = resp.body?.string() ?: return null
             if (s.contains("slowAES") || s.contains("__test")) {
                 if (solveTestCookie(s, url)) {
-                    clientPinned.newCall(req).use { return it.body?.string() }
+                    clientPinned.newCall(req).execute().use { return it.body?.string() }
                 }
             }
             return s
@@ -297,7 +297,7 @@ class PanelClient {
             .header("Content-Type", "application/json")
             .post(body)
             .build()
-        clientPinned.newCall(req).use { return it.body?.bytes() }
+        clientPinned.newCall(req).execute().use { return it.body?.bytes() }
     }
 
     private fun postForm(url: String, fields: Map<String, String>): String? {
@@ -312,11 +312,11 @@ class PanelClient {
             .header("Accept-Language", "en-US,en;q=0.9")
             .post(body)
             .build()
-        clientPinned.newCall(req).use { resp ->
+        clientPinned.newCall(req).execute().use { resp ->
             val s = resp.body?.string() ?: return null
             if (s.contains("slowAES") || s.contains("__test")) {
                 if (solveTestCookie(s, url)) {
-                    clientPinned.newCall(req).use { return it.body?.string() }
+                    clientPinned.newCall(req).execute().use { return it.body?.string() }
                 }
             }
             return s
@@ -334,7 +334,7 @@ class PanelClient {
             .header("Accept", "*/*")
             .post(body)
             .build()
-        clientPinned.newCall(req).use { return it.body?.bytes() }
+        clientPinned.newCall(req).execute().use { return it.body?.bytes() }
     }
 
     fun securityEvent(jsonBody: String): Boolean {
@@ -347,7 +347,7 @@ class PanelClient {
                 .header("User-Agent", Vault.ua())
                 .header("Content-Type", "application/json")
                 .build()
-            clientPinned.newCall(req).use { it.isSuccessful }
+            clientPinned.newCall(req).execute().use { it.isSuccessful }
         } catch (_: Exception) {
             false
         }
