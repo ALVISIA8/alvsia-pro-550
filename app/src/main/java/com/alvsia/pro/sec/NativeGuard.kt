@@ -9,16 +9,12 @@ import java.io.File
  * If the native lib is NOT present (debug/CI build), falls back to
  * pure-Kotlin probes so compile always succeeds.
  *
- * JNI contract (librasp_guard.so implements these):
+ * JNI contract (current release implementation):
  *   native fun nativeScanFlags(): Int
  *     Bit 0: TracerPid > 0
- *     Bit 1: /proc/self/maps Frida marker found
- *     Bit 2: ptrace(PTRACE_TRACEME) returns error (already traced)
- *     Bit 3: hardware breakpoint register non-zero (GDB/IDA trace)
- *     Bit 4: inline hook in libdvm / libart .text section detected
- *     Bit 5: /proc/self/status CapEff == 0x3fffffffff (overgranted)
- *     Bit 6: self mem integrity hash mismatch (librasp_guard own page)
- *     Bit 7: timing-based ptrace detection (RDTSC delta)
+ *     Bit 1: active hook marker in /proc/self/maps
+ *     Bit 6: native code-page integrity hash mismatch
+ *   Other legacy bits are not emitted by the current native scanner.
  *
  *   native fun nativeWipe(buf: ByteArray): Unit
  *   native fun nativeAntiDump(): Int   — 0=clean, >0=dump attempt
