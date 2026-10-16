@@ -202,6 +202,13 @@ object UnluacRunner {
 
         if (t.isEmpty()) return false
 
+        // A real Lua chunk may consist only of a plain assignment, e.g. "x = 1".
+        // Require an identifier-based left-hand side and a non-empty RHS.
+        // This does not accept equality/comparison operators as assignments.
+        val looksAssignment = Regex(
+            """(?m)^\s*[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\s*=(?!=)\s*\S+"""
+        ).containsMatchIn(t)
+
         val looksLua =
             t.contains("function") ||
             t.contains("local ") ||
@@ -211,7 +218,8 @@ object UnluacRunner {
             t.contains("for ") ||
             t.contains("repeat ") ||
             t.contains("do ") ||
-            t.contains("--")
+            t.contains("--") ||
+            looksAssignment
 
         val looksError =
             t.startsWith("Error", true) ||
