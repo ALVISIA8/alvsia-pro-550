@@ -11,7 +11,7 @@ object Guard {
     private val RUNTIME_MARKERS = listOf(
         "frida-agent", "frida-gadget", "frida_agent", "libfrida",
         "libgadget", "xposed", "lsposed", "edxposed", "substrate",
-        "libsandhook", "libepic", "riru", "zygisk", "linjector",
+        "libsandhook", "libepic", "linjector",
         "libdobby", "dobby", "shadowhook", "bhook", "bytehook",
         "libandroid_inline_hook"
     )
