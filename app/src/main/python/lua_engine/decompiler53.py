@@ -863,10 +863,10 @@ def decompile_file(src: Path, dst: Path) -> dict:
         src_text = decompile_bytes(data)
         # A valid Lua chunk always contains executable instructions; header-only
         # output is a parse artifact, not a successful decompile.
-        if not src_text.strip() or src_text.count("\\n") < 2:
+        if not src_text.strip() or src_text.count("\n") < 2:
             return {"ok": False, "error": "decompile produced no executable Lua source"}
         if "-- Decompiled by ALVSIA PRO" in src_text and len(data) > 16:
-            body = src_text.split("\\n\\n", 1)[-1].strip()
+            body = src_text.split("\n\n", 1)[-1].strip()
             if not body:
                 return {"ok": False, "error": "decompile produced an empty Lua body"}
     except Exception as e:
