@@ -72,10 +72,18 @@ workflows:
           find app/build/outputs -name "*.apk" -type f 2>/dev/null || true
           exit $STATUS
 
+      - name: Strip VCS metadata from unsigned APK
+        script: |
+          set -e
+          APK=$(find app/build/outputs/apk -name "*.apk" -type f | head -1)
+          test -n "$APK"
+          python3 tools/strip_vcs_metadata.py "$APK"
+
       - name: Audit release APK
         script: |
           set -e
           APK=$(find app/build/outputs/apk -name "*.apk" -type f | head -1)
+          test -n "$APK"
           python3 tools/audit_release_apk.py "$APK"
 
       - name: Restore Python sources
