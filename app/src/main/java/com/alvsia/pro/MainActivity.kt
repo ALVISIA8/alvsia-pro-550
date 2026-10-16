@@ -80,8 +80,16 @@ class MainActivity : ComponentActivity() {
                 var running by remember { mutableStateOf(false) }
                 val ctx = LocalContext.current
                 val hwid = remember { Hwid.deviceId(ctx) }
-                val engine = remember {
-                    ToolEngine(ctx).also { it.installJarsFromAssets() }
+                // Never copy/decrypt JAR assets on Compose's main thread.
+                val engine = remember { ToolEngine(ctx) }
+                LaunchedEffect(engine) {
+                    withContext(Dispatchers.IO) {
+                        try {
+                            engine.installJarsFromAssets()
+                        } catch (_: Exception) {
+                            // ToolEngine retries installation on the IO dispatcher when a tool runs.
+                        }
+                    }
                 }
 
                 BackHandler(enabled = screen != "splash" && screen != "login") {
@@ -109,18 +117,22 @@ class MainActivity : ComponentActivity() {
                 ) { scr ->
                 when (scr) {
                     "splash" -> SplashScreen {
-                        try {
-                            Guard.checkAndReport(this@MainActivity)
-                            RaspEngine.tick(this@MainActivity)
-                            val tr = Tamper.evaluate(this@MainActivity)
-                            if (!tr.ok) {
-                                ThreatReport.emit(
-                                    this@MainActivity, "TAMPER", tr.reasons.joinToString("|")
-                                )
-                            }
-                        } catch (_: Exception) {
-                        }
+                        // Leave the splash immediately; security scans must not block the UI thread.
                         screen = "login"
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            try {
+                                Guard.checkAndReport(this@MainActivity)
+                                RaspEngine.tick(this@MainActivity)
+                                val tr = Tamper.evaluate(this@MainActivity)
+                                if (!tr.ok) {
+                                    ThreatReport.emit(
+                                        this@MainActivity, "TAMPER", tr.reasons.joinToString("|")
+                                    )
+                                }
+                            } catch (_: Exception) {
+                                // Login performs its own authorization/security checks.
+                            }
+                        }
                     }
 
                     // ── LOGIN — key only, no OTP ──────────────────────────────────────
