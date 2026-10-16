@@ -38,8 +38,6 @@ object NativeGuard {
 
     // ── JNI stubs (implemented in librasp_guard.so) ──────────────────
     private external fun nativeScanFlags(): Int
-    @Suppress("unused")
-    internal external fun scanFlags(): Int = nativeScanFlags()
     private external fun nativeWipe(buf: ByteArray)
     private external fun nativeAntiDump(): Int
 
@@ -57,7 +55,7 @@ object NativeGuard {
 
     fun wipe(buf: ByteArray?) {
         buf ?: return
-        if (nativeLoaded) {
+        if (NativeGuard.isNativeLoaded()) {
             try { nativeWipe(buf); return } catch (_: Exception) {}
         }
         buf.fill(0)
@@ -94,6 +92,8 @@ object NativeGuard {
         } catch (_: Exception) {}
         return flags
     }
+
+    fun isNativeLoaded(): Boolean = nativeLoaded
 }
 
 // ── Sealed asset decryption (AES/GCM/NoPadding via native seed) ──────────────
@@ -141,4 +141,3 @@ private fun fallbackSeed(): ByteArray =
         .digest("ALVSIA_FALLBACK_SEED_V1".toByteArray())
 
 /** Whether native lib is loaded — release pipeline checks this at startup */
-    fun isNativeLoaded(): Boolean = nativeLoaded
