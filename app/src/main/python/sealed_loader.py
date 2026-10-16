@@ -51,7 +51,16 @@ class _SealedLoader(importlib.abc.Loader):
             raw = pkgutil.get_data("sealed", self.blob)
             if raw is None:
                 raise FileNotFoundError("sealed payload resource missing")
-            source = bytes(NativeGuard.decryptSealedPayload(raw, _BUILD_ID))
+            # Kotlin object methods may be exposed as instance methods by Chaquopy;
+            # call the singleton explicitly so the payload is never mistaken for `self`.
+            guard = getattr(NativeGuard, "INSTANCE", None)
+            if guard is not None:
+                decrypted = guard.decryptSealedPayload(raw, _BUILD_ID)
+            else:
+                decrypted = NativeGuard.decryptSealedPayload(raw, _BUILD_ID)
+            if decrypted is None:
+                raise ValueError("native sealed payload decryption returned null")
+            source = bytes(decrypted)
         except Exception as exc:
             raise ImportError("sealed payload authentication/decryption failed") from exc
         module.__file__ = "<ALVISIA-SEALED:%s>" % self.fullname
