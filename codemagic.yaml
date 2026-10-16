@@ -41,6 +41,12 @@ workflows:
           echo "ALVSIA_SEAL_SEED_HEX=$ALVSIA_SEAL_SEED_HEX" >> $CM_ENV
           echo "Seal seed generated ($(echo $ALVSIA_SEAL_SEED_HEX | wc -c) chars)"
 
+      - name: Run source security checks
+        script: |
+          set -e
+          python3 tools/security_release_check.py
+          python3 tools/audit_release_apk.py --pre-build-check || true
+
       - name: Seal Python modules
         script: |
           set -e
@@ -54,12 +60,6 @@ workflows:
           python3 tools/seal_assets.py
           test ! -e app/src/main/assets/unluac/unluac.jar || \
             (echo "FAIL: plaintext jars still present after sealing" && exit 1)
-
-      - name: Run source security checks
-        script: |
-          set -e
-          python3 tools/security_release_check.py
-          python3 tools/audit_release_apk.py --pre-build-check || true
 
       - name: Build release APK
         script: |
