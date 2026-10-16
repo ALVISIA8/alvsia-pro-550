@@ -314,14 +314,16 @@ object UnluacRunner {
 
             output.delete()
 
-            val msg =
-                t.cause?.message
-                    ?: t.message
-                    ?: t.javaClass.simpleName
+            var root: Throwable = t
+            var depth = 0
+            while (root.cause != null && root.cause !== root && depth < 8) {
+                root = root.cause!!
+                depth++
+            }
+            val msg = "${root.javaClass.simpleName}: ${root.message ?: "no detail"}"
 
-            lines.add(
-                "X unluac ART: $msg"
-            )
+            lines.add("X unluac ART: $msg")
+            lines.add("diagnostic: wrapper=${t.javaClass.simpleName}; causeDepth=$depth")
 
             if (
                 normalized != input &&

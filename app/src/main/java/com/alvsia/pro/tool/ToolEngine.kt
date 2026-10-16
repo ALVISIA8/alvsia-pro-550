@@ -191,10 +191,21 @@ class ToolEngine(private val context: Context) {
                 return lines
             } else {
                 lines.add("... Python runtime not ready -> native fallback")
+                lines.add("... Chaquopy diagnostic: ${PythonBridgeRunner.startupDiagnostic()}")
             }
         } catch (e: Exception) {
             lines.add("... bridge: ${e.message ?: e.javaClass.simpleName}")
             lines.add("... native fallback")
+        }
+
+        // A failed decompile must never fall through to the generic native
+        // fallback, which may only copy the selected bytecode into OUT/.
+        // Keep the original input in IN/ and report a truthful failure instead.
+        if (subId == "lua_decompile" || subId.contains("unluac")) {
+            lines.add("X DECOMPILE FAILED: no decompiler produced validated Lua source")
+            lines.add("Input preserved under IN/; no fake .lua output was created")
+            lines.add("Check unluac class/JAR compatibility and Chaquopy startup diagnostics")
+            return lines
         }
 
         when (moduleId) {
