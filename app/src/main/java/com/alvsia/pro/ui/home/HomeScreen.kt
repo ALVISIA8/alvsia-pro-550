@@ -1,8 +1,6 @@
 package com.alvsia.pro.ui.home
 
 import android.app.Activity
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.ui.platform.LocalContext
 import com.alvsia.pro.sec.PermissionHelper
 
 import android.content.Intent
@@ -31,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -47,6 +46,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -75,13 +75,13 @@ fun HomeScreen(
     expiry: String,
     tools: List<ToolItem>,
     status: String?,
+    onProfile: () -> Unit,
     onTool: (ToolItem) -> Unit
 ) {
     val ctx = LocalContext.current
     LaunchedEffect(Unit) {
         (ctx as? Activity)?.let { PermissionHelper.requestAll(it) }
     }
-    val ctx = LocalContext.current
     DisposableEffect(Unit) {
         try { PulseAudio.start(ctx) } catch (_: Exception) {}
         onDispose { }
@@ -149,7 +149,7 @@ fun HomeScreen(
                 TextButton(onClick = {
                     ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/OriginalOnwerALV")))
                 }) { Text("Owner", color = AlvisiaCyan, fontWeight = FontWeight.Bold) }
-                TextButton(onClick = { onProfile?.invoke() }) {
+                TextButton(onClick = onProfile) {
                     Text("Profil", color = AlvisiaCyan, fontWeight = FontWeight.Bold) }
             }
             Spacer(Modifier.height(4.dp))
