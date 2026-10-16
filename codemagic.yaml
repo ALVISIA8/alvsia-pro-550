@@ -117,7 +117,7 @@ workflows:
           "$BUILD_TOOLS/apksigner" sign \
             --ks "$KS" --ks-key-alias "$ALIAS" \
             --ks-pass "pass:$KSPASS" --key-pass "pass:$KEYPASS" \
-            --out ALVSIA_PRO_5.5.0_signed.apk /tmp/alvsia-aligned.apk
+            --out ALVISIA_PRO_5.5.0_signed.apk /tmp/alvsia-aligned.apk
           "$BUILD_TOOLS/apksigner" verify ALVISIA_PRO_5.5.0_signed.apk
           echo "Signed OK"; ls -lh ALVISIA_PRO_5.5.0_signed.apk
 
