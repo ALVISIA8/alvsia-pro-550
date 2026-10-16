@@ -49,7 +49,11 @@ object ToolCatalog {
                     desc  = o.optString("desc", "")
                 ))
             }
-            if (out.isEmpty()) defaults() else out
+            // Always expose the complete local catalog. Server entries override matching
+            // IDs, while missing modules are filled from defaults to prevent menu gaps.
+            val merged = defaults().associateBy { it.id }.toMutableMap()
+            out.forEach { item -> merged[item.id] = item }
+            merged.values.sortedBy { it.id }
         } catch (_: Exception) {
             defaults()
         }
