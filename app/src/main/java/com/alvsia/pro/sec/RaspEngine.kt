@@ -57,7 +57,7 @@ object RaspEngine {
         if (Debug.isDebuggerConnected() || Debug.waitingForDebugger()) hard += "jdwp_connected"
 
         // ② Frida / hook libs
-        FridaProbe.scan(ctx).forEach { hard += it }
+        FridaProbe.signals().forEach { hard += it }
 
         // ③ Memory dump
         MemoryGuard.detectPtrace()?.let { hard += it }
@@ -70,10 +70,10 @@ object RaspEngine {
         emulatorSignals().forEach { soft += it }
 
         // ⑧ Network MITM
-        NetworkGuard.check(ctx)?.let { soft += it }
+        NetworkGuard.signals(ctx).forEach { soft += it }
 
         // ⑩ Hook packages
-        if (FridaProbe.hasHookPackage(ctx)) soft += "hook_pkg"
+        FridaProbe.hasHookPackage(ctx.packageManager).forEach { soft += it }
 
         // Native RASP layer — consume results via flagsToReasons
         val nf = NativeGuard.scanFlags()
@@ -130,9 +130,9 @@ object RaspEngine {
             ThreatReport.emit(ctx, "ANTI_DUMP", "dump_attempt_$dump", license)
             SessionGate.onThreat()
         }
-        val netThreat = NetworkGuard.deepCheck(ctx)
-        if (!netThreat.isNullOrBlank()) {
-            ThreatReport.emit(ctx, "NET_THREAT", netThreat, license)
+        val netThreats = NetworkGuard.signals(ctx)
+        if (netThreats.isNotEmpty()) {
+            ThreatReport.emit(ctx, "NET_THREAT", netThreats.joinToString("|"), license)
         }
     }
 
