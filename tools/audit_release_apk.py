@@ -68,6 +68,8 @@ def main() -> int:
             check(not vcs_entries, "VCS revision metadata absent" if not vcs_entries else "VCS revision metadata absent; found: " + ", ".join(vcs_entries))
             dex_names = sorted(n for n in names if re.fullmatch(r"classes(?:[0-9]+)?\.dex", n))
             dex_bytes = b"".join(outer.read(n) for n in dex_names)
+            check(b"ALVISIA-20261010-MAIN-SEAL1" not in dex_bytes,
+                  "sealed build ID absent from plaintext DEX")
             check(b"com/securevale/" not in dex_bytes,
                   "recognizable SecureVale SDK classes absent from DEX")
             manifest = outer.read("AndroidManifest.xml") if "AndroidManifest.xml" in names else b""
