@@ -200,15 +200,13 @@ extern "C" {
 
 static jint JNICALL
 native_scan_flags(JNIEnv*, jobject) {
+    // Only high-confidence, read-only signals reach the enforcement layer.
+    // PTRACE_TRACEME, timing thresholds, generic libc prologue checks and
+    // root capability heuristics can disrupt or falsely block valid users.
     int flags = 0;
     flags |= check_tracer_pid();
     flags |= check_maps_frida();
-    flags |= check_ptrace_traceme();
-    flags |= check_hw_breakpoint();
-    flags |= check_inline_hook();
-    flags |= check_cap_overgranted();
     flags |= check_self_hash();
-    flags |= check_timing_ptrace();
     return (jint)flags;
 }
 
