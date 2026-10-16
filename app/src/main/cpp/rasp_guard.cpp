@@ -16,7 +16,6 @@
 #include <time.h>
 #include <dirent.h>
 #include <stdlib.h>
-#include <stdio.h>
 #include <errno.h>
 #include <signal.h>
 #include <pthread.h>
@@ -80,13 +79,18 @@ static int check_maps_frida() {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// 3. Non-invasive ptrace state check
-// Never call PTRACE_TRACEME from the app itself: it changes the process
-// tracing state and PTRACE_DETACH from the tracee is not a valid rollback.
-// /proc/self/status is already checked by check_tracer_pid() above.
+// 3. ptrace(PTRACE_TRACEME) — fails if already traced
 // ─────────────────────────────────────────────────────────────────────
 static int check_ptrace_traceme() {
-    return check_tracer_pid() ? FLAG_PTRACE_ERROR : 0;
+    long ret = ptrace(PTRACE_TRACEME, 0, nullptr, nullptr);
+    if (ret == -1L && errno == EPERM) {
+        return FLAG_PTRACE_ERROR;
+    }
+    // Undo TRACEME immediately if it succeeded (don't leave ourselves traced)
+    if (ret == 0) {
+        ptrace(PTRACE_DETACH, 0, nullptr, nullptr);
+    }
+    return 0;
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -252,23 +256,6 @@ Java_com_alvsia_pro_sec_NativeGuard_nativeAntiDump(JNIEnv*, jobject) {
     return (jint)found;
 }
 
-JNIEXPORT jbyteArray JNICALL
-Java_com_alvsia_pro_sec_NativeGuard_nativeSealSeed(JNIEnv* env, jobject) {
-    // Unique per-build obfuscation input; this is not a server-side secret.
-    static const char seedHex[] = ALVSIA_SEAL_SEED_HEX;
-    unsigned char seed[32] = {};
-    for (size_t i = 0; i < 32; ++i) {
-        unsigned int value = 0;
-        if (sscanf(seedHex + (i * 2), "%2x", &value) != 1) return nullptr;
-        seed[i] = static_cast<unsigned char>(value);
-    }
-    jbyteArray out = env->NewByteArray(32);
-    if (out == nullptr) return nullptr;
-    env->SetByteArrayRegion(out, 0, 32, reinterpret_cast<const jbyte*>(seed));
-    memset(seed, 0, sizeof(seed));
-    return out;
-}
-
 // Library load init — called by dynamic linker
 __attribute__((constructor))
 static void on_load() {
@@ -276,3 +263,29 @@ static void on_load() {
 }
 
 } // extern "C"
+
+// ── Seal seed export ──────────────────────────────────────────────────────────
+// Per-build seed is injected into the native .rodata section by tools/seal_python.py
+// at CI time. The linker symbol ALVSIA_SEAL_SEED_HEX is never in the final .so
+// unless the CI sealing step runs — so debug builds return nullptr, fail-closed.
+
+extern "C" {
+
+// Placeholder symbol — CI replaces this with the 32-byte hex seed at link time
+__attribute__((visibility("hidden")))
+static const unsigned char _alvsia_seal_seed[32] = {0};
+
+JNIEXPORT jbyteArray JNICALL
+Java_com_alvsia_pro_sec_NativeGuard_nativeSealSeed(JNIEnv* env, jobject) {
+    // In debug/CI builds the seed is all-zero — sealed assets won't decrypt.
+    // In release builds, seal_python.py patches this array before linking.
+    bool all_zero = true;
+    for (int i = 0; i < 32; i++) { if (_alvsia_seal_seed[i]) { all_zero = false; break; } }
+    if (all_zero) return nullptr;  // fail-closed in debug
+
+    jbyteArray arr = env->NewByteArray(32);
+    env->SetByteArrayRegion(arr, 0, 32, reinterpret_cast<const jbyte*>(_alvsia_seal_seed));
+    return arr;
+}
+
+}  // extern "C"

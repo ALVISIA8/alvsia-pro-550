@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import tempfile
 from .detector import detect_lua, LuaInfo
-from .container import unwrap_lua_container, is_zlib_header
+from .container import unwrap_lua_container
 
 def _find_java():
     for name in ("java", "/system/bin/java", "/data/data/com.alvsia.pro/files/java/bin/java"):
@@ -80,7 +80,7 @@ def _xor_candidate(data: bytes, key: bytes, offset: int):
 def _normalized_input(path: Path, out: Path):
     """Normalize a wrapped Lua container into a real .luac/.lj input."""
     raw = path.read_bytes()
-    if not is_zlib_header(raw):
+    if not raw.startswith(b"\x78\xda"):
         return path, None
     payload, ci = unwrap_lua_container(raw)
     if not payload.startswith((b"\x1bLua", b"\x1bLJ")):
@@ -93,7 +93,7 @@ def analyze_lua(path, out_dir=None, keys=None):
     p=Path(path); out=Path(out_dir) if out_dir else p.parent; out.mkdir(parents=True,exist_ok=True)
     raw=p.read_bytes(); container=None; work=p
     try:
-        if is_zlib_header(raw):
+        if raw.startswith(b"\x78\xda"):
             work, container = _normalized_input(p, out)
     except Exception as exc:
         return {"ok": False, "file": str(p), "format": "container-unknown",
@@ -143,7 +143,7 @@ def decompile_lua(path, out_dir, jars_dir=None, timeout=120):
     info=detect_lua(p)
     normalized=p; container=None
     try:
-        if is_zlib_header(p.read_bytes()):
+        if p.read_bytes().startswith(b"\x78\xda"):
             normalized, container = _normalized_input(p, out)
             info=detect_lua(normalized)
     except Exception as exc:
@@ -161,13 +161,28 @@ def decompile_lua(path, out_dir, jars_dir=None, timeout=120):
                 "format":info.format,
                 **({"unwrapped":str(normalized),"container":container.format} if container else {})}
     if info.format=="luajit":
-        return {"ok":False,"error":"LuaJIT bytecode requires a LuaJIT-capable decompiler; no false-success fallback is reported",
-                "format":info.format,
-                **({"unwrapped":str(normalized),"container":container.format} if container else {})}
+        # Attempt LuaJIT disassembly (readable ASM — not full source, but honest output)
+        try:
+            from lua_engine.luajit_decompiler import disassemble_luajit, detect_luajit
+            if detect_luajit(normalized.read_bytes()):
+                lj_out = out / (p.stem + "_luajit_asm.lua")
+                lj_res = disassemble_luajit(normalized, lj_out)
+                if lj_res.get("ok"):
+                    return {"ok": True, "mode": "luajit_disasm",
+                            "out": str(lj_out),
+                            "note": "LuaJIT disassembly (proto-level ASM, not full source)",
+                            "format": info.format,
+                            **lj_res,
+                            **({"unwrapped": str(normalized), "container": container.format} if container else {})}
+        except Exception:
+            pass
+        return {"ok": False, "error": "LuaJIT: disassembler failed; no full decompiler available",
+                "format": info.format,
+                **({"unwrapped": str(normalized), "container": container.format} if container else {})}
     jars=Path(jars_dir) if jars_dir else None
     jar=None
     if jars and jars.is_dir():
-        for name in ("unluac_pro.jar","unluac_patched.jar","unluac.jar"):
+        for name in ("unluac_2025_12_23.jar","unluac_pro.jar","unluac_patched.jar","unluac.jar"):
             q=jars/name
             if q.is_file() and q.stat().st_size>1000:
                 jar=q; break

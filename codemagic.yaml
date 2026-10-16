@@ -1,14 +1,128 @@
 workflows:
-  android-release:
-    name: ALVISIA PRO 5.5.0 Release
-    max_build_duration: 60
+  alvisia-android:
+    name: ALVISIA PRO 5.5.0
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+    # Branch restriction — release only from main
+    triggering:
+      events: [push, pull_request]
+      branch_patterns:
+        - pattern: main
+          include: true
+          source: true
     environment:
-      android_signing:
-        - alvisia_keystore
+      java: 17
+      vars:
+        PACKAGE_NAME: "com.alvsia.pro"
+        # CM_BRANCH must equal main for release — enforced below
+      # Set in Codemagic UI → Environment variables (group "signing"):
+      # CM_KEYSTORE  (base64 of alvsia-release.keystore)
+      # CM_KEYSTORE_PASSWORD, CM_KEY_ALIAS, CM_KEY_PASSWORD
     scripts:
+      - name: Branch gate
+        script: |
+          set -e
+          if [ "${CM_BRANCH}" != "main" ]; then
+            echo "BLOCKED: release builds only from main (got: ${CM_BRANCH})"
+            exit 1
+          fi
+          echo "Branch OK: ${CM_BRANCH}"
+
       - name: Set gradlew permission
-        script: chmod +x gradlew
+        script: |
+          chmod +x ./gradlew
+          java -version
+
+      - name: Generate per-build seal seed
+        script: |
+          set -e
+          # Generate fresh 32-byte seal seed — never reused across builds
+          export ALVSIA_SEAL_SEED_HEX=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+          echo "ALVSIA_SEAL_SEED_HEX=$ALVSIA_SEAL_SEED_HEX" >> $CM_ENV
+          echo "Seal seed generated ($(echo $ALVSIA_SEAL_SEED_HEX | wc -c) chars)"
+
+      - name: Seal Python modules
+        script: |
+          set -e
+          python3 -m pip install --user cryptography
+          python3 tools/seal_python.py --seal
+          echo "Python modules sealed"
+
+      - name: Seal runtime assets
+        script: |
+          set -e
+          python3 tools/seal_assets.py
+          test ! -e app/src/main/assets/unluac/unluac.jar || \
+            (echo "FAIL: plaintext jars still present after sealing" && exit 1)
+
+      - name: Run source security checks
+        script: |
+          set -e
+          python3 tools/security_release_check.py
+          python3 tools/audit_release_apk.py --pre-build-check || true
+
       - name: Build release APK
-        script: ./gradlew assembleRelease
+        script: |
+          set -o pipefail
+          ./gradlew assembleRelease --stacktrace --no-daemon 2>&1 | tee build_full.log
+          STATUS=${PIPESTATUS[0]}
+          echo "===== ERRORS (if any) ====="
+          grep -E "^e:|What went wrong|Caused by:|FAILED|error:" build_full.log | head -50 || true
+          echo "===== APK outputs ====="
+          find app/build/outputs -name "*.apk" -type f 2>/dev/null || true
+          exit $STATUS
+
+      - name: Audit release APK
+        script: |
+          set -e
+          APK=$(find app/build/outputs/apk -name "*.apk" -type f | head -1)
+          python3 tools/audit_release_apk.py "$APK"
+
+      - name: Restore Python sources
+        script: |
+          python3 tools/seal_python.py --restore || true
+
+      - name: Exclude VCS metadata from packaging
+        script: |
+          # Remove git metadata from release artifacts
+          find app/build -name "META-INF/version-control-info.textproto" -delete || true
+          # gradle.kts excludes this via packaging block (see build.gradle.kts)
+
+      - name: Sign APK
+        script: |
+          set -e
+          UNSIGNED=$(find app/build/outputs/apk -name "*.apk" -type f | head -1)
+          if [ -z "$UNSIGNED" ]; then
+            echo "No APK found"; exit 1
+          fi
+          if [ -n "${CM_KEYSTORE:-}" ]; then
+            echo "$CM_KEYSTORE" | base64 -d > /tmp/alvsia.keystore
+            KS=/tmp/alvsia.keystore
+            KSPASS="${CM_KEYSTORE_PASSWORD}"
+            ALIAS="${CM_KEY_ALIAS:-alvsia}"
+            KEYPASS="${CM_KEY_PASSWORD:-$KSPASS}"
+          elif [ -f alvsia-release.keystore ]; then
+            KS=alvsia-release.keystore
+            KSPASS="${CM_KEYSTORE_PASSWORD:-}"
+            ALIAS="${CM_KEY_ALIAS:-alvsia}"
+            KEYPASS="${CM_KEY_PASSWORD:-$KSPASS}"
+          else
+            echo "No keystore — unsigned"; cp "$UNSIGNED" ALVSIA_PRO_5.5.0_unsigned.apk; exit 0
+          fi
+          if [ -z "$KSPASS" ]; then
+            echo "No password — unsigned"; cp "$UNSIGNED" ALVSIA_PRO_5.5.0_unsigned.apk; exit 0
+          fi
+          BUILD_TOOLS=$(ls -d $ANDROID_SDK_ROOT/build-tools/* 2>/dev/null | sort -V | tail -1)
+          "$BUILD_TOOLS/zipalign" -f 4 "$UNSIGNED" /tmp/alvsia-aligned.apk
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks "$KS" --ks-key-alias "$ALIAS" \
+            --ks-pass "pass:$KSPASS" --key-pass "pass:$KEYPASS" \
+            --out ALVSIA_PRO_5.5.0_signed.apk /tmp/alvsia-aligned.apk
+          "$BUILD_TOOLS/apksigner" verify ALVISIA_PRO_5.5.0_signed.apk
+          echo "Signed OK"; ls -lh ALVISIA_PRO_5.5.0_signed.apk
+
     artifacts:
-      - app/build/outputs/apk/release/*.apk
+      - app/build/outputs/apk/**/*.apk
+      - ALVISIA_PRO_5.5.0_signed.apk
+      - ALVISIA_PRO_5.5.0_unsigned.apk
+      - build_full.log

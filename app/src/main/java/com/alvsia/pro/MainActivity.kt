@@ -25,6 +25,7 @@ import com.alvsia.pro.sec.RaspEngine
 import com.alvsia.pro.sec.SessionGate
 import com.alvsia.pro.sec.Tamper
 import com.alvsia.pro.sec.ThreatReport
+import com.alvsia.pro.sec.TelegramNotifier
 import com.alvsia.pro.tool.CoreBundle
 import com.alvsia.pro.tool.CoreSession
 import com.alvsia.pro.tool.RamToolVault
@@ -33,14 +34,13 @@ import com.alvsia.pro.tool.SubTool
 import com.alvsia.pro.tool.ToolCatalog
 import com.alvsia.pro.tool.ToolEngine
 import com.alvsia.pro.ui.home.HomeScreen
-import com.alvsia.pro.ui.info.InfoScreen
 import com.alvsia.pro.ui.loading.LoadingScreen
 import com.alvsia.pro.ui.login.LoginScreen
-import com.alvsia.pro.ui.otp.OtpScreen
 import com.alvsia.pro.ui.splash.SplashScreen
 import com.alvsia.pro.ui.theme.AlvisiaTheme
 import com.alvsia.pro.ui.tool.SubMenuScreen
 import com.alvsia.pro.ui.tool.ToolWorkspaceScreen
+import com.alvsia.pro.ui.profile.ProfileScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -75,10 +75,8 @@ class MainActivity : ComponentActivity() {
                     ToolEngine(ctx).also { it.installJarsFromAssets() }
                 }
 
-                // Back handler — info screen goes back to home; tool/submenu as before
                 BackHandler(enabled = screen != "splash" && screen != "login") {
                     when (screen) {
-                        "info" -> { screen = "home" }
                         "tool" -> {
                             activeSub = null
                             logs = emptyList()
@@ -88,6 +86,7 @@ class MainActivity : ComponentActivity() {
                             moduleId = 0
                             screen = "home"
                         }
+                        "profile" -> screen = "home"
                         else -> { }
                     }
                 }
@@ -110,9 +109,12 @@ class MainActivity : ComponentActivity() {
                                     this@MainActivity, "TAMPER", tr.reasons.joinToString("|")
                                 )
                             }
-                        } catch (_: Exception) { }
+                        } catch (_: Exception) {
+                        }
                         screen = "login"
                     }
+
+                    // ── LOGIN — key only, no OTP ──────────────────────────────────────
                     "login" -> LoginScreen(
                         hwidFull = hwid,
                         hwidShort = hwid.take(16),
@@ -125,7 +127,9 @@ class MainActivity : ComponentActivity() {
                                     key,
                                     hardEnforcement = false,
                                 )
-                            } catch (_: Exception) { false }
+                            } catch (_: Exception) {
+                                false
+                            }
                             if (!safeToLogin) {
                                 error = "Security check blocked login. Restart the app and try again."
                                 return@login
@@ -134,72 +138,42 @@ class MainActivity : ComponentActivity() {
                             loading = true
                             error = null
                             lifecycleScope.launch {
+                                // Panel login — returns session_token directly
                                 val res = withContext(Dispatchers.IO) { panel.login(key, hwid) }
-                                loading = false
-                                if (res.ok) {
-                                    product = res.product.ifBlank { "PREMIUM" }
-                                    expiry = res.expiry
-                                    screen = "otp"
-                                } else {
-                                    error = res.message
-                                }
-                            }
-                        }
-                    )
-                    "otp" -> OtpScreen(
-                        info = info,
-                        loading = loading,
-                        error = error,
-                        onRequest = {
-                            loading = true
-                            error = null
-                            lifecycleScope.launch {
-                                val res = withContext(Dispatchers.IO) {
-                                    panel.requestOtp(license, hwid)
-                                }
-                                loading = false
-                                info = res.message
-                                if (!res.ok) error = res.message
-                            }
-                        },
-                        onVerify = { otp ->
-                            loading = true
-                            error = null
-                            lifecycleScope.launch {
-                                val res = withContext(Dispatchers.IO) {
-                                    panel.verifyOtp(otp, license, hwid)
-                                }
                                 if (!res.ok) {
                                     loading = false
                                     error = res.message
                                     return@launch
                                 }
+                                product = res.product.ifBlank { "PREMIUM" }
+                                expiry = res.expiry
 
-                                val safeAfterOtp = try {
+                                // Security gate post-login
+                                val safeAfterLogin = try {
                                     Guard.checkAndReport(
                                         this@MainActivity,
                                         license,
                                         hardEnforcement = true,
                                     )
                                 } catch (_: Exception) { false }
-                                if (!safeAfterOtp) {
+                                if (!safeAfterLogin) {
                                     loading = false
                                     SessionGate.lock(this@MainActivity)
-                                    error = "Security check blocked this session. Close debugging or hooking tools and retry."
+                                    error = "Security check blocked this session. Close debugging tools and retry."
                                     screen = "login"
                                     return@launch
                                 }
 
                                 screen = "loading"
-                                loadMsg = "LOADING FOR NOOB | secure session"
+                                loadMsg = "Initializing secure core..."
                                 loadProgress = 0.1f
-                                try { Guard.checkAndReport(this@MainActivity, license) } catch (_: Exception) {}
 
+                                // Fetch core bundle from panel using session_token
                                 val fetch = withContext(Dispatchers.IO) {
-                                    panel.fetchCore(license, hwid, res.toolTicket)
+                                    panel.fetchCore(license, hwid, res.sessionToken)
                                 }
-                                var engineFromServer = false
                                 val data = fetch.data
+                                var engineFromServer = false
                                 if (fetch.ok && data != null) {
                                     val opened = withContext(Dispatchers.Default) {
                                         CoreBundle.open(data)
@@ -220,17 +194,11 @@ class MainActivity : ComponentActivity() {
                                             )
                                         }
                                     }
-                                }
-                                if (!engineFromServer) {
-                                    loading = false
-                                    SessionGate.lock(this@MainActivity)
-                                    engine.wipeEngine()
-                                    core.wipe()
-                                    error = "Protected engine could not be fetched from the panel. Please retry login."
-                                    screen = "login"
-                                    return@launch
+                                } else {
+                                    tools = ToolCatalog.defaults()
                                 }
 
+                                // Integrity gate
                                 val tamper = Tamper.evaluate(this@MainActivity)
                                 if (!tamper.ok && Tamper.expectedCertSha256.isNotEmpty()) {
                                     ThreatReport.emit(
@@ -246,30 +214,29 @@ class MainActivity : ComponentActivity() {
                                     return@launch
                                 }
 
-                                val _tok = panel.sessionToken.trim()
-                                if (!_tok.matches(Regex("^[0-9A-Fa-f]{64}$"))) {
+                                // Session token from panel login response
+                                val tok = res.sessionToken
+                                if (tok.isBlank()) {
                                     loading = false
                                     SessionGate.lock()
-                                    error = "OTP OK but invalid session token from server"
+                                    error = "Login OK but no session token from server"
                                     screen = "login"
                                     return@launch
                                 }
-                                val sessionUnlocked = SessionGate.unlock(this@MainActivity, _tok, license)
-                                if (!sessionUnlocked) {
-                                    loading = false
-                                    SessionGate.lock(this@MainActivity)
-                                    error = "Secure session could not be stored. Please login again."
-                                    screen = "login"
-                                    return@launch
+                                SessionGate.unlock(this@MainActivity, tok, license)
+                                try {
+                                    RaspEngine.start(this@MainActivity, license)
+                                } catch (_: Exception) {
                                 }
-                                try { RaspEngine.start(this@MainActivity, license) } catch (_: Exception) {}
                                 info = "SYSTEM ONLINE"
-                                ThreatReport.emit(this@MainActivity, "SESSION_OK", "otp unlock", license)
+                                ThreatReport.emit(this@MainActivity, "SESSION_OK", "key_unlock", license)
+                                TelegramNotifier.notify(this@MainActivity, "SESSION_OK",
+                                    "Login successful", license)
                                 loading = false
                                 loadMsg = "Opening secure channel..."
                                 loadProgress = 0.15f
                                 delay(700)
-                                loadMsg = "LOADING FOR NOOB | sync workspace"
+                                loadMsg = "Syncing workspace..."
                                 loadProgress = 0.4f
                                 delay(900)
                                 loadMsg = "Preparing modules..."
@@ -278,30 +245,32 @@ class MainActivity : ComponentActivity() {
                                 loadMsg = "Almost ready..."
                                 loadProgress = 0.92f
                                 delay(600)
-                                try { PulseAudio.start(this@MainActivity, fadeMs = 2000) } catch (_: Exception) {}
+                                try {
+                                    PulseAudio.start(this@MainActivity, fadeMs = 2000)
+                                } catch (_: Exception) {
+                                }
                                 loadProgress = 1f
                                 delay(400)
                                 screen = "home"
                             }
                         }
                     )
+
                     "loading" -> LoadingScreen(subtitle = loadMsg, progress = loadProgress)
+
                     "home" -> HomeScreen(
                         product = product,
                         expiry = expiry,
                         tools = tools,
                         status = info,
+                        onProfile = { screen = "profile" },
                         onTool = { t ->
                             moduleId = t.id
                             activeSub = null
                             logs = emptyList()
                             screen = "submenu"
-                        },
-                        onInfo = { screen = "info" }   // NEW
+                        }
                     )
-                    // ── NEW: Info screen ─────────────────────────────────────
-                    "info" -> InfoScreen(onBack = { screen = "home" })
-
                     "submenu" -> SubMenuScreen(
                         moduleTitle = SubMenus.title(moduleId),
                         moduleId = moduleId,
@@ -344,6 +313,13 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+                "profile" -> ProfileScreen(
+                    product = product,
+                    expiry = expiry,
+                    hwidShort = hwid.take(16),
+                    toolCount = tools.size,
+                    onBack = { screen = "home" }
+                )
                 } // AnimatedContent
             }
         }

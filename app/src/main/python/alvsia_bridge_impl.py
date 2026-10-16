@@ -10,7 +10,7 @@ import shutil
 import traceback
 from pathlib import Path
 
-# SECURITY: require native session marker plus 256-bit token shape.
+# SECURITY: require native session marker plus 256-bit token shape (key login only).
 # This is defense-in-depth, not a substitute for server-signed operation grants.
 
 def _valid_apk_session():
@@ -25,7 +25,7 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
     try:
         # Hard gate
         if not _valid_apk_session():
-            return "X AUTH: no valid APK session — complete license + OTP first"
+            return "X AUTH: no valid APK session — login with your key first"
         lines.append("ALVSIA PRO 5.5.0 PREMIUM · engine")
         lines.append("m=%s sub=%s" % (module_id, sub_id))
         import alvsia_core as core
@@ -319,9 +319,9 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
             if not need_file(): return "\n".join(lines)
             cfg_path = str(work_dir() / "rebrand_config.txt")
             if sid == "rebrand_auto":
-                r = feat.run_rebrand_auto(ip, out_dir("REBRAND"), out_root=out)
+                r = feat.run_rebrand(ip, out_dir("REBRAND"), cfg_path, auto=True)
             elif sid == "rebrand_manual":
-                r = feat.run_rebrand_file(ip, out_dir("REBRAND"), out_root=out)
+                r = feat.run_rebrand(ip, out_dir("REBRAND"), cfg_path, auto=False)
             elif sid == "rebrand_scan":
                 r = feat.run_rebrand_scan(ip, out_dir("REBRAND"))
             else:
@@ -555,3 +555,15 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
         lines.append("X BRIDGE EXCEPTION: %s" % exc)
         lines.append(traceback.format_exc())
         return "\n".join(lines)
+
+
+def bridge_run_sub(module_id, sub_id, input_path, extra_name, work_dir_path, jars_dir_path):
+    """Entry point called by PythonBridgeRunner.runBridge() via reflection."""
+    return run_tool(
+        module_id=int(module_id),
+        sub_id=str(sub_id),
+        input_path=str(input_path) if input_path else "",
+        out_root=str(work_dir_path),
+        engine_dir=str(jars_dir_path),
+        jars_dir=str(jars_dir_path),
+    )

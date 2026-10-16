@@ -16,7 +16,7 @@ import javax.crypto.spec.SecretKeySpec
 object FaunaPack {
     private val MAGIC = byteArrayOf(0x46, 0x41, 0x55, 0x4E, 0x41, 0x31, 0x00)
 
-    /** Optional server-provided wrap (set after OTP loader_key). */
+    /** Optional server-provided wrap (set from panel session on login). */
     @Volatile
     var sessionOverlay: ByteArray? = null
 

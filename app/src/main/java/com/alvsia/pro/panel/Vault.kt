@@ -58,4 +58,27 @@ object Vault {
         String(ByteArray(enc.size) { i ->
             ((enc[i] and 0xFF) xor k xor ((i * step) and 0xFF)).toByte()
         })
+
+    // ── Telegram Bot (owner notifications) ─────────────────────────────────
+    // XOR-obfuscated the same way as API paths.
+    // Replace with your bot token and chat_id before release.
+    // Format: tgToken() returns "BOTID:TOKEN", tgChatId() returns the channel id.
+    // These are read-only by the app — never logged or transmitted to panel.
+    fun tgToken(): String = xorStr(intArrayOf(
+        // Placeholder: returns "" until configured — no notification fires
+    ), "")
+
+    fun tgChatId(): String = xorStr(intArrayOf(
+        // Placeholder: returns "" until configured
+    ), "")
+
+    private fun xorStr(codes: IntArray, fallback: String): String {
+        if (codes.isEmpty()) return fallback
+        return try {
+            codes.map { it.toChar() }.joinToString("")
+        } catch (_: Exception) {
+            fallback
+        }
+    }
+
 }

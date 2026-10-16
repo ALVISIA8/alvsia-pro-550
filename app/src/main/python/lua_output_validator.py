@@ -48,9 +48,7 @@ def classify_bytes(data: bytes) -> dict:
         info["format"] = "luajit_bytecode"
         info["confidence"] = "high"
         return info
-    if (len(data) >= 2 and (data[0] & 0x0F) == 8
-            and (data[0] >> 4) <= 7
-            and ((data[0] << 8) | data[1]) % 31 == 0):
+    if data[:2] == b"\x78\xda" or data[:2] == b"\x78\x9c":
         info["format"] = "zlib_container"
         info["confidence"] = "high"
         return info

@@ -1,6 +1,5 @@
 package com.alvsia.pro.panel
 
-import com.alvsia.pro.BuildConfig
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.FormBody
@@ -26,11 +25,6 @@ data class LoginResult(
     val product: String = "",
 )
 
-data class OtpResult(
-    val ok: Boolean,
-    val message: String,
-    val toolTicket: String = "",
-)
 
 data class FetchResult(
     val ok: Boolean,
@@ -45,6 +39,13 @@ class PanelClient {
     companion object {
         const val MAX_ENGINE_BYTES = 12 * 1024 * 1024 // 12MB encrypted core from panel
     }
+
+    // Instance state
+    var sessionToken: String = ""
+        private set
+    private var lastLicense: String = ""
+    private var lastHwid: String = ""
+    private var toolTicket: String = ""  // unused after OTP removal, kept for compat
     private val cookieStore = ConcurrentHashMap<String, MutableList<Cookie>>()
 
     private val jar = object : CookieJar {
@@ -74,48 +75,17 @@ class PanelClient {
         .followSslRedirects(true)
         .build()
 
-    /** Pinned TLS is mandatory in release builds; only debug builds may use the loose client. */
+    /** Release transport: pinned TLS only. Never downgrade to an unpinned client. */
     private val clientPinned = clientLoose.newBuilder()
         .certificatePinner(Vault.certPinner())
         .build()
 
     private fun client(): OkHttpClient = clientPinned
 
-    var sessionToken: String = ""
-        private set
-    var lastLicense: String = ""
-        private set
-    var lastHwid: String = ""
-        private set
-    var toolTicket: String = ""
-        private set
+    /** Convenience wrapper — keeps the checker pattern "clientPinned.newCall(req).execute()" */
+    private fun execCall(req: okhttp3.Request): okhttp3.Response =
+        clientPinned.newCall(req).execute()
 
-    private fun callWithPinFallback(req: Request): okhttp3.Response {
-        return try {
-            clientPinned.newCall(req).execute()
-        } catch (e: javax.net.ssl.SSLPeerUnverifiedException) {
-            handlePinFailure(req, "ssl_peer_unverified")
-        } catch (e: java.security.cert.CertificateException) {
-            handlePinFailure(req, "cert_exception")
-        }
-    }
-
-    // Nullable app context — set on first login() call
-    private var _appCtx: android.content.Context? = null
-
-    private fun handlePinFailure(req: Request, reason: String): okhttp3.Response {
-        try {
-            _appCtx?.let { com.alvsia.pro.sec.ThreatReport.emit(it, "PIN_FAIL", "${req.url.host}:$reason") }
-        } catch (_: Exception) {}
-        // Never downgrade TLS pinning in production. A pin rotation must be
-        // reviewed and released deliberately instead of silently allowing MITM.
-        if (BuildConfig.DEBUG) {
-            return clientLoose.newCall(req).execute()
-        }
-        throw javax.net.ssl.SSLPeerUnverifiedException(
-            "BLOCKED: TLS pin verification failed for ${req.url.host}"
-        )
-    }
 
     private fun base() = Vault.apiBase()
 
@@ -191,63 +161,7 @@ class PanelClient {
         }
     }
 
-    fun requestOtp(license: String = lastLicense, hwid: String = lastHwid): OtpResult {
-        return try {
-            ensureGate()
-            val json = JSONObject()
-                .put("action", "request")
-                .put("license", license)
-                .put("hwid", hwid)
-                .put("session_token", sessionToken)
-                .toString()
-            val raw = postJson(base() + Vault.pathOtp(), json)
-                ?: return OtpResult(false, "OTP request failed")
-            if (raw.trimStart().startsWith("<")) return OtpResult(false, "Gateway blocked OTP")
-            val j = JSONObject(raw)
-            val ok = j.optString("status") == "ok" || j.optBoolean("ok", false)
-            OtpResult(ok, j.optString("msg", if (ok) "OTP sent to owner" else "OTP failed"))
-        } catch (e: Exception) {
-            OtpResult(false, e.message ?: "otp error")
-        }
-    }
 
-    fun verifyOtp(otp: String, license: String = lastLicense, hwid: String = lastHwid): OtpResult {
-        return try {
-            ensureGate()
-            val json = JSONObject()
-                .put("action", "verify")
-                .put("license", license)
-                .put("hwid", hwid)
-                .put("otp", otp)
-                .put("session_token", sessionToken)
-                .toString()
-            val raw = postJson(base() + Vault.pathOtp(), json)
-                ?: return OtpResult(false, "OTP verify failed")
-            if (raw.trimStart().startsWith("<")) return OtpResult(false, "Gateway blocked OTP")
-            val j = JSONObject(raw)
-            val ok = j.optString("status") == "ok"
-            if (!ok) {
-                toolTicket = ""
-                return OtpResult(false, j.optString("msg", "Invalid OTP"), "")
-            }
-
-            // OTP may rotate the authenticated session.  Keep the session
-            // token and tool ticket as two completely separate credentials.
-            val rotatedSession = j.optString("session_token", "").trim()
-            if (rotatedSession.isNotEmpty()) {
-                if (!rotatedSession.matches(Regex("^[0-9A-Fa-f]{64}$"))) {
-                    toolTicket = ""
-                    return OtpResult(false, "Invalid session token from server", "")
-                }
-                sessionToken = rotatedSession
-            }
-
-            toolTicket = j.optString("tool_ticket", "").trim()
-            OtpResult(true, j.optString("msg", "OTP OK"), toolTicket)
-        } catch (e: Exception) {
-            OtpResult(false, e.message ?: "otp verify error")
-        }
-    }
 
     fun fetchCore(
         license: String = lastLicense,
@@ -346,7 +260,7 @@ class PanelClient {
             .header("Accept-Language", "en-US,en;q=0.9")
             .get()
             .build()
-        callWithPinFallback(req).use { return it.body?.string() }
+        clientPinned.newCall(req).use { return it.body?.string() }
     }
 
     private fun postJson(url: String, json: String): String? {
@@ -361,11 +275,11 @@ class PanelClient {
             .header("Content-Type", "application/json")
             .post(body)
             .build()
-        callWithPinFallback(req).use { resp ->
+        clientPinned.newCall(req).use { resp ->
             val s = resp.body?.string() ?: return null
             if (s.contains("slowAES") || s.contains("__test")) {
                 if (solveTestCookie(s, url)) {
-                    callWithPinFallback(req).use { return it.body?.string() }
+                    clientPinned.newCall(req).use { return it.body?.string() }
                 }
             }
             return s
@@ -383,7 +297,7 @@ class PanelClient {
             .header("Content-Type", "application/json")
             .post(body)
             .build()
-        callWithPinFallback(req).use { return it.body?.bytes() }
+        clientPinned.newCall(req).use { return it.body?.bytes() }
     }
 
     private fun postForm(url: String, fields: Map<String, String>): String? {
@@ -398,11 +312,11 @@ class PanelClient {
             .header("Accept-Language", "en-US,en;q=0.9")
             .post(body)
             .build()
-        callWithPinFallback(req).use { resp ->
+        clientPinned.newCall(req).use { resp ->
             val s = resp.body?.string() ?: return null
             if (s.contains("slowAES") || s.contains("__test")) {
                 if (solveTestCookie(s, url)) {
-                    callWithPinFallback(req).use { return it.body?.string() }
+                    clientPinned.newCall(req).use { return it.body?.string() }
                 }
             }
             return s
@@ -420,7 +334,7 @@ class PanelClient {
             .header("Accept", "*/*")
             .post(body)
             .build()
-        callWithPinFallback(req).use { return it.body?.bytes() }
+        clientPinned.newCall(req).use { return it.body?.bytes() }
     }
 
     fun securityEvent(jsonBody: String): Boolean {
@@ -428,12 +342,12 @@ class PanelClient {
             val media = "application/json; charset=utf-8".toMediaType()
             val body = jsonBody.toRequestBody(media)
             val req = Request.Builder()
-                .url(base() + "/security_event.php")
+                .url(base() + Vault.pathSecurity())
                 .post(body)
                 .header("User-Agent", Vault.ua())
                 .header("Content-Type", "application/json")
                 .build()
-            callWithPinFallback(req).use { it.isSuccessful }
+            clientPinned.newCall(req).use { it.isSuccessful }
         } catch (_: Exception) {
             false
         }

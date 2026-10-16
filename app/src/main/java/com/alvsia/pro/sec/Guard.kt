@@ -17,15 +17,6 @@ object Guard {
 
     @Volatile var degraded: Boolean = false
 
-    // Only active instrumentation/debugging indicators are enforced on every
-    // dispatch. Root-management markers alone (Magisk/Zygisk/Shamiko) remain
-    // report-only to avoid breaking legitimate rooted-device users.
-    private val RUNTIME_MARKERS = listOf(
-        "frida", "xposed", "substrate", "dobby",
-        "lspatch", "lsposed", "edxposed",
-        "hookzz", "whale", "sandhook", "epic", "dexposed", "andfix"
-    )
-
     private var _lastReason = ""
     val lastReason: String get() = _lastReason
 
@@ -45,13 +36,6 @@ object Guard {
             if (hardEnforcement) return false
         }
         return !hostile
-    }
-
-    fun runtimeHostile(ctx: Context): Boolean {
-        if (tracerPidAttached()) { _lastReason = "tracer_attached"; return true }
-        if (hookInMaps(RUNTIME_MARKERS)) { _lastReason = "runtime_hook_in_maps:" + _mapsHit; return true }
-        _lastReason = ""
-        return false
     }
 
     fun hostile(ctx: Context): Boolean {
@@ -80,14 +64,14 @@ object Guard {
         } catch (_: Exception) { false }
     }
 
-    private fun hookInMaps(markers: List<String> = MAP_MARKERS): Boolean {
+    private fun hookInMaps(): Boolean {
         return try {
             val br = BufferedReader(FileReader("/proc/self/maps"))
             var line: String?
             var found = false
             while (br.readLine().also { line = it } != null) {
                 val lower = line!!.lowercase()
-                for (marker in markers) {
+                for (marker in MAP_MARKERS) {
                     if (lower.contains(marker)) {
                         _mapsHit = marker
                         found = true
@@ -100,4 +84,33 @@ object Guard {
             found
         } catch (_: Exception) { false }
     }
+
+
+    /**
+     * Distinguishes active runtime instrumentation (ptrace, Frida, hooks)
+     * from passive root-only markers (su binary, root packages).
+     * Returns true ONLY for active instrumentation — root alone does not block.
+     */
+    private val RUNTIME_MARKERS = listOf(
+        "frida", "gadget", "xposed", "substrate", "dobby",
+        "shadowhook", "bhook", "pine", "lsplant", "sandhook"
+    )
+
+    fun runtimeHostile(ctx: Context): Boolean {
+        // Active instrumentation signals
+        val maps = try { java.io.File("/proc/self/maps").readText().lowercase() } catch (_: Exception) { "" }
+        if (RUNTIME_MARKERS.any { it in maps }) return true
+        val status = try { java.io.File("/proc/self/status").readText() } catch (_: Exception) { "" }
+        val tracerPid = status.lineSequence()
+            .firstOrNull { it.startsWith("TracerPid:", ignoreCase = true) }
+            ?.substringAfter(":")?.trim()?.toIntOrNull() ?: 0
+        if (tracerPid > 0) return true
+        // NativeGuard flags (active hooks, ptrace, hw-breakpoints)
+        val nf = NativeGuard.scanFlags()
+        return nf != 0
+    }
+
+    /** Legacy: returns true for any hostile signal including root */
+    fun hostile(ctx: Context): Boolean = runtimeHostile(ctx) || degraded
+
 }

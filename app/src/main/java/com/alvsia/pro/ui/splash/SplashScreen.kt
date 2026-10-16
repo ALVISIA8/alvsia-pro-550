@@ -81,16 +81,33 @@ fun SplashScreen(onFinished: () -> Unit) {
     }
 
     DisposableEffect(Unit) {
-        // The optional welcome audio asset is not present in this source snapshot.
-        onDispose { }
+        var mp: MediaPlayer? = null
+        try {
+            mp = MediaPlayer.create(context, R.raw.megatron_welcome)
+            mp?.setVolume(1f, 1f)
+            mp?.start()
+        } catch (_: Exception) {
+        }
+        onDispose {
+            try {
+                mp?.stop()
+                mp?.release()
+            } catch (_: Exception) {
+            }
+        }
     }
 
     LaunchedEffect(Unit) {
         val t0 = System.nanoTime()
-        while (true) {
-            withFrameNanos { now ->
-                tick = ((now - t0) / 1_000_000_000f)
+        // Frame loop: runs only while this composable is active
+        try {
+            while (true) {
+                withFrameNanos { now ->
+                    tick = ((now - t0) / 1_000_000_000f)
+                }
             }
+        } catch (_: kotlinx.coroutines.CancellationException) {
+            // composable left; loop cancelled cleanly
         }
     }
 

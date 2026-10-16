@@ -18,38 +18,6 @@ try:
 except Exception:
     validate_decompile_text = None
     classify_bytes = None
-try:
-    from lua_engine.vm_deobfuscator import detect_vm_obfuscation, extract_vm_payload
-    _VM_DEOBF = True
-except Exception:
-    _VM_DEOBF = False
-    detect_vm_obfuscation = None
-    extract_vm_payload = None
-try:
-    from lua_engine.luajit_decompiler import disassemble_luajit, detect_luajit
-    _LUAJIT = True
-except Exception:
-    _LUAJIT = False
-    disassemble_luajit = None
-    detect_luajit = None
-try:
-    from lua_engine.multi_format import detect_format, run_universal_smart as _run_universal
-    _MULTI_FORMAT = True
-except Exception:
-    _MULTI_FORMAT = False
-    detect_format = None
-    _run_universal = None
-
-
-def _alvsia_safe_extract_zip(zip_file, destination):
-    """Extract ZIP entries only when their resolved path stays under destination."""
-    root = Path(destination).resolve()
-    root.mkdir(parents=True, exist_ok=True)
-    for member in zip_file.infolist():
-        target = (root / member.filename).resolve()
-        if target != root and root not in target.parents:
-            raise ValueError("Unsafe ZIP entry path rejected")
-        zip_file.extract(member, root)
 
 
 def _find_java():
@@ -66,7 +34,7 @@ def _find_java():
     return shutil.which("java")
 
 
-def _pick_jar(jars_dir, prefer=("unluac_pro.jar", "unluac_patched.jar", "unluac.jar")):
+def _pick_jar(jars_dir, prefer=("unluac_2025_12_23.jar", "unluac_pro.jar", "unluac_patched.jar", "unluac.jar")):
     jars_dir = Path(jars_dir) if jars_dir else None
     if jars_dir and jars_dir.is_dir():
         for name in prefer:
@@ -82,9 +50,9 @@ def _pick_jar(jars_dir, prefer=("unluac_pro.jar", "unluac_patched.jar", "unluac.
 def _prepare_lua_input(input_path, out_dir):
     input_path = Path(input_path); out_dir = Path(out_dir)
     raw = input_path.read_bytes()
-    payload, ci = unwrap_lua_container(raw)
-    if not ci.wrapped:
+    if not raw.startswith(b"\x78\xda"):
         return input_path, None
+    payload, ci = unwrap_lua_container(raw)
     if not payload.startswith((b"\x1bLua", b"\x1bLJ")):
         raise ValueError("compressed input did not contain Lua/LuaJIT bytecode")
     normalized = out_dir / (input_path.stem + "_unwrapped.luac")
@@ -163,7 +131,7 @@ def run_unzip(src, dest_dir):
     dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(src, "r") as z:
-        _alvsia_safe_extract_zip(z, dest_dir)
+        z.extractall(dest_dir)
     n = sum(1 for _ in dest_dir.rglob("*") if _.is_file())
     return {"ok": True, "out": str(dest_dir), "files": n}
 
@@ -362,77 +330,6 @@ def run_lua_smart(input_path, out_dir, jars_dir=None):
     is_lua53 = (len(work_data) > 4 and
                 work_data[:4] == b"\x1bLua" and
                 work_data[4] == 0x53)
-    bgmi_normalized = False
-    bgmi_key_available = False
-    bgmi_detected = False
-    if is_lua53:
-        try:
-            from lua_engine.bgmi import is_bgmi_lua
-            bgmi_detected = is_bgmi_lua(work_data)
-        except Exception as e:
-            report["steps"].append({"step": "bgmi_detect", "ok": False, "error": str(e)})
-    if bgmi_detected:
-        # BGMI bytecode has custom opcodes, delta line info and 32-bit string
-        # lengths. Convert the structure before either decompiler is allowed
-        # to treat the data as standard Lua 5.3.
-        key_hex = os.environ.get("SERVER_LUA_XOR_KEY_HEX", "").strip()
-        key_file = out_dir.parent.parent / "LUA_TOOL" / "lua_xor_key.txt"
-        if not key_hex and key_file.is_file():
-            try:
-                key_hex = key_file.read_text(encoding="utf-8", errors="replace").strip()
-            except OSError:
-                key_hex = ""
-        key = b""
-        if key_hex:
-            try:
-                key = bytes.fromhex(key_hex)
-                bgmi_key_available = bool(key)
-            except ValueError:
-                report["steps"].append({"step": "bgmi_key", "ok": False,
-                                        "error": "Lua XOR key is not valid hexadecimal; using structure-only normalization"})
-        try:
-            from lua_engine.bgmi import transform_bgmi_lua
-            normalized = transform_bgmi_lua(work_data, key, decrypt=True)
-            normalized_path = out_dir / (input_path.stem + "_bgmi_normalized.luac")
-            normalized_path.write_bytes(normalized)
-            work_input = normalized_path
-            work_data = normalized
-            bgmi_normalized = True
-            report["bgmi_normalized"] = True
-            report["strings_decrypted"] = bgmi_key_available
-            report["note"] = (
-                "BGMI Lua structure/opcodes normalized and XOR strings decrypted."
-                if bgmi_key_available else
-                "BGMI Lua structure/opcodes normalized; XOR-encrypted strings remain opaque because no Lua XOR key was available."
-            )
-            report["steps"].append({
-                "step": "bgmi_normalize", "ok": True,
-                "out": str(normalized_path),
-                "strings_decrypted": bgmi_key_available,
-            })
-        except Exception as e:
-            report["steps"].append({"step": "bgmi_normalize", "ok": False, "error": str(e)})
-            return {
-                "ok": False, "mode": "bgmi_normalization_failed",
-                "error": "BGMI-specific bytecode normalization failed; standard decompilation was not attempted on unnormalized opcodes.",
-                **report,
-            }
-    is_luajit = (len(work_data) > 3 and
-                 work_data[:3] == b"\x1bLJ" and
-                 work_data[3] in (0x01, 0x02))
-
-    # ── Step 2a: LuaJIT disassembler ────────────────────────────────────────
-    if _LUAJIT and is_luajit:
-        try:
-            out_lua = out_dir / (input_path.stem + "_ljbc.lua")
-            lr = disassemble_luajit(work_input, out_lua)
-            report["steps"].append({"step": "luajit_disasm", **lr})
-            if lr.get("ok"):
-                report["ok"] = True
-                return {"ok": True, "mode": "smart_luajit", "out": str(out_lua),
-                        "lines": lr.get("lines", 0), **report}
-        except Exception as e:
-            report["steps"].append({"step": "luajit_disasm", "ok": False, "error": str(e)})
 
     if _decompile53_file is not None and is_lua53:
         try:
@@ -445,74 +342,17 @@ def run_lua_smart(input_path, out_dir, jars_dir=None):
                 import re as _re
                 has_lua = bool(_re.search(r'\b(local|function|return|if|for|while|end)\b', snippet))
                 if has_lua:
-                    # ── Step 2b: VM obfuscation check ───────────────────────
-                    vm_info = {}
-                    if _VM_DEOBF:
-                        try:
-                            obf = detect_vm_obfuscation(work_input)
-                            vm_info["vm_obfuscated"] = obf.is_obfuscated
-                            vm_info["vm_confidence"] = obf.confidence
-                            vm_info["vm_notes"] = obf.notes
-                            vm_info["vm_main_proto_instr"] = obf.main_proto_instr
-                            vm_info["vm_max_reg"] = obf.max_reg
-                            if obf.is_obfuscated:
-                                # Attempt payload extraction + re-decompile
-                                vr = extract_vm_payload(work_input, out_dir)
-                                vm_info["vm_extract"] = vr
-                                # Use "vm_note" step (no ok=False) so UI shows SUCCESS for the
-                                # overall decompile even when dynamic VM payload is unrecoverable.
-                                report["steps"].append({
-                                    "step": "vm_note",
-                                    "detected": True,
-                                    "partial": vr.get("partial", True),
-                                    "mode": vr.get("mode", "dynamic_vm"),
-                                    "note": vr.get("note", "runtime VM — static payload extraction not possible"),
-                                })
-                                if vr.get("ok"):
-                                    recovered = Path(vr["out"])
-                                    # Re-decompile recovered payload
-                                    out_recovered = out_dir / (input_path.stem + "_recovered.lua")
-                                    pr2 = _decompile53_file(recovered, out_recovered)
-                                    vm_info["vm_decompiled"] = pr2
-                                    report["steps"].append({"step": "py_decompile53_recovered", **pr2})
-                                    if pr2.get("ok"):
-                                        return {"ok": True, "mode": "smart_py53_vm_recovered",
-                                                "out": str(out_recovered),
-                                                "lines": pr2.get("lines", 0),
-                                                "note": "VM obfuscation detected and payload successfully recovered",
-                                                **vm_info, **report}
-                        except Exception as ve:
-                            vm_info["vm_check_error"] = str(ve)
-                    # BGMI structure-only normalization cannot recover XOR-protected
-                    # string constants. Do not advertise a complete decompile without
-                    # the required key, even if the output resembles valid Lua source.
-                    if not (bgmi_normalized and not bgmi_key_available):
-                        report["ok"] = True
-                        report["final_status"] = "SUCCESS"
-                        return {"ok": True,
-                                "mode": ("smart_bgmi_py53" if bgmi_normalized else "smart_py53"),
-                                "out": str(out_lua), "lines": pr.get("lines", 0),
-                                **vm_info, **report}
-                    report["steps"].append({
-                        "step": "complete_decompile_gate", "ok": False,
-                        "reason": "BGMI XOR key unavailable; source may contain opaque string constants",
-                    })
+                    report["ok"] = True
+                    return {"ok": True, "mode": "smart_py53",
+                            "out": str(out_lua), "lines": pr.get("lines", 0), **report}
         except Exception as e:
             report["steps"].append({"step": "py_decompile53", "ok": False, "error": str(e)})
 
     # ── Step 3: unluac jar (fallback — needs Java, works in Termux) ─────────
     ur = run_unluac(work_input, out_dir, jars_dir=jars_dir)
     report["steps"].append({"step": "unluac", **ur})
-    if ur.get("ok") and not (bgmi_normalized and not bgmi_key_available):
-        report["final_status"] = "SUCCESS"
-        return {"ok": True,
-                "mode": ("smart_bgmi_unluac" if bgmi_normalized else "smart_unluac"),
-                **ur, **report}
-    if ur.get("ok") and bgmi_normalized and not bgmi_key_available:
-        report["steps"].append({
-            "step": "complete_decompile_gate", "ok": False,
-            "reason": "unluac output withheld from SUCCESS: BGMI XOR key unavailable",
-        })
+    if ur.get("ok"):
+        return {"ok": True, "mode": "smart_unluac", **report}
 
     # ── Step 4: partial recovery ─────────────────────────────────────────────
     cr = extract_lua_constants(input_path, out_dir)
@@ -531,7 +371,7 @@ def run_lua_smart(input_path, out_dir, jars_dir=None):
         for cand in out_dir.glob("*_decompiled.lua"):
             v = validate_decompile_text(cand.read_text(encoding="utf-8", errors="replace"))
             report["steps"].append({"step": "validate_source", "file": str(cand), **v})
-            if v.get("is_lua_source") and not (bgmi_normalized and not bgmi_key_available):
+            if v.get("is_lua_source"):
                 final_status = "SUCCESS"
                 report["ok"] = True
                 break
@@ -665,127 +505,6 @@ def run_pubg_lua_decrypt(input_path, out_dir, key_hex=None):
         }
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
-
-# ---------------------------------------------------------------------------
-# UNIVERSAL — run_any_file: handles ALL formats, not just Lua
-# ---------------------------------------------------------------------------
-
-def run_any_file(input_path, out_dir, jars_dir=None):
-    """
-    ALVSIA PRO universal file handler.
-    Detects the format of ANY file and routes to the best available tool:
-      - Lua 5.1/5.2/5.3/5.4 bytecode → decompile (Python or Java)
-      - LuaJIT bytecode → disassemble
-      - VM-obfuscated Lua → detect + extract + re-decompile
-      - zlib/gzip/lz4/zstd/bz2/xz compressed → decompress then re-process
-      - ZIP/APK/PAK/JAR archives → extract Lua files, decompile each
-      - Unity AssetBundle → scan for embedded Lua
-      - ELF/PE/DEX binaries → scan for embedded Lua bytecode
-      - Plain Lua source → validate + copy
-      - Unknown → extract strings + brute-scan
-
-    Returns {"ok": True/False, "mode": str, "out": str, ...}
-    """
-    input_path = Path(input_path); out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    if _MULTI_FORMAT and _run_universal is not None:
-        # Full universal pipeline
-        return _run_universal(input_path, out_dir, jars_dir=jars_dir)
-
-    # Fallback if multi_format not available: route by extension/magic
-    data = input_path.read_bytes()[:8]
-    if data[:4] == b"\x1bLua":
-        return run_lua_smart(input_path, out_dir, jars_dir=jars_dir)
-    if data[:3] == b"\x1bLJ":
-        return run_lua_smart(input_path, out_dir, jars_dir=jars_dir)
-    if data[:2] in (b"\x78\x9c", b"\x78\xda", b"\x78\x01"):
-        # zlib — decompress and re-run
-        import zlib
-        try:
-            raw = input_path.read_bytes()
-            dec = zlib.decompress(raw)
-            dec_path = out_dir / (input_path.stem + "_decompressed.bin")
-            dec_path.write_bytes(dec)
-            return run_any_file(dec_path, out_dir, jars_dir)
-        except Exception as e:
-            return {"ok": False, "error": f"zlib decompress failed: {e}"}
-    if data[:2] == b"PK":
-        # ZIP-based
-        import zipfile
-        extracted = []
-        try:
-            with zipfile.ZipFile(input_path, "r") as z:
-                for name in z.namelist():
-                    if name.lower().endswith((".lua", ".luac", ".ljbc", ".bytes")):
-                        blob = z.read(name)
-                        p = out_dir / name.replace("/", "__")
-                        p.write_bytes(blob)
-                        extracted.append(p)
-        except Exception:
-            pass
-        if extracted:
-            results = [run_any_file(p, out_dir, jars_dir) for p in extracted[:20]]
-            ok_count = sum(1 for r in results if r.get("ok"))
-            return {"ok": ok_count > 0, "mode": "archive_fallback",
-                    "extracted": len(extracted), "ok_count": ok_count}
-        return {"ok": False, "error": "no Lua files in archive"}
-
-    # Last resort: smart string scan
-    return run_lua_bytecode_strings(input_path, out_dir)
-
-
-def run_vm_deobf(input_path, out_dir):
-    """
-    Dedicated VM-deobfuscation entry point.
-    Detects custom VM obfuscation in a Lua 5.3 file and attempts payload recovery.
-    """
-    input_path = Path(input_path); out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    if not _VM_DEOBF:
-        return {"ok": False, "error": "vm_deobfuscator module not available"}
-
-    det = detect_vm_obfuscation(input_path)
-    if not det.is_obfuscated:
-        return {"ok": False, "error": "file does not appear to be VM-obfuscated",
-                "confidence": det.confidence, "notes": det.notes,
-                "main_proto_instr": det.main_proto_instr}
-
-    # Attempt extraction
-    vr = extract_vm_payload(input_path, out_dir)
-    if not vr.get("ok"):
-        return {"ok": False, "vm_detected": True, "confidence": det.confidence,
-                "notes": det.notes, **vr}
-
-    # Re-decompile recovered payload
-    recovered = Path(vr["out"])
-    if _decompile53_file and recovered.stat().st_size > 32:
-        out_dec = out_dir / (input_path.stem + "_vm_decompiled.lua")
-        pr = _decompile53_file(recovered, out_dec)
-        return {"ok": pr.get("ok", False), "mode": "vm_deobf_decompile",
-                "vm_detected": True, "confidence": det.confidence,
-                "vm_notes": det.notes, "vm_extract": vr,
-                "decompile": pr, "out": str(out_dec) if pr.get("ok") else None}
-
-    return {"ok": True, "mode": "vm_payload_extracted",
-            "vm_detected": True, "confidence": det.confidence,
-            "out": str(recovered), "note": "payload extracted but decompiler unavailable", **vr}
-
-
-def run_format_detect(input_path):
-    """Detect file format and return a detailed FormatInfo dict."""
-    input_path = Path(input_path)
-    if _MULTI_FORMAT and detect_format is not None:
-        fi = detect_format(input_path)
-        return {"ok": True, "fmt": fi.fmt, "category": fi.category,
-                "lua_version": fi.lua_version, "compressed": fi.compressed,
-                "container": fi.container, "notes": fi.notes,
-                "magic_hex": fi.magic_hex, "size": fi.size}
-    # Fallback: just read magic
-    data = input_path.read_bytes()[:16]
-    return {"ok": True, "magic_hex": data.hex(), "size": input_path.stat().st_size}
-
 
 # ---------------------------------------------------------------------------
 # REBRAND — string replace brand/watermark/channel (NO network, NO bot token)
@@ -1152,7 +871,7 @@ def run_obb_extract(input_path, out_dir):
     out_dir.mkdir(parents=True, exist_ok=True)
     try:
         with zipfile.ZipFile(p, "r") as zf:
-            _alvsia_safe_extract_zip(zf, out_dir)
+            zf.extractall(out_dir)
             count = len(zf.namelist())
         return {"ok": True, "extracted": count, "out": str(out_dir)}
     except Exception as e:

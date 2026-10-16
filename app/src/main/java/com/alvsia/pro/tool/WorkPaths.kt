@@ -54,27 +54,24 @@ object WorkPaths {
     }
 
     private fun moduleName(moduleId: Int): String = when (moduleId) {
-        1, 2, 3 -> "PAK"
-        4 -> "OBB"
-        5 -> "LUA"
-        6 -> "SCAN"
-        7 -> "WORKSPACE"
-        8 -> "REPORT"
-        9 -> "REBRAND"
-        10 -> "SO_ANALYZER"
-        11 -> "FRIDA"
-        12 -> "XOR"
-        13 -> "DECRYPT"
-        14 -> "PAK_DEEP"
-        15 -> "STRING_RECOVER"
-        16 -> "LUA_INJECT"
-        17 -> "AUDIT"
+        1, 2 -> "PAK"
+        3, 4 -> "OBB"
+        5, 6 -> "LUA"
+        7 -> "ASSET"
+        8 -> "STRINGS"
+        9 -> "UE"
+        10 -> "RENAME"
+        11 -> "HASH"
+        12 -> "SM4"
+        13 -> "INTEGRITY"
+        14 -> "PATCH"
+        15 -> "REPORT"
         else -> "MISC"
     }
 
     fun ensureTree() {
         dirIn(); dirWork(); dirOut()
-        for (id in 1..17) {
+        for (id in 1..15) {
             moduleIn(id); moduleWork(id); moduleOut(id)
         }
     }
@@ -86,22 +83,18 @@ object WorkPaths {
         try {
             f.writeText(
                 """
-                ALVISIA PRO 5.5.0 — Modern I/O
+                ALVSIA PREMIUM TOOL 4.6 ? modern I/O
                 ====================================
                 Root: Download/ALVSIA/
+
                   IN/<MODULE>/    optional drop zone for inputs
                   WORK/<MODULE>/  temp / intermediate
                   OUT/<MODULE>/   final results (always check here)
 
-                Modules (1..17):
-                  1: PAK Unpack       2: PAK Rebuild      3: PAK Compact
-                  4: OBB Tools        5: LUA Tools        6: File Scan
-                  7: Workspace        8: Export Report    9: Rebrand
-                  10: SO Analyzer    11: Frida Tracer    12: XOR Suite
-                  13: Decrypt Engine 14: PAK Deep        15: String Recover
-                  16: Lua Inject     17: Anti-RE Audit
+                Modules: PAK OBB LUA ASSET STRINGS UE RENAME HASH SM4 INTEGRITY PATCH REPORT
 
-                Key & OTP: Configured via Owner Panel / Bot
+                Key: @ALVSIA_PRO
+                OTP: @OriginalOnwerALV
                 """.trimIndent()
             )
         } catch (_: Exception) {

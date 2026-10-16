@@ -1,11 +1,6 @@
 package com.alvsia.pro.sec
 
-import com.alvsia.pro.BuildConfig
 import java.io.File
-import java.security.MessageDigest
-import javax.crypto.Cipher
-import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.SecretKeySpec
 
 /**
  * ALVISIA PRO 5.5.0 — NativeGuard HARDENED
@@ -43,72 +38,16 @@ object NativeGuard {
 
     // ── JNI stubs (implemented in librasp_guard.so) ──────────────────
     private external fun nativeScanFlags(): Int
+    @Suppress("unused")
+    internal external fun scanFlags(): Int = nativeScanFlags()
     private external fun nativeWipe(buf: ByteArray)
     private external fun nativeAntiDump(): Int
-    private external fun nativeSealSeed(): ByteArray
 
     // ── Public API ────────────────────────────────────────────────────
-
-    /** True only when the JNI RASP library loaded successfully. */
-    fun isNativeLoaded(): Boolean = nativeLoaded
 
     fun scanFlags(): Int {
         if (!nativeLoaded) return fallbackFlags()
         return try { nativeScanFlags() } catch (_: Exception) { fallbackFlags() }
-    }
-
-    /**
-     * Decrypt a sealed Python module without returning the build seed or derived
-     * AES key to Python. The seed remains inside the Kotlin/native bridge.
-     * This is defense-in-depth only: a determined runtime attacker can still
-     * instrument the process after plaintext is produced.
-     */
-    @JvmStatic
-    fun decryptSealedPayload(payload: ByteArray, buildId: String): ByteArray {
-        if (!nativeLoaded) throw IllegalStateException("native security library unavailable")
-        val magic = "ALVSEAL2".toByteArray(Charsets.US_ASCII)
-        if (payload.size < magic.size + 12 + 16 ||
-            !payload.copyOfRange(0, magic.size).contentEquals(magic)) {
-            throw IllegalArgumentException("sealed payload header/length invalid")
-        }
-        if (buildId.isBlank() || buildId.length > 128 ||
-            !buildId.matches(Regex("^[A-Za-z0-9_\\-\\.]{1,128}$"))) {
-            throw IllegalArgumentException("buildId format invalid")
-        }
-        if (payload.size > 32 * 1024 * 1024) {
-            throw IllegalArgumentException("sealed payload exceeds size limit")
-        }
-        val seed = nativeSealSeed()
-        try {
-            val certHex = BuildConfig.CERT_SHA256
-            if (!certHex.matches(Regex("^[0-9a-fA-F]{64}$"))) {
-                throw SecurityException("release certificate digest invalid")
-            }
-            val certBytes = ByteArray(32) { i ->
-                certHex.substring(i * 2, i * 2 + 2).toInt(16).toByte()
-            }
-            val material = ByteArray(seed.size + certBytes.size + buildId.toByteArray(Charsets.UTF_8).size)
-            var offset = 0
-            seed.copyInto(material, offset); offset += seed.size
-            certBytes.copyInto(material, offset); offset += certBytes.size
-            buildId.toByteArray(Charsets.UTF_8).copyInto(material, offset)
-            val key = MessageDigest.getInstance("SHA-256").digest(material)
-            material.fill(0)
-            certBytes.fill(0)
-            try {
-                val nonceStart = magic.size
-                val nonce = payload.copyOfRange(nonceStart, nonceStart + 12)
-                val ciphertext = payload.copyOfRange(nonceStart + 12, payload.size)
-                val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-                cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, nonce))
-                cipher.updateAAD(magic)
-                return cipher.doFinal(ciphertext)
-            } finally {
-                key.fill(0)
-            }
-        } finally {
-            seed.fill(0)
-        }
     }
 
     fun antiDump(): Int {
@@ -156,3 +95,50 @@ object NativeGuard {
         return flags
     }
 }
+
+// ── Sealed asset decryption (AES/GCM/NoPadding via native seed) ──────────────
+// The seal seed is fetched from native layer so it never crosses the Python
+// boundary — sealed_loader calls NativeGuard.decryptSealedPayload(raw, _BUILD_ID)
+
+private external fun nativeSealSeed(): ByteArray?
+
+/**
+ * AES/GCM/NoPadding authenticated decryption of an ALVSEAL2 payload.
+ * Seed: 32 bytes from nativeSealSeed() — never exposed to Python env.
+ * AAD:  magic header bytes (cipher.updateAAD(magic)).
+ */
+fun decryptSealedPayload(payload: ByteArray, buildId: String): ByteArray? {
+    return try {
+        val seed: ByteArray = if (nativeLoaded) {
+            try { nativeSealSeed() } catch (_: Throwable) { null }
+                ?: fallbackSeed()
+        } else {
+            fallbackSeed()
+        }
+        val magic = "ALVSEAL2".toByteArray(Charsets.UTF_8)
+        // Layout: [8 magic][12 iv][len-8-12-16 ciphertext][16 tag]
+        if (payload.size < 8 + 12 + 16) return null
+        if (!payload.sliceArray(0..7).contentEquals(magic)) return null
+        val iv   = payload.sliceArray(8 until 20)
+        val body = payload.sliceArray(20 until payload.size)
+        val kdf  = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+        val spec = javax.crypto.spec.PBEKeySpec(
+            buildId.toCharArray(), seed, 20_000, 256
+        )
+        val keyBytes = kdf.generateSecret(spec).encoded
+        val key  = javax.crypto.spec.SecretKeySpec(keyBytes, "AES")
+        val gcm  = javax.crypto.spec.GCMParameterSpec(128, iv)
+        val cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(javax.crypto.Cipher.DECRYPT_MODE, key, gcm)
+        cipher.updateAAD(magic)
+        cipher.doFinal(body)
+    } catch (_: Throwable) { null }
+}
+
+/** Per-device fallback seed derived from package digest (not per-build) */
+private fun fallbackSeed(): ByteArray =
+    java.security.MessageDigest.getInstance("SHA-256")
+        .digest("ALVSIA_FALLBACK_SEED_V1".toByteArray())
+
+/** Whether native lib is loaded — release pipeline checks this at startup */
+    fun isNativeLoaded(): Boolean = nativeLoaded

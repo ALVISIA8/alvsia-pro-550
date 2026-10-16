@@ -1,5 +1,10 @@
 package com.alvsia.pro.ui.home
 
+import android.app.Activity
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
+import com.alvsia.pro.sec.PermissionHelper
+
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
@@ -35,7 +40,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import androidx.compose.ui.Modifier
@@ -71,11 +75,12 @@ fun HomeScreen(
     expiry: String,
     tools: List<ToolItem>,
     status: String?,
-    onTool: (ToolItem) -> Unit,
-    onInfo: () -> Unit = {},                  // NEW — navigate to info screen
-    raspLevel: Int = 0,
-    secStatus: String = "SECURE",
+    onTool: (ToolItem) -> Unit
 ) {
+    val ctx = LocalContext.current
+    LaunchedEffect(Unit) {
+        (ctx as? Activity)?.let { PermissionHelper.requestAll(it) }
+    }
     val ctx = LocalContext.current
     DisposableEffect(Unit) {
         try { PulseAudio.start(ctx) } catch (_: Exception) {}
@@ -120,52 +125,12 @@ fun HomeScreen(
                 .statusBarsPadding()
                 .padding(horizontal = 14.dp, vertical = 8.dp)
         ) {
-            // ── Top row: title + security badge + INFO button ─────────────────
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "ALVSIA PREMIUM TOOL",
-                    color = AlvisiaCyan,
-                    fontWeight = FontWeight.Black,
-                    fontSize = 20.sp
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    val badgeColor = when (raspLevel) {
-                        0    -> Color(0xFF00E676)
-                        1    -> Color(0xFFFFAB40)
-                        else -> AlvisiaRed
-                    }
-                    val badgeLabel = when (raspLevel) {
-                        0    -> secStatus
-                        1    -> "⚠ THREAT"
-                        else -> "✖ BLOCKED"
-                    }
-                    Box(
-                        Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(badgeColor.copy(alpha = 0.18f))
-                            .border(1.dp, badgeColor.copy(alpha = 0.55f), RoundedCornerShape(6.dp))
-                            .padding(horizontal = 8.dp, vertical = 3.dp)
-                    ) {
-                        Text(badgeLabel, color = badgeColor, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(Modifier.width(6.dp))
-                    // INFO button
-                    Box(
-                        Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(AlvisiaCyan.copy(alpha = 0.12f))
-                            .border(1.dp, AlvisiaCyan.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
-                            .clickable(onClick = onInfo)
-                            .padding(horizontal = 9.dp, vertical = 3.dp)
-                    ) {
-                        Text("ⓘ INFO", color = AlvisiaCyan, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
+            Text(
+                "ALVSIA PREMIUM TOOL",
+                color = AlvisiaCyan,
+                fontWeight = FontWeight.Black,
+                fontSize = 20.sp
+            )
             Text(product.ifBlank { "PREMIUM" }, color = AlvisiaSilver.copy(alpha = 0.75f), fontSize = 12.sp)
             Text(
                 "Exp: $countdownText",
@@ -184,6 +149,8 @@ fun HomeScreen(
                 TextButton(onClick = {
                     ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/OriginalOnwerALV")))
                 }) { Text("Owner", color = AlvisiaCyan, fontWeight = FontWeight.Bold) }
+                TextButton(onClick = { onProfile?.invoke() }) {
+                    Text("Profil", color = AlvisiaCyan, fontWeight = FontWeight.Bold) }
             }
             Spacer(Modifier.height(4.dp))
             Text("MODULES", color = AlvisiaSilver.copy(alpha = 0.4f), fontSize = 10.sp, fontWeight = FontWeight.Bold)

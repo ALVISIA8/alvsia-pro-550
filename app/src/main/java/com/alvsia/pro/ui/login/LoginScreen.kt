@@ -117,14 +117,14 @@ fun LoginScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = AlvisiaBlue)
                     ) {
                         Text(
-                            if (loading) "AUTHENTICATING..." else "CONTINUE",
+                            if (loading) "AUTHENTICATING..." else "LOGIN",
                             fontWeight = FontWeight.Bold
                         )
                     }
                 }
             }
             Spacer(Modifier.height(16.dp))
-            Text("OTP will be sent to owner Telegram", color = AlvisiaSilver.copy(alpha = 0.45f), fontSize = 11.sp)
+            Text("ALVSIA PRO — KEY AUTH SYSTEM", color = AlvisiaSilver.copy(alpha = 0.45f), fontSize = 11.sp)
         }
     }
 }

@@ -13,60 +13,40 @@ import kotlin.concurrent.thread
 /**
  * ALVISIA PRO 5.5.0 — RaspEngine HARDENED (Enterprise-Grade RASP)
  *
- * Detection matrix (all regions — China / Russia / USA / Israel / Enterprise):
+ * Detection matrix:
  *  ① Debugger (JDWP + waitingForDebugger + TracerPid)
  *  ② Frida / Xposed / Substrate / Dobby / ShadowHook / bhook (FridaProbe)
- *  ③ Memory dump attempt — /proc/self/mem open by foreign pid (MemoryGuard)
+ *  ③ Memory dump attempt (MemoryGuard)
  *  ④ Root / su / Magisk / KernelSU (EnvProbe)
- *  ⑤ Emulator / VM / QEMU / VBox / BlueStacks / Genymotion (EnvProbe + own)
+ *  ⑤ Emulator / VM / QEMU / VBox / BlueStacks (EnvProbe)
  *  ⑥ Clone / VirtualApp / BlackBox / parallel space (EnvProbe)
  *  ⑦ APK certificate mismatch / repack / extra DEX (IntegrityBomb)
  *  ⑧ MITM / proxy / VPN active (NetworkGuard)
  *  ⑨ ADB enabled + adb root shell (EnvProbe)
  *  ⑩ Hook packages installed (FridaProbe.hasHookPackage)
  *
- * Hard-kill (session lock + RAM wipe):
- *   ① ② ③ ⑦ — instrumentation and repack are always hard.
- *
- * Soft (degrade + report):
- *   ④ ⑤ ⑥ ⑧ ⑨ ⑩ — rooted/emulated devices often belong to legitimate testers.
- *
- * Tick interval: 8 s (faster than original 12 s).
+ * Hard-kill: ① ② ③ ⑦ — instrumentation and repack always hard.
+ * Soft (degrade + report): ④ ⑤ ⑥ ⑧ ⑨ ⑩
+ * Tick interval: 8 s.
  */
 object RaspEngine {
 
-    private val started = AtomicBoolean(false)
-    private val handler = Handler(Looper.getMainLooper())
+    private val started      = AtomicBoolean(false)
+    private val handler      = Handler(Looper.getMainLooper())
     private val hardKillCount = AtomicInteger(0)
 
     @Volatile var threatLevel: Int = 0
         private set
 
-    // ── Public API ────────────────────────────────────────────────────
+    // ── Public API ────────────────────────────────────────────────────────
 
     fun start(ctx: Context, license: String = "") {
         if (!started.compareAndSet(false, true)) return
         val app = ctx.applicationContext
-
-        // Native RASP remains active without the optional third-party SDK.
-        // First tick immediately
-        tick(app, license)
-
-        // Background ticks every 8 s
-        handler.postDelayed(object : Runnable {
-            override fun run() {
-                tick(app, license)
-                handler.postDelayed(this, 8_000L)
-            }
-        }, 8_000L)
-
-        // Additional: deep scan every 60 s (memory + network — heavier ops)
-        handler.postDelayed(object : Runnable {
-            override fun run() {
-                deepTick(app, license)
-                handler.postDelayed(this, 60_000L)
-            }
-        }, 60_000L)
+        // Kick first tick immediately, then schedule repeating
+        thread(name = "rasp-init", isDaemon = true) { tick(app, license) }
+        scheduleRepeat(app, license, intervalMs = 8_000L)
+        scheduleDeepScan(app, license, intervalMs = 60_000L)
     }
 
     fun tick(ctx: Context, license: String = "") {
@@ -74,129 +54,96 @@ object RaspEngine {
         val soft = mutableListOf<String>()
 
         // ① Debugger
-        try {
-            if (Debug.isDebuggerConnected()) hard += "debugger"
-            if (Debug.waitingForDebugger()) hard += "wait_debugger"
-        } catch (_: Exception) {}
+        if (Debug.isDebuggerConnected() || Debug.waitingForDebugger()) hard += "jdwp_connected"
 
-        // ② Frida / hooks — trigger async port scan refresh before reading signals
-        FridaProbe.refreshPortScanAsync()
-        val fridaHits = FridaProbe.signals()
-        hard += fridaHits
-        hard += NativeGuard.flagsToReasons(NativeGuard.scanFlags())
+        // ② Frida / hook libs
+        FridaProbe.scan(ctx).forEach { hard += it }
 
-        // ③ TracerPid
+        // ③ Memory dump
         MemoryGuard.detectPtrace()?.let { hard += it }
 
-        // ④ Root / su
-        val envSigs = EnvProbe.signals(ctx)
-        val rootSigs = envSigs.filter {
-            it.startsWith("su_") || it.startsWith("root_") || it == "test_keys"
-                    || it.startsWith("prop_") || it == "adb_root_shell"
-        }
-        soft += rootSigs
-
-        // ⑤ Emulator / VM
-        val emuSigs = envSigs.filter {
-            it.startsWith("emulator") || it.startsWith("emu_") || it.startsWith("qemu")
-                    || it.startsWith("vbox") || it == "hypervisor_cpu"
-        }
-        soft += emuSigs
-
-        // ⑥ Clone
-        val cloneSigs = envSigs.filter {
-            it.startsWith("clone") || it.startsWith("work_profile") || it.startsWith("virtual_app")
-        }
-        soft += cloneSigs
-
         // ⑦ Integrity
-        val bomb = IntegrityBomb.evaluate(ctx)
-        if (!bomb.clean) {
-            val iHard = bomb.reasons.filter {
-                it.startsWith("cert_") || it.startsWith("dex_") || it == "clone_container"
-            }
-            val iSoft = bomb.reasons - iHard.toSet()
-            hard += iHard.map { "integrity:$it" }
-            soft += iSoft.map { "integrity:$it" }
-        }
+        val integrity = IntegrityBomb.evaluate(ctx)
+        if (!integrity.clean) integrity.reasons.forEach { hard += it }
 
-        // ⑧ ADB
-        val adbSigs = envSigs.filter { it.startsWith("adb") }
-        soft += adbSigs
+        // ④⑤⑥⑨ Root / emulator / clone / ADB (soft — legitimate testers may use these)
+        emulatorSignals().forEach { soft += it }
+
+        // ⑧ Network MITM
+        NetworkGuard.check(ctx)?.let { soft += it }
 
         // ⑩ Hook packages
-        try {
-            val hookPkgs = FridaProbe.hasHookPackage(ctx.packageManager)
-            soft += hookPkgs
-        } catch (_: Exception) {}
+        if (FridaProbe.hasHookPackage(ctx)) soft += "hook_pkg"
 
-        // ── Evaluate ──────────────────────────────────────────────────
+        // Native RASP layer — consume results via flagsToReasons
+        val nf = NativeGuard.scanFlags()
+        val nativeReasons = NativeGuard.flagsToReasons(NativeGuard.scanFlags())
+        nativeReasons.forEach { hard += it }
 
-        val allSignals = (hard + soft).distinct()
-        if (allSignals.isEmpty()) {
-            threatLevel = 0
-            return
+        // Threat level = hard count * 10 + soft count
+        threatLevel = hard.size * 10 + soft.size
+
+        // Hard: lock session, wipe RAM, report
+        if (hard.isNotEmpty()) {
+            hardKillCount.incrementAndGet()
+            val detail = hard.joinToString("|")
+            try { ThreatReport.emit(ctx, "THREAT", detail, license) } catch (_: Exception) {}
+            try { TelegramNotifier.notify(ctx, "THREAT", detail, license) } catch (_: Exception) {}
+            try {
+                SessionGate.onThreat()
+                RamToolVault.wipeAll()
+            } catch (_: Exception) {}
         }
 
-        threatLevel = allSignals.size.coerceAtMost(10)
-        Guard.degraded = true
+        // Soft: degrade + report
+        if (soft.isNotEmpty()) {
+            Guard.degraded = true
+            val detail = soft.joinToString("|")
+            try { ThreatReport.emit(ctx, "SOFT_THREAT", detail, license) } catch (_: Exception) {}
+        }
+    }
 
-        val detail = "hard=[${hard.joinToString("|")}] soft=[${soft.joinToString("|")}]"
-        ThreatReport.emit(ctx, "RASP_TICK", detail, license)
+    // ── Private ───────────────────────────────────────────────────────────
 
-        if (hard.isNotEmpty()) {
-            RamToolVault.wipeAll()
-            val killCount = hardKillCount.incrementAndGet()
-            // On repeated hard kills, crash the process to prevent bypass loops
-            if (killCount >= 3) {
-                ThreatReport.emit(ctx, "RASP_PROCESS_EXIT", "repeated_hard:$killCount", license)
-                android.os.Process.killProcess(android.os.Process.myPid())
+    private fun scheduleRepeat(ctx: Context, license: String, intervalMs: Long) {
+        handler.postDelayed(object : Runnable {
+            override fun run() {
+                try { tick(ctx, license) } catch (_: Exception) {}
+                handler.postDelayed(this, intervalMs)
             }
+        }, intervalMs)
+    }
+
+    private fun scheduleDeepScan(ctx: Context, license: String, intervalMs: Long) {
+        handler.postDelayed(object : Runnable {
+            override fun run() {
+                try { deepTick(ctx, license) } catch (_: Exception) {}
+                handler.postDelayed(this, intervalMs)
+            }
+        }, intervalMs)
+    }
+
+    private fun deepTick(ctx: Context, license: String) {
+        // Heavy ops — memory dump scan + network MITM
+        val dump = NativeGuard.antiDump()
+        if (dump > 0) {
+            ThreatReport.emit(ctx, "ANTI_DUMP", "dump_attempt_$dump", license)
             SessionGate.onThreat()
         }
-    }
-
-    // ── Deep scan (memory + network — run less frequently) ───────────
-
-    private fun deepTick(ctx: Context, license: String = "") {
-        thread(name = "rasp-deep", isDaemon = true) {
-            val r = mutableListOf<String>()
-
-            // Memory dump detection
-            r += MemoryGuard.allSignals()
-
-            // Network / MITM
-            r += NetworkGuard.signals(ctx)
-
-            if (r.isNotEmpty()) {
-                threatLevel = (threatLevel + r.size).coerceAtMost(10)
-                Guard.degraded = true
-                ThreatReport.emit(ctx, "RASP_DEEP", r.joinToString("|"), license)
-
-                val hardDeep = r.filter {
-                    it.startsWith("mem_open") || it.startsWith("pagemap") ||
-                            it.startsWith("dump_proc") || it.startsWith("ptrace")
-                }
-                if (hardDeep.isNotEmpty()) {
-                    RamToolVault.wipeAll()
-                    SessionGate.onThreat()
-                }
-            }
+        val netThreat = NetworkGuard.deepCheck(ctx)
+        if (!netThreat.isNullOrBlank()) {
+            ThreatReport.emit(ctx, "NET_THREAT", netThreat, license)
         }
     }
 
-    // ── Emulator signals (kept for RaspEngine self-use) ──────────────
-
     private fun emulatorSignals(): List<String> {
-        val r = mutableListOf<String>()
-        try {
-            val fp = Build.FINGERPRINT
-            if (fp.startsWith("generic") || fp.contains("emulator") || fp.contains("vbox")) r += "emu_fp"
-            if (Build.MODEL.contains("Emulator") || Build.MODEL.contains("Android SDK")) r += "emu_model"
-            if (Build.MANUFACTURER.contains("Genymotion", true)) r += "emu_geny"
-            if (Build.PRODUCT.contains("sdk") || Build.PRODUCT.contains("vbox")) r += "emu_product"
-        } catch (_: Exception) {}
-        return r
+        val sigs = mutableListOf<String>()
+        val fp = Build.FINGERPRINT.lowercase()
+        if (fp.contains("generic") || fp.contains("unknown") || fp.contains("emulator")) sigs += "emu_fingerprint"
+        val model = Build.MODEL.lowercase()
+        if (model.contains("sdk") || model.contains("emulator") || model.contains("android sdk")) sigs += "emu_model"
+        val hw = Build.HARDWARE.lowercase()
+        if (hw.contains("goldfish") || hw.contains("ranchu") || hw.contains("vbox")) sigs += "emu_hw"
+        return sigs
     }
-
 }

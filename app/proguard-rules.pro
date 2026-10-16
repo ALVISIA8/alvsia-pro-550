@@ -14,8 +14,7 @@
 -flattenpackagehierarchy 'a'
 
 # ── ALVISIA security layer — hard keep ───────────────────────────────
--keep class com.alvsia.pro.sec.** { *; }
--keepclassmembers class com.alvsia.pro.sec.** { *; }
+-keep class com.alvsia.pro.sec.NativeGuard { *; }
 
 # Keep JNI methods (native bridge to librasp_guard.so)
 -keepclasseswithmembernames class * {
@@ -23,7 +22,7 @@
 }
 
 # ── ALVISIA licensing / panel ─────────────────────────────────────────
--keep class com.alvsia.pro.panel.** { *; }
+-keep class com.alvsia.pro.panel.PanelClient { *; }
 -keep class com.alvsia.pro.AlvisiaApp { *; }
 -keep class com.alvsia.pro.MainActivity { *; }
 
@@ -79,3 +78,10 @@
 
 # ── Output mapping (keep in secure location, NOT in APK) ─────────────
 # -printmapping mapping.txt
+
+# ── Control-flow obfuscation (R8 performs this automatically with -optimizationpasses 7) ──
+# R8 in full mode applies: dead code elimination, block merging, inlining, class merging
+# This is the R8-native form of CFO — no explicit flag needed in modern R8
+-optimizations !code/simplification/advanced  # keep CFO-friendly patterns
+-optimizations code/removal/advanced
+-optimizations code/merging/*

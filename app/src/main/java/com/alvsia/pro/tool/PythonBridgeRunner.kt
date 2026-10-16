@@ -81,4 +81,37 @@ object PythonBridgeRunner {
             return false to listOf("... bridge error: ${e.message ?: e.javaClass.simpleName}")
         }
     }
+
+    fun setEnv(key: String, value: String) {
+        try {
+            val pyClass = Class.forName("com.chaquo.python.Python")
+            val isStarted = pyClass.getMethod("isStarted").invoke(null) as Boolean
+            if (!isStarted) return
+            val py = pyClass.getMethod("getInstance").invoke(null) ?: return
+            val getModule = pyClass.getMethod("getModule", String::class.java)
+            val osMod = getModule.invoke(py, "os") ?: return
+            val pyObjectCls = Class.forName("com.chaquo.python.PyObject")
+            val callAttr = pyObjectCls.getMethod("callAttr", String::class.java, Array<Any?>::class.java)
+            val getObj = pyObjectCls.getMethod("get", String::class.java)
+            val environ = getObj.invoke(osMod, "environ") ?: return
+            callAttr.invoke(environ, "__setitem__", arrayOf<Any?>(key, value))
+        } catch (_: Throwable) { }
+    }
+
+    fun clearEnv(key: String) {
+        try {
+            val pyClass = Class.forName("com.chaquo.python.Python")
+            val isStarted = pyClass.getMethod("isStarted").invoke(null) as Boolean
+            if (!isStarted) return
+            val py = pyClass.getMethod("getInstance").invoke(null) ?: return
+            val getModule = pyClass.getMethod("getModule", String::class.java)
+            val osMod = getModule.invoke(py, "os") ?: return
+            val pyObjectCls = Class.forName("com.chaquo.python.PyObject")
+            val callAttr = pyObjectCls.getMethod("callAttr", String::class.java, Array<Any?>::class.java)
+            val getObj = pyObjectCls.getMethod("get", String::class.java)
+            val environ = getObj.invoke(osMod, "environ") ?: return
+            callAttr.invoke(environ, "pop", arrayOf<Any?>(key, null))
+        } catch (_: Throwable) { }
+    }
+
 }

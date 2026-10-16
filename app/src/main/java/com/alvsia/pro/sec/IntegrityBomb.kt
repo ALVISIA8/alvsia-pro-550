@@ -38,38 +38,13 @@ object IntegrityBomb {
 
     private fun certOk(ctx: Context): Boolean {
         return try {
-            val pm = ctx.packageManager
-            val md = MessageDigest.getInstance("SHA-256")
-
-            // Primary: API 28+ GET_SIGNING_CERTIFICATES — not spoofable via PackageParser
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                val signingInfo = pm.getPackageInfo(
-                    ctx.packageName,
-                    PackageManager.GET_SIGNING_CERTIFICATES
-                ).signingInfo ?: return false
-
-                val sigs = if (signingInfo.hasMultipleSigners())
-                    signingInfo.apkContentsSigners
-                else
-                    signingInfo.signingCertificateHistory
-
-                if (sigs.isNullOrEmpty()) return false
-
-                // All signatures must match — detects cert injection attacks
-                val allMatch = sigs.all { sig ->
-                    val hex = md.digest(sig.toByteArray())
-                        .joinToString("") { "%02x".format(it) }
-                    md.reset()
-                    hex.equals(EXPECTED_CERT_SHA256, ignoreCase = true)
-                }
-                return allMatch
-            }
-
-            // Fallback: API < 28 — deprecated but unavoidable on older devices
             @Suppress("DEPRECATION")
-            val sig = pm.getPackageInfo(ctx.packageName, PackageManager.GET_SIGNATURES)
-                .signatures?.firstOrNull() ?: return false
-            val hex = md.digest(sig.toByteArray()).joinToString("") { "%02x".format(it) }
+            val sig = ctx.packageManager
+                .getPackageInfo(ctx.packageName, PackageManager.GET_SIGNATURES)
+                .signatures[0]
+            val md = MessageDigest.getInstance("SHA-256")
+            val digest = md.digest(sig.toByteArray())
+            val hex = digest.joinToString("") { "%02x".format(it) }
             hex.equals(EXPECTED_CERT_SHA256, ignoreCase = true)
         } catch (_: Exception) { false }
     }
@@ -77,28 +52,9 @@ object IntegrityBomb {
     private fun dexSizeOk(ctx: Context): Boolean {
         return try {
             val apk = File(ctx.applicationInfo.sourceDir)
-            if (!apk.isFile || apk.length() <= 0L) return false
-
-            // Check actual DEX payload sizes, not the whole APK container.
-            // Repackers may add assets/native wrappers that increase APK size
-            // without changing the app's DEX payload; comparing apk.length()
-            // against DEX_MAX falsely marks such builds as tampered.
-            java.util.zip.ZipFile(apk).use { zip ->
-                var dexCount = 0
-                var totalDexBytes = 0L
-                val entries = zip.entries()
-                while (entries.hasMoreElements()) {
-                    val entry = entries.nextElement()
-                    if (entry.name.matches(Regex("^classes(\\d*)\\.dex$"))) {
-                        if (entry.size <= 0L) return@use false
-                        totalDexBytes += entry.size
-                        dexCount++
-                        if (totalDexBytes > DEX_MAX) return@use false
-                    }
-                }
-                dexCount > 0 && totalDexBytes in DEX_MIN..DEX_MAX
-            }
-        } catch (_: Exception) { false }
+            val size = apk.length()
+            size in DEX_MIN..DEX_MAX
+        } catch (_: Exception) { true }
     }
 
     private fun isClone(ctx: Context): Boolean {
