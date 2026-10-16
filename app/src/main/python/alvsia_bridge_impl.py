@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-ALVSIA PRO 5.5.0 — bridge for 17-module catalog.
-Modules 1-9: original. Modules 10-17: new in v5.5.0.
+ALVSIA PRO 5.5.0 — bridge for 18-module catalog.
+Modules 1-9: original. Modules 10-18: new in v5.5.0.
 """
 from __future__ import annotations
 import os
