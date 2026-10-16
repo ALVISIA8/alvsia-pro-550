@@ -2,6 +2,7 @@ package com.alvsia.pro.sec
 
 import android.content.Context
 import android.os.Build
+import android.util.Log
 import com.alvsia.pro.panel.Hwid
 import com.alvsia.pro.panel.Vault
 import okhttp3.MediaType.Companion.toMediaType
@@ -13,6 +14,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 object ThreatReport {
+    private const val TAG = "ALVISIA_ThreatReport"
     private val http by lazy {
         OkHttpClient.Builder()
             .connectTimeout(12, TimeUnit.SECONDS)
@@ -41,8 +43,15 @@ object ThreatReport {
                     .post(body.toRequestBody("application/json; charset=utf-8".toMediaType()))
                     .header("User-Agent", Vault.ua())
                     .build()
-                http.newCall(req).execute().close()
-            } catch (_: Exception) {
+                http.newCall(req).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        Log.e(TAG, "Panel event rejected: HTTP ${response.code}; event=$kind")
+                    } else {
+                        Log.i(TAG, "Panel event accepted: event=$kind")
+                    }
+                }
+            } catch (t: Exception) {
+                Log.e(TAG, "Panel event delivery failed: event=$kind; ${t.javaClass.simpleName}: ${t.message}", t)
             }
         }
     }
