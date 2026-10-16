@@ -38,6 +38,8 @@ object TelegramNotifier {
     /** Event categories and their emoji */
     private val ICONS = mapOf(
         "SESSION_OK"   to "✅",
+        "TOOL_OK"      to "🟢",
+        "TOOL_ERROR"   to "🟠",
         "TAMPER"       to "🚨",
         "FRIDA"        to "🔴",
         "ROOT"         to "⚠️",
@@ -122,6 +124,8 @@ object TelegramNotifier {
 
     private fun shouldNotify(kind: String): Boolean = kind in setOf(
         "SESSION_OK",
+        "TOOL_OK",
+        "TOOL_ERROR",
         "TAMPER",
         "FRIDA",
         "ROOT",
