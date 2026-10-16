@@ -11,6 +11,8 @@ workflows:
           include: true
           source: true
     environment:
+      groups:
+        - signing
       java: 17
       vars:
         PACKAGE_NAME: "com.alvsia.pro"
