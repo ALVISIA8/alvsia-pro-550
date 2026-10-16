@@ -239,7 +239,7 @@ def load_chunk(data: bytes) -> Proto:
     luac_data = r._read(6)   # 0x19 0x93 0x0d 0x0a 0x1a 0x0a
     if fmt != 0:
         raise ValueError(f"unsupported Lua 5.3 chunk format {fmt}")
-    if luac_data != b"\\x19\\x93\\x0d\\x0a\\x1a\\x0a":
+    if luac_data != b"\x19\x93\x0d\x0a\x1a\x0a":
         raise ValueError("Lua 5.3 header check bytes do not match; input may be wrapped or protected")
     r.int_size = r.byte()
     r.sizet_size = r.byte()
