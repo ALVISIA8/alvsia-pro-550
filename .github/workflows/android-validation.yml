@@ -7,6 +7,8 @@ on:
 concurrency:
   group: android-validation-${{ github.ref }}
   cancel-in-progress: true
+permissions:
+  contents: write
 
 jobs:
   security-check:
@@ -70,10 +72,9 @@ jobs:
           ./gradlew assembleRelease --no-daemon --stacktrace
           APK="$(find app/build/outputs/apk/release -type f -name '*.apk' | head -n 1)"
           test -n "$APK"
-          # AGP injects this metadata after resource packaging; strip it from the unsigned APK
-          # before the security audit, preserving every other ZIP member byte-for-byte.
+          # Strip generated VCS metadata before auditing the unsigned APK.
           python3 - "$APK" <<'PY'
-          import os, sys, tempfile, zipfile
+          import os, sys, zipfile
           from pathlib import Path
           apk = Path(sys.argv[1])
           tmp = apk.with_suffix(".stripped.apk")
@@ -91,13 +92,19 @@ jobs:
           cp release_security_audit.txt validation-artifacts/
           sha256sum validation-artifacts/*.apk
 
-      - name: Upload release validation artifacts
-        uses: actions/upload-artifact@v4
+      - name: Publish private draft validation release (avoids Actions artifact quota)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
         with:
-          name: ALVISIA_PRO_5.5.0_RELEASE_CANDIDATE
-          path: validation-artifacts/
-          if-no-files-found: error
-          retention-days: 1
+          tag_name: alvsia-validation-${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: ALVISIA PRO validation build ${{ github.run_number }}
+          draft: true
+          prerelease: true
+          files: |
+            validation-artifacts/ALVISIA_PRO_5.5.0_release_unsigned.apk
+            validation-artifacts/release_security_audit.txt
+          fail_on_unmatched_files: true
 
       - name: Restore source files after sealed build
         if: always()
