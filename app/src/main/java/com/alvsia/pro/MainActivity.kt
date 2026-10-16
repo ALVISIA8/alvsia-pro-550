@@ -312,14 +312,14 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     }
-                }
-                "profile" -> ProfileScreen(
-                    product = product,
-                    expiry = expiry,
-                    hwidShort = hwid.take(16),
-                    toolCount = tools.size,
-                    onBack = { screen = "home" }
-                )
+                    "profile" -> ProfileScreen(
+                        product = product,
+                        expiry = expiry,
+                        hwidShort = hwid.take(16),
+                        toolCount = tools.size,
+                        onBack = { screen = "home" }
+                    )
+                } // when (scr)
                 } // AnimatedContent
             }
         }
