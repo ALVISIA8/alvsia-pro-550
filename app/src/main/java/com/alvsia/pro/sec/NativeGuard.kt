@@ -40,6 +40,7 @@ object NativeGuard {
     private external fun nativeScanFlags(): Int
     private external fun nativeWipe(buf: ByteArray)
     private external fun nativeAntiDump(): Int
+    private external fun nativeSealSeed(): ByteArray?
 
     // ── Public API ────────────────────────────────────────────────────
 
@@ -59,6 +60,39 @@ object NativeGuard {
             try { nativeWipe(buf); return } catch (_: Exception) {}
         }
         buf.fill(0)
+    }
+
+    /** Decrypt ALVSEAL2 payloads using the exact release sealer KDF. */
+    fun decryptSealedPayload(payload: ByteArray, buildId: String): ByteArray? {
+        if (payload.size < 8 + 12 + 16 || buildId.isBlank() || buildId.length > 128) return null
+        val magic = "ALVSEAL2".toByteArray(Charsets.UTF_8)
+        if (!payload.copyOfRange(0, 8).contentEquals(magic)) return null
+        val seed = try { nativeSealSeed() } catch (_: Throwable) { null } ?: return null
+        if (seed.size != 32) { seed.fill(0); return null }
+        return try {
+            val certDigest = hexToBytes("99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c")
+            val buildBytes = buildId.toByteArray(Charsets.UTF_8)
+            val material = ByteArray(seed.size + certDigest.size + buildBytes.size)
+            System.arraycopy(seed, 0, material, 0, seed.size)
+            System.arraycopy(certDigest, 0, material, seed.size, certDigest.size)
+            System.arraycopy(buildBytes, 0, material, seed.size + certDigest.size, buildBytes.size)
+            val keyBytes = java.security.MessageDigest.getInstance("SHA-256").digest(material)
+            material.fill(0)
+            val iv = payload.copyOfRange(8, 20)
+            val body = payload.copyOfRange(20, payload.size)
+            val cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(javax.crypto.Cipher.DECRYPT_MODE, javax.crypto.spec.SecretKeySpec(keyBytes, "AES"), javax.crypto.spec.GCMParameterSpec(128, iv))
+            cipher.updateAAD(magic)
+            cipher.doFinal(body)
+        } catch (_: Throwable) {
+            null
+        } finally {
+            seed.fill(0)
+        }
+    }
+
+    private fun hexToBytes(value: String): ByteArray = ByteArray(value.length / 2) { i ->
+        ((value[i * 2].digitToInt(16) shl 4) or value[i * 2 + 1].digitToInt(16)).toByte()
     }
 
     fun flagsToReasons(f: Int): List<String> {
@@ -95,49 +129,3 @@ object NativeGuard {
 
     fun isNativeLoaded(): Boolean = nativeLoaded
 }
-
-// ── Sealed asset decryption (AES/GCM/NoPadding via native seed) ──────────────
-// The seal seed is fetched from native layer so it never crosses the Python
-// boundary — sealed_loader calls NativeGuard.decryptSealedPayload(raw, _BUILD_ID)
-
-private external fun nativeSealSeed(): ByteArray?
-
-/**
- * AES/GCM/NoPadding authenticated decryption of an ALVSEAL2 payload.
- * Seed: 32 bytes from nativeSealSeed() — never exposed to Python env.
- * AAD:  magic header bytes (cipher.updateAAD(magic)).
- */
-fun decryptSealedPayload(payload: ByteArray, buildId: String): ByteArray? {
-    return try {
-        val seed: ByteArray = if (NativeGuard.isNativeLoaded()) {
-            try { nativeSealSeed() } catch (_: Throwable) { null }
-                ?: fallbackSeed()
-        } else {
-            fallbackSeed()
-        }
-        val magic = "ALVSEAL2".toByteArray(Charsets.UTF_8)
-        // Layout: [8 magic][12 iv][len-8-12-16 ciphertext][16 tag]
-        if (payload.size < 8 + 12 + 16) return null
-        if (!payload.sliceArray(0..7).contentEquals(magic)) return null
-        val iv   = payload.sliceArray(8 until 20)
-        val body = payload.sliceArray(20 until payload.size)
-        val kdf  = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
-        val spec = javax.crypto.spec.PBEKeySpec(
-            buildId.toCharArray(), seed, 20_000, 256
-        )
-        val keyBytes = kdf.generateSecret(spec).encoded
-        val key  = javax.crypto.spec.SecretKeySpec(keyBytes, "AES")
-        val gcm  = javax.crypto.spec.GCMParameterSpec(128, iv)
-        val cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(javax.crypto.Cipher.DECRYPT_MODE, key, gcm)
-        cipher.updateAAD(magic)
-        cipher.doFinal(body)
-    } catch (_: Throwable) { null }
-}
-
-/** Per-device fallback seed derived from package digest (not per-build) */
-private fun fallbackSeed(): ByteArray =
-    java.security.MessageDigest.getInstance("SHA-256")
-        .digest("ALVSIA_FALLBACK_SEED_V1".toByteArray())
-
-/** Whether native lib is loaded — release pipeline checks this at startup */
