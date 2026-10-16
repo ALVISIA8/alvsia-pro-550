@@ -71,64 +71,42 @@ object FridaProbe {
     private val PROBE_PORTS = intArrayOf(27042, 27043, 27044, 27045, 23946, 27047, 1234, 4444)
 
     // ── Main entry — returns all detected signal strings ──────────────
+    /**
+     * High-confidence active runtime indicators only. Filesystem paths, root
+     * manager artifacts and open localhost ports are not proof of injection
+     * and therefore must not trigger a session lock.
+     */
     fun signals(): List<String> {
         val out = mutableListOf<String>()
-
-        // 1. Path probes (timing side-channel resistant via try)
-        PATHS.filter { it != "/proc/net/unix" }.forEach { p ->
-            try { if (File(p).exists()) out += "path:${File(p).name}" } catch (_: Exception) {}
-        }
-
-        // 2. /proc/self/maps scan
         try {
             val maps = File("/proc/self/maps").readText().lowercase()
-            MAP_MARKERS.forEach { m -> if (m in maps) out += "maps:$m" }
-        } catch (_: Exception) {}
-
-        // 3. Port scan (short timeout to avoid blocking)
-        for (port in PROBE_PORTS) {
-            if (portOpen(port)) out += "port:$port"
+            MAP_MARKERS.forEach { marker ->
+                if (marker in maps) out += "maps:$marker"
+            }
+        } catch (_: Exception) {
+            // Unavailable procfs is not proof of tampering.
         }
-
-        // 4. /proc/net/unix domain sockets (frida uses abstract sockets)
-        try {
-            val unix = File("/proc/net/unix").readText().lowercase()
-            val fridaAbstract = listOf("frida", "gdbus_frida", "re.frida")
-            fridaAbstract.forEach { m -> if (m in unix) out += "unix_sock:$m" }
-        } catch (_: Exception) {}
-
-        // 5. Gadget loaded into current process via dlopen signature
-        try {
-            val mapsRaw = File("/proc/self/maps").readText()
-            if (mapsRaw.contains("libgadget", ignoreCase = true) ||
-                mapsRaw.contains("FridaGadget", ignoreCase = true))
-                out += "gadget_mapped"
-        } catch (_: Exception) {}
-
-        // 6. TracerPid check (debugger + Frida spawn attach)
         try {
             val status = File("/proc/self/status").readText()
-            val tpid = status.lineSequence()
+            val tracer = status.lineSequence()
                 .firstOrNull { it.startsWith("TracerPid:", ignoreCase = true) }
                 ?.substringAfter(":")?.trim()?.toIntOrNull() ?: 0
-            if (tpid > 0) out += "tracer_pid:$tpid"
+            if (tracer > 0) out += "tracer_pid:$tracer"
         } catch (_: Exception) {}
-
-        // 7. /proc/self/fd scan for frida pipe fds
         try {
-            File("/proc/self/fd").listFiles()?.forEach { fd ->
-                val link = fd.canonicalPath.lowercase()
-                if ("frida" in link || "gadget" in link || "linjector" in link)
-                    out += "fd:${fd.name}"
+            val unix = File("/proc/net/unix").readText().lowercase()
+            listOf("frida", "gdbus_frida", "re.frida").forEach { marker ->
+                if (marker in unix) out += "unix_sock:$marker"
             }
         } catch (_: Exception) {}
-
-        // 8. Check loaded libraries via /proc/self/smaps for suspicious sizes
         try {
-            val smaps = File("/proc/self/smaps").readText().lowercase()
-            if ("frida" in smaps || "gadget" in smaps) out += "smaps_hit"
+            File("/proc/self/fd").listFiles()?.forEach { fd ->
+                val link = try { fd.canonicalPath.lowercase() } catch (_: Exception) { "" }
+                if ("frida" in link || "gadget" in link || "linjector" in link) {
+                    out += "fd:${fd.name}"
+                }
+            }
         } catch (_: Exception) {}
-
         return out.distinct()
     }
 
