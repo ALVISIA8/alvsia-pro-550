@@ -93,6 +93,12 @@ def main() -> int:
                     check(not any("version-control-info.textproto" in n for n in inner.namelist()), "VCS metadata absent from Chaquopy bundle")
                     members = inner.namelist()
                     by_base = {Path(n).name: n for n in members}
+                    bridge_name = by_base.get("alvsia_bridge.py")
+                    bridge_bytes = inner.read(bridge_name) if bridge_name else b""
+                    check(bool(bridge_bytes) and len(bridge_bytes) < 2000,
+                          "plaintext bridge is a small bootstrap stub")
+                    check(b"import alvsia_bridge_impl as impl" in bridge_bytes and b"if mid == 1" not in bridge_bytes,
+                          "tool routing is not shipped in plaintext bridge")
                     missing = sorted(EXPECTED_SEALED - set(by_base))
                     check(not missing, "all protected Python payloads exist" if not missing else "missing sealed payloads: " + ", ".join(missing))
                     for name in sorted(EXPECTED_SEALED & set(by_base)):
