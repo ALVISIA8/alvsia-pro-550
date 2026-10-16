@@ -4,6 +4,10 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+concurrency:
+  group: android-validation-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   security-check:
     runs-on: ubuntu-latest
