@@ -110,7 +110,5 @@ object Guard {
         return nf != 0
     }
 
-    /** Legacy: returns true for any hostile signal including root */
-    fun hostile(ctx: Context): Boolean = runtimeHostile(ctx) || degraded
 
 }
