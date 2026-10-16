@@ -29,8 +29,18 @@ object PythonBridgeRunner {
             if (!isStarted) {
                 val platformClass = Class.forName("com.chaquo.python.android.AndroidPlatform")
                 val platformInst = platformClass.getConstructor(android.content.Context::class.java).newInstance(app)
-                val platformType = Class.forName("com.chaquo.python.PythonPlatform")
-                pyClass.getMethod("start", platformType).invoke(null, platformInst)
+                // Chaquopy's Platform type differs by runtime version. Resolve the
+                // actual start(Platform) overload from the instantiated AndroidPlatform
+                // instead of loading the non-existent PythonPlatform class.
+                val startMethod = pyClass.methods.firstOrNull { method ->
+                    method.name == "start" &&
+                        java.lang.reflect.Modifier.isStatic(method.modifiers) &&
+                        method.parameterTypes.size == 1 &&
+                        method.parameterTypes[0].isAssignableFrom(platformInst.javaClass)
+                } ?: throw NoSuchMethodException(
+                    "Python.start(AndroidPlatform) overload not found"
+                )
+                startMethod.invoke(null, platformInst)
             }
             startupError = if (isReady()) "Chaquopy ready" else "Python class loaded but runtime reports not started"
         } catch (t: Throwable) {

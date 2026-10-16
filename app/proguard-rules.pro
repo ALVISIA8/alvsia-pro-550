@@ -85,3 +85,8 @@
 -optimizations !code/simplification/advanced  # keep CFO-friendly patterns
 -optimizations code/removal/advanced
 -optimizations code/merging/*
+
+# Keep unluac entry points and internals: ART invokes main(String[]) reflectively.
+# Aggressive repackaging/overload obfuscation otherwise breaks this runtime call.
+-keep class unluac.** { *; }
+-keep class unluac.Main { public static void main(java.lang.String[]); }

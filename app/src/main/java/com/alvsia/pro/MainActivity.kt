@@ -320,10 +320,17 @@ class MainActivity : ComponentActivity() {
                                             result.none { it.startsWith("X ") }
                                         val eventDetail = "${sub.id}: " +
                                             (result.firstOrNull { it.startsWith("X ") } ?: if (success) "operation completed" else "operation needs review")
+                                        val eventKind = if (success) "TOOL_OK" else "TOOL_ERROR"
                                         ThreatReport.emit(
                                             this@MainActivity,
-                                            if (success) "TOOL_OK" else "TOOL_ERROR",
+                                            eventKind,
                                             eventDetail.take(240)
+                                        )
+                                        TelegramNotifier.notify(
+                                            this@MainActivity,
+                                            eventKind,
+                                            eventDetail.take(200),
+                                            license
                                         )
                                         TacticalNotifier.post(
                                             this@MainActivity,
