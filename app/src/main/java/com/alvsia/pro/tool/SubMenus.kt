@@ -27,6 +27,7 @@ object SubMenus {
         15 -> "String Recover"
         16 -> "Lua Inject"
         17 -> "Anti-RE Audit"
+        18 -> "Lua Protector"
         else -> "Module $moduleId"
     }
 
@@ -214,6 +215,14 @@ object SubMenus {
                 "Select .lua / .luac → OUT/AUDIT/lua_report.txt"),
             SubTool("audit_so",        "SO Coverage",       "Check native lib for exported symbols, debug info",
                 "Select .so → OUT/AUDIT/so_report.txt"),
+        )
+
+        // ── 18 Lua Protector ──────────────────────────────────────────────
+        18 -> listOf(
+            SubTool("lua_protect_encrypt", "Protect Lua Source", "AES-256-GCM authenticated encryption",
+                "Create WORK/lua_protect_key.txt with a 64-character hex key. Select .lua → OUT/LPROTECT/*.alvlua"),
+            SubTool("lua_protect_decrypt", "Restore Protected Lua", "Authenticate and decrypt an ALVLUA1 payload",
+                "Use the same WORK/lua_protect_key.txt and select .alvlua → OUT/LPROTECT/*.lua")
         )
 
         else -> emptyList()
