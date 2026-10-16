@@ -62,21 +62,19 @@ android {
         kotlinCompilerExtensionVersion = "1.5.14"
     }
     packaging {
-        resources.excludes += setOf(
-            "META-INF/version-control-info.textproto",
-            "**/version-control-info.textproto",
-            "META-INF/*.kotlin_module",
-            "META-INF/DEPENDENCIES",
-            "META-INF/LICENSE.md",
-            "META-INF/NOTICE.md",
-        )
-    }"
-            excludes += "**/kotlin-tooling-metadata.json"
-            excludes += "**/DebugProbesKt.bin"
-            excludes += "**/META-INF/version-control-info.textproto"
-            excludes += "**/META-INF/com.android.tools/**"
-            excludes += "**/META-INF/*.kotlin_module"
-            excludes += "**/*.kotlin_builtins"
+        resources {
+            excludes += setOf(
+                "META-INF/version-control-info.textproto",
+                "**/version-control-info.textproto",
+                "META-INF/*.kotlin_module",
+                "META-INF/DEPENDENCIES",
+                "META-INF/LICENSE.md",
+                "META-INF/NOTICE.md",
+                "**/kotlin-tooling-metadata.json",
+                "**/DebugProbesKt.bin",
+                "**/META-INF/com.android.tools/**",
+                "**/*.kotlin_builtins",
+            )
         }
     }
 }
