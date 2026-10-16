@@ -57,7 +57,7 @@ static const char* MAP_NEEDLES[] = {
     "frida-agent", "frida-gadget", "frida_agent", "libfrida",
     "libgadget", "xposed", "lsposed", "edxposed",
     "substrate", "libsubstrate", "libsandhook", "libepic",
-    "riru", "zygisk", "linjector", "libdobby", "dobby",
+    "linjector", "libdobby", "dobby",
     "shadowhook", "bhook", "bytehook",
     nullptr
 };
