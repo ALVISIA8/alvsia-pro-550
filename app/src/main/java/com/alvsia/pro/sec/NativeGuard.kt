@@ -85,12 +85,13 @@ object NativeGuard {
             } finally {
                 material.fill(0)
             }
-            iv = payload.copyOfRange(8, 20)
-            body = payload.copyOfRange(20, payload.size)
+            val key = keyBytes ?: return null
+            val ivBytes = payload.copyOfRange(8, 20).also { iv = it }
+            val bodyBytes = payload.copyOfRange(20, payload.size).also { body = it }
             val cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(javax.crypto.Cipher.DECRYPT_MODE, javax.crypto.spec.SecretKeySpec(keyBytes, "AES"), javax.crypto.spec.GCMParameterSpec(128, iv))
+            cipher.init(javax.crypto.Cipher.DECRYPT_MODE, javax.crypto.spec.SecretKeySpec(key, "AES"), javax.crypto.spec.GCMParameterSpec(128, ivBytes))
             cipher.updateAAD(magic)
-            cipher.doFinal(body)
+            cipher.doFinal(bodyBytes)
         } catch (_: Throwable) {
             null
         } finally {
