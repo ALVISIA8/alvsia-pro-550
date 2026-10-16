@@ -30,7 +30,8 @@ object IntegrityBomb {
 
         if (!certOk(ctx)) reasons += "cert_mismatch"
         if (!dexSizeOk(ctx)) reasons += "dex_size_bad"
-        if (isClone(ctx)) reasons += "clone_container"
+        // Work profiles / secondary Android users are legitimate environments.
+        // Do not treat userId > 0 alone as APK compromise or hard-block the session.
 
         _lastReason = reasons.joinToString(",")
         return IntegrityResult(clean = reasons.isEmpty(), reasons = reasons)
