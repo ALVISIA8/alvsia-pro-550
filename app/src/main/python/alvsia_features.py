@@ -337,14 +337,21 @@ def run_lua_smart(input_path, out_dir, jars_dir=None):
             pr = _decompile53_file(work_input, out_lua)
             report["steps"].append({"step": "py_decompile53", **pr})
             if pr.get("ok") and out_lua.exists() and out_lua.stat().st_size > 0:
-                # Quick sanity: file must contain at least one Lua keyword
-                snippet = out_lua.read_text(encoding="utf-8", errors="replace")[:4096]
-                import re as _re
-                has_lua = bool(_re.search(r'\b(local|function|return|if|for|while|end)\b', snippet))
-                if has_lua:
+                # Use the same source validator as the Unluac path. A keyword alone
+                # can appear in damaged or partially recovered text and is not proof.
+                valid, validation_note = validate_lua_source(out_lua)
+                report["steps"].append({
+                    "step": "validate_py53_source",
+                    "ok": bool(valid),
+                    "note": str(validation_note),
+                    "file": str(out_lua),
+                })
+                if valid:
                     report["ok"] = True
+                    report["final_status"] = "SUCCESS"
                     return {"ok": True, "mode": "smart_py53",
                             "out": str(out_lua), "lines": pr.get("lines", 0), **report}
+                out_lua.unlink(missing_ok=True)
         except Exception as e:
             report["steps"].append({"step": "py_decompile53", "ok": False, "error": str(e)})
 
