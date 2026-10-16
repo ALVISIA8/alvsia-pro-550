@@ -547,6 +547,60 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                 lines.append(str(r))
                 return "\n".join(lines)
 
+        # ── 18  Lua Protector (authenticated encrypted package) ───────────
+        if mid == 18 or sid in ("lua_protect_encrypt", "lua_protect_decrypt"):
+            if not need_file():
+                return "\n".join(lines)
+            try:
+                from Crypto.Cipher import AES
+                from Crypto.Random import get_random_bytes
+                key_file = work_dir() / "lua_protect_key.txt"
+                if not key_file.is_file():
+                    lines.append("X Create WORK/lua_protect_key.txt with a 64-character hex key (32 random bytes)")
+                    return "\n".join(lines)
+                key_hex = key_file.read_text(encoding="utf-8").strip()
+                if not re.fullmatch(r"[0-9a-fA-F]{64}", key_hex):
+                    lines.append("X Lua Protector key must be exactly 64 hexadecimal characters")
+                    return "\n".join(lines)
+                key = bytes.fromhex(key_hex)
+                source = Path(ip).read_bytes()
+                dest_dir = out_dir("LPROTECT")
+                if sid == "lua_protect_encrypt":
+                    nonce = get_random_bytes(12)
+                    cipher = AES.new(key, AES.MODE_GCM, nonce=nonce, mac_len=16)
+                    cipher.update(b"ALVLUA1")
+                    ciphertext, tag = cipher.encrypt_and_digest(source)
+                    dest = dest_dir / (Path(ip).stem + ".alvlua")
+                    dest.write_bytes(b"ALVLUA1" + nonce + tag + ciphertext)
+                    lines.append("OK encrypted + authenticated Lua payload")
+                    lines.append("NOTE keep the 32-byte key private; it is not embedded in the output")
+                elif sid == "lua_protect_decrypt":
+                    if len(source) < 35 or source[:7] != b"ALVLUA1":
+                        lines.append("X Invalid ALVLUA1 header or truncated payload")
+                        return "\n".join(lines)
+                    nonce, tag, ciphertext = source[7:19], source[19:35], source[35:]
+                    cipher = AES.new(key, AES.MODE_GCM, nonce=nonce, mac_len=16)
+                    cipher.update(b"ALVLUA1")
+                    try:
+                        plaintext = cipher.decrypt_and_verify(ciphertext, tag)
+                    except ValueError:
+                        lines.append("X Authentication failed: wrong key or modified payload")
+                        return "\n".join(lines)
+                    dest = dest_dir / (Path(ip).stem + ".lua")
+                    dest.write_bytes(plaintext)
+                    lines.append("OK authentication passed; Lua source restored")
+                else:
+                    lines.append("X Unknown Lua Protector operation")
+                    return "\n".join(lines)
+                lines.append("OUT -> %s" % dest)
+                return "\n".join(lines)
+            except ImportError:
+                lines.append("X PyCryptodome AES module unavailable in this runtime")
+                return "\n".join(lines)
+            except Exception as exc:
+                lines.append("X Lua Protector failed: %s" % (str(exc)[:400] or type(exc).__name__))
+                return "\n".join(lines)
+
         # ── fallback ─────────────────────────────────────────────────────
         lines.append("X Unknown sub_id='%s' for module=%s" % (sid, mid))
         return "\n".join(lines)
