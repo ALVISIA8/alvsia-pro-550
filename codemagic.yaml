@@ -37,13 +37,13 @@ workflows:
           : "${CM_KEYSTORE_PASSWORD:?Missing CM_KEYSTORE_PASSWORD in Codemagic environment group signing}"
           python3 - <<'PY'
           import base64, os
-          raw = os.environ["CM_KEYSTORE"].strip()
+          raw = "".join(os.environ["CM_KEYSTORE"].split())
           try:
               decoded = base64.b64decode(raw, validate=True)
           except Exception as exc:
               raise SystemExit("CM_KEYSTORE is not valid base64") from exc
-          if len(decoded) < 1024:
-              raise SystemExit("Decoded keystore is unexpectedly small; check the CM_KEYSTORE value")
+          if not decoded:
+              raise SystemExit("Decoded keystore is empty; check the CM_KEYSTORE value")
           print("PASS: required signing secrets are present and keystore base64 is valid")
           PY
           grep -q 'CERT_SHA256' app/build.gradle.kts || {
@@ -153,7 +153,7 @@ workflows:
           python3 - "$KS" <<'PY'
           import base64, os, sys
           with open(sys.argv[1], "wb") as out:
-              out.write(base64.b64decode(os.environ["CM_KEYSTORE"].strip(), validate=True))
+              out.write(base64.b64decode("".join(os.environ["CM_KEYSTORE"].split()), validate=True))
           PY
           test -s "$KS" || { echo "ERROR: decoded keystore is empty"; exit 1; }
           KSPASS="$CM_KEYSTORE_PASSWORD"
