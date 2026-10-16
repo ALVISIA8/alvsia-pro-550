@@ -124,7 +124,7 @@ def _session_ok() -> bool:
     return (
         os.environ.get("ALVSIA_APK_SESSION") == "1"
         and re.fullmatch(r"[0-9A-Fa-f]{64}", os.environ.get("ALVSIA_SESSION_TOKEN", "")) is not None
-    ) or os.environ.get("ALVSIA_SOFT_AUTH") == "1"
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
