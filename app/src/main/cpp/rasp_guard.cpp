@@ -160,12 +160,14 @@ static uint32_t hash_region(const uint8_t* p, size_t len) {
     return h;
 }
 
+static int check_self_hash();
+
 static const uint8_t* native_code_page(size_t* length) {
     if (length == nullptr) return nullptr;
     long pageSize = sysconf(_SC_PAGESIZE);
     if (pageSize <= 0 || (pageSize & (pageSize - 1)) != 0) pageSize = 4096;
     const uintptr_t address = reinterpret_cast<uintptr_t>(
-        reinterpret_cast<void*>(native_scan_flags));
+        reinterpret_cast<void*>(check_self_hash));
     const uintptr_t pageStart = address & ~((uintptr_t)pageSize - 1U);
     *length = (size_t)pageSize;
     return reinterpret_cast<const uint8_t*>(pageStart);
