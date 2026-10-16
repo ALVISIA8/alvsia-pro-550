@@ -21,7 +21,7 @@ jobs:
 
       - name: Run sealed payload cryptographic tests
         run: |
-          python3 -m pip install --disable-pip-version-check pycryptodome
+          python3 -m pip install --disable-pip-version-check cryptography
           python3 tests/test_seal_python_payloads.py
 
       - name: Set up JDK 17
