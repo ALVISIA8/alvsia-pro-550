@@ -96,6 +96,27 @@ object NativeGuard {
         }
     }
 
+    /** Per-build key for ALVSA1 asset envelopes; key derivation stays out of Python. */
+    @JvmStatic
+    fun assetSealKey(): ByteArray? {
+        val seed = try { nativeSealSeed() } catch (_: Throwable) { null } ?: return null
+        if (seed.size != 32) { seed.fill(0); return null }
+        return try {
+            val certDigest = hexToBytes("99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c")
+            val label = "ALV-ASSET-v2".toByteArray(Charsets.UTF_8)
+            val material = ByteArray(seed.size + certDigest.size + label.size)
+            System.arraycopy(seed, 0, material, 0, seed.size)
+            System.arraycopy(certDigest, 0, material, seed.size, certDigest.size)
+            System.arraycopy(label, 0, material, seed.size + certDigest.size, label.size)
+            try { java.security.MessageDigest.getInstance("SHA-256").digest(material) }
+            finally { material.fill(0) }
+        } catch (_: Throwable) {
+            null
+        } finally {
+            seed.fill(0)
+        }
+    }
+
     private fun hexToBytes(value: String): ByteArray = ByteArray(value.length / 2) { i ->
         ((value[i * 2].digitToInt(16) shl 4) or value[i * 2 + 1].digitToInt(16)).toByte()
     }
