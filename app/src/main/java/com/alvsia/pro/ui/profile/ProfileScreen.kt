@@ -76,17 +76,17 @@ fun ProfileScreen(
                     .size(72.dp)
                     .clip(CircleShape)
                     .background(
-                        Brush.radialGradient(listOf(AlvisiaBlue.copy(0.25f), Color.Transparent))
+                        Brush.radialGradient(listOf(Color(0xFF879B69).copy(0.30f), Color.Transparent))
                     )
-                    .border(1.5.dp, AlvisiaBlue.copy(0.6f), CircleShape),
+                    .border(1.5.dp, Color(0xFF879B69).copy(0.75f), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                Text("ALV", color = AlvisiaBlue, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                Text("ALV", color = Color(0xFFB7C99A), fontSize = 20.sp, fontWeight = FontWeight.Black)
             }
             Spacer(Modifier.height(12.dp))
-            Text("ALVSIA PRO", color = AlvisiaBlue, fontSize = 22.sp,
+            Text("ALVISIA PRO", color = Color(0xFFB7C99A), fontSize = 22.sp,
                 fontWeight = FontWeight.Black, letterSpacing = 4.sp)
-            Text("MOBILE TOOL SUITE  v5.5.0", color = AlvisiaSilver.copy(0.5f),
+            Text("TACTICAL TOOL SYSTEM  //  v5.5.0", color = Color(0xFFC5A86A).copy(0.85f),
                 fontSize = 10.sp, letterSpacing = 2.sp)
 
             Spacer(Modifier.height(20.dp))
@@ -106,10 +106,14 @@ fun ProfileScreen(
             Spacer(Modifier.height(8.dp))
             _Card {
                 _Row("OWNER",     "@OriginalOnwerALV")
-                _Row("DEVELOPER", "@OriginalOnwerALV")
-                _RowLink("CHANNEL", "t.me/ALVSIA_PRO",
+                _Row("DEVELOPER", "BY KAPTEN JACK")
+                _RowLink("PERSONAL TELEGRAM", "t.me/OriginalOnwerALV",
+                    "https://t.me/OriginalOnwerALV", uriHandler)
+                _RowLink("OFFICIAL CHANNEL", "t.me/ALVSIA_PRO",
                     "https://t.me/ALVSIA_PRO", uriHandler)
-                _Row("ENGINE",    "UnLuaC 4-jar · LuaJIT 2.x · Chaquopy 3.8")
+                _Row("ENGINE",    "UnLuaC · LuaJIT · Chaquopy 3.8")
+                _Row("BUILD ID",  "ALVISIA-5.5.0 // RELEASE TRACK")
+                _Row("SECURITY",  "SESSION-GATED · INTEGRITY CHECK")
             }
 
             Spacer(Modifier.height(20.dp))
@@ -145,7 +149,7 @@ fun ProfileScreen(
                     .fillMaxWidth()
                     .background(
                         Brush.horizontalGradient(
-                            listOf(AlvisiaBlue.copy(0.55f), AlvisiaCyan.copy(0.45f))
+                            listOf(Color(0xFF39452F), Color(0xFF78633A))
                         ),
                         RoundedCornerShape(10.dp)
                     )
@@ -173,8 +177,8 @@ private fun _Card(content: @Composable ColumnScope.() -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(AlvisiaBlue.copy(0.07f), RoundedCornerShape(12.dp))
-            .border(0.5.dp, AlvisiaBlue.copy(0.2f), RoundedCornerShape(12.dp))
+            .background(Color(0xFF879B69).copy(0.07f), RoundedCornerShape(12.dp))
+            .border(0.5.dp, Color(0xFF879B69).copy(0.25f), RoundedCornerShape(12.dp))
             .padding(14.dp),
         content = content
     )
