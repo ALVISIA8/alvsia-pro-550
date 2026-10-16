@@ -9,6 +9,9 @@ import com.alvsia.pro.sec.SessionGate
  * allows clean execution of native fallback without ClassNotFoundException.
  */
 object PythonBridgeRunner {
+    @Volatile private var startupError: String = "startup not attempted"
+
+    fun startupDiagnostic(): String = startupError
 
     fun isReady(): Boolean = try {
         val pyClass = Class.forName("com.chaquo.python.Python")
@@ -19,6 +22,7 @@ object PythonBridgeRunner {
     }
 
     fun startPlatform(app: android.app.Application) {
+        startupError = "startup in progress"
         try {
             val pyClass = Class.forName("com.chaquo.python.Python")
             val isStarted = pyClass.getMethod("isStarted").invoke(null) as Boolean
@@ -28,7 +32,10 @@ object PythonBridgeRunner {
                 val platformType = Class.forName("com.chaquo.python.PythonPlatform")
                 pyClass.getMethod("start", platformType).invoke(null, platformInst)
             }
-        } catch (_: Throwable) {
+            startupError = if (isReady()) "Chaquopy ready" else "Python class loaded but runtime reports not started"
+        } catch (t: Throwable) {
+            val cause = t.cause ?: t
+            startupError = "${cause.javaClass.simpleName}: ${cause.message ?: "no detail"}".take(240)
         }
     }
 
