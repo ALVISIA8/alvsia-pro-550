@@ -210,6 +210,8 @@ object UnluacRunner {
         ).containsMatchIn(t)
 
         val looksLua =
+            t == "return" ||
+            Regex("""(?m)^\\s*return(?:\\s|$)""").containsMatchIn(t) ||
             t.contains("function") ||
             t.contains("local ") ||
             t.contains("return ") ||
