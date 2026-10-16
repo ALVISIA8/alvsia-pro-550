@@ -56,6 +56,8 @@ if "sealed_loader.install()" not in bridge or "ALVSIA_SEALED_RUNTIME" not in bri
     fail.append("bridge bootstrap does not install the sealed loader conditionally")
 if "def run_tool(" in bridge and "import alvsia_bridge_impl as impl" not in bridge:
     fail.append("plaintext bridge must delegate tool routing to the sealed implementation")
+if len(bridge.encode("utf-8")) >= 2000 or "if mid == 1" in bridge:
+    fail.append("plaintext bridge must remain a small stub without module-routing logic")
 if "isTokenCurrent(token)" not in bridge:
     fail.append("bridge must compare the supplied token with the authoritative Kotlin session")
 if "SessionGate.isSessionAuthorized()" not in loader:
