@@ -37,8 +37,7 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
             os.environ.get("ALVSIA_APK_SESSION") == "1"
             and re.fullmatch(r"[0-9A-Fa-f]{64}", token) is not None
         )
-        soft_ok = os.environ.get("ALVSIA_SOFT_AUTH") == "1"
-        if not session_ok and not soft_ok:
+        if not session_ok:
             return "X AUTH: no valid APK session — login with your key first"
         lines.append("ALVSIA PRO 5.5.0 PREMIUM · engine")
         lines.append("m=%s sub=%s" % (module_id, sub_id))
