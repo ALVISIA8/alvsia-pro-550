@@ -84,6 +84,9 @@ def seal() -> None:
     BACKUP.mkdir(parents=True)
     (BACKUP / "manifest.json").write_text(json.dumps(list(MODULES)), encoding="utf-8")
     OUT.mkdir(parents=True, exist_ok=True)
+    # pkgutil.get_data("sealed", ...) needs a real importable package on all
+    # supported Chaquopy/Python versions; a bare namespace directory is not enough.
+    (OUT / "__init__.py").write_text("\"\"\"Authenticated ALVSEAL2 payload resources.\"\"\"\\n", encoding="utf-8")
     for stale_blob in OUT.glob("*.alv"):
         stale_blob.unlink()
     aes = AESGCM(_key())
