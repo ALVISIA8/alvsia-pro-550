@@ -88,6 +88,9 @@ def seal() -> None:
     missing = [str(p.relative_to(ROOT)) for p in sources if not p.is_file()]
     if missing:
         raise SystemExit("Missing protected Python source(s): " + ", ".join(missing))
+    # Validate the per-build secret before creating backups or touching source files.
+    seed = _seed()
+    cert_digest = bytes.fromhex(CERT_HEX)
     for cache in PY_ROOT.rglob("__pycache__"):
         shutil.rmtree(cache, ignore_errors=True)
     BACKUP.mkdir(parents=True)
@@ -98,8 +101,6 @@ def seal() -> None:
     (OUT / "__init__.py").write_text("\"\"\"Authenticated ALVSEAL2 payload resources.\"\"\"\n", encoding="utf-8")
     for stale_blob in OUT.glob("*.alv"):
         stale_blob.unlink()
-    seed = _seed()
-    cert_digest = bytes.fromhex(CERT_HEX)
     try:
         for rel, source in zip(MODULES, sources):
             name = rel.replace("/", "_")[:-3] + ".alv"
