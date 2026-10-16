@@ -62,7 +62,12 @@ object NativeGuard {
         buf.fill(0)
     }
 
-    /** Decrypt ALVSEAL2 payloads using the exact release sealer KDF. */
+    /**
+     * Static bridge for Chaquopy. Without @JvmStatic, Kotlin `object` methods
+     * are exposed as instance methods and Chaquopy passes the payload as `this`,
+     * producing `Unbound method ... must be called with NativeGuard instance`.
+     */
+    @JvmStatic
     fun decryptSealedPayload(payload: ByteArray, buildId: String): ByteArray? {
         if (payload.size < 8 + 12 + 16 || buildId.isBlank() || buildId.length > 128) return null
         val magic = "ALVSEAL2".toByteArray(Charsets.UTF_8)
