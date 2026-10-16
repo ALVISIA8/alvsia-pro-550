@@ -87,20 +87,9 @@ object FridaProbe {
                 ?.substringAfter(":")?.trim()?.toIntOrNull() ?: 0
             if (tracer > 0) out += "tracer_pid:$tracer"
         } catch (_: Exception) {}
-        try {
-            val unix = File("/proc/net/unix").readText().lowercase()
-            listOf("frida", "gdbus_frida", "re.frida").forEach { marker ->
-                if (marker in unix) out += "unix_sock:$marker"
-            }
-        } catch (_: Exception) {}
-        try {
-            File("/proc/self/fd").listFiles()?.forEach { fd ->
-                val link = try { fd.canonicalPath.lowercase() } catch (_: Exception) { "" }
-                if ("frida" in link || "gadget" in link || "linjector" in link) {
-                    out += "fd:${fd.name}"
-                }
-            }
-        } catch (_: Exception) {}
+        // Socket names and file descriptors can be left by unrelated tools and
+        // are not proof that code is injected into this process. Do not use them
+        // as hard-block signals; active maps and TracerPid are stronger evidence.
         return out.distinct()
     }
 
