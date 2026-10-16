@@ -242,6 +242,17 @@ object UnluacRunner {
 
         output.parentFile?.mkdirs()
 
+        // Avoid running large bytecode in ART's limited app heap: unluac may request >1 GiB.
+        // Let the Python bridge handle large inputs instead of crashing the process.
+        val artLimit = 1024L * 1024L
+        if (input.length() > artLimit) {
+            output.delete()
+            return listOf(
+                "... ART unluac skipped: input ${input.length()} bytes exceeds safe ${artLimit}-byte limit",
+                "diagnostic: large Lua bytecode must use Python bridge first"
+            )
+        }
+
         val normalizedResult =
             try {
                 unwrapChunkedLua(
