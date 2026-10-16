@@ -1,6 +1,9 @@
 package com.alvsia.pro
 
 import android.os.Bundle
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -26,6 +29,7 @@ import com.alvsia.pro.sec.SessionGate
 import com.alvsia.pro.sec.Tamper
 import com.alvsia.pro.sec.ThreatReport
 import com.alvsia.pro.sec.TelegramNotifier
+import com.alvsia.pro.sec.TacticalNotifier
 import com.alvsia.pro.tool.CoreBundle
 import com.alvsia.pro.tool.CoreSession
 import com.alvsia.pro.tool.RamToolVault
@@ -53,6 +57,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 550)
+        }
         setContent {
             AlvisiaTheme {
                 var screen by remember { mutableStateOf("splash") }
@@ -229,6 +238,7 @@ class MainActivity : ComponentActivity() {
                                 } catch (_: Exception) {
                                 }
                                 info = "SYSTEM ONLINE"
+                                TacticalNotifier.post(this@MainActivity, "SESSION ONLINE", "Authentication accepted. Secure workspace is ready.", 550)
                                 ThreatReport.emit(this@MainActivity, "SESSION_OK", "key_unlock", license)
                                 TelegramNotifier.notify(this@MainActivity, "SESSION_OK",
                                     "Login successful", license)
@@ -306,6 +316,14 @@ class MainActivity : ComponentActivity() {
                                             engine.runSub(moduleId, sub.id, uri, extra)
                                         }
                                         logs = result
+                                        val success = result.any { it.startsWith("OK ") } &&
+                                            result.none { it.startsWith("X ") }
+                                        TacticalNotifier.post(
+                                            this@MainActivity,
+                                            if (success) "OPERATION COMPLETE" else "OPERATION NEEDS ATTENTION",
+                                            "${sub.title}: ${result.firstOrNull { it.startsWith("X ") } ?: if (success) "Operation completed." else "Review the operation log for details."}",
+                                            551
+                                        )
                                         running = false
                                     }
                                 }
