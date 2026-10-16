@@ -39,15 +39,9 @@ object FridaProbe {
         "xposed", "lsposed", "edxposed", "de.robv.android.xposed",
         "com.saurik.substrate", "libsubstrate", "substrate32", "substrate64",
         "libsandhook", "libepic", "epic-arm", "epic-arm64",
-        "riru", "zygisk",
-        "perseus", "obproxy",
-        "linjector",
-        "agent-arm", "agent-arm64",
-        "libhook", "libdobby", "dobby",
-        "libandroid_inline_hook",
-        "shadowhook", "shadow_hook",
-        "bhook", "bytehook",
-        "fdsan", "turbo_trace", "whale_arm",
+        "riru", "zygisk", "linjector",
+        "libdobby", "dobby", "libandroid_inline_hook",
+        "shadowhook", "shadow_hook", "bhook", "bytehook",
         "com.taichi.hookprovider"
     )
 
