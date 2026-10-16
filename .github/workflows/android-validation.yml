@@ -93,6 +93,15 @@ jobs:
           cp release_security_audit.txt validation-artifacts/
           sha256sum validation-artifacts/*.apk
 
+      - name: Report release APK fingerprint and size
+        run: |
+          set -euo pipefail
+          APK=validation-artifacts/ALVISIA_PRO_5.5.0_release_unsigned.apk
+          test -s "$APK"
+          echo "Commit: $GITHUB_SHA"
+          echo "APK bytes: $(wc -c < "$APK" | tr -d ' ')"
+          echo "APK SHA-256: $(sha256sum "$APK" | awk '{print $1}')"
+
       - name: Publish private draft validation release (avoids Actions artifact quota)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
