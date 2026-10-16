@@ -82,7 +82,7 @@ if 'implementation("com.securevale:rasp-android:0.7.1")' in gradle:
     fail.append("recognizable SecureVale Android RASP SDK dependency remains")
 if "SecureAppChecker" in rasp_engine or "com.securevale." in rasp_engine:
     fail.append("RaspEngine still references removed SecureVale SDK classes")
-if not re.search(r"NativeGuard\\.flagsToReasons\\(\\s*(?:NativeGuard\\.scanFlags\\(\\)|nf)\\s*\\)", rasp_engine):
+if not re.search(r"NativeGuard\.flagsToReasons\(\s*(?:NativeGuard\.scanFlags\(\)|nf)\s*\)", rasp_engine):
     fail.append("RaspEngine does not consume the in-repo native RASP scan results")
 if 'SEED_ENV = "ALVSIA_SEAL_SEED_HEX"' not in seal_script:
     fail.append("Python sealing does not use the per-build seed environment variable")
