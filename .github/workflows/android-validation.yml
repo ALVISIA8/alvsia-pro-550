@@ -72,6 +72,14 @@ jobs:
           cp release_security_audit.txt validation-artifacts/
           sha256sum validation-artifacts/*.apk
 
+      - name: Upload release validation artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ALVISIA_PRO_5.5.0_RELEASE_CANDIDATE
+          path: validation-artifacts/
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Restore source files after sealed build
         if: always()
         run: python3 tools/seal_python.py --restore
