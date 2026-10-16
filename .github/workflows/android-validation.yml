@@ -35,8 +35,46 @@ jobs:
           chmod +x ./gradlew
           ./gradlew testDebugUnitTest assembleDebug --no-daemon --stacktrace
 
-      - name: Run APK pre-build audit
-        run: python3 tools/audit_release_apk.py --pre-build-check || true
+      - name: Prepare sealed release inputs
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check cryptography
+          python3 tools/seal_python.py --seal
+          python3 tools/seal_assets.py
+          test ! -e app/src/main/assets/unluac/unluac.jar
+
+      - name: Inject per-build seed into native library source
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          seed = os.environ.get("ALVSIA_SEAL_SEED_HEX", "")
+          if len(seed) != 64 or any(c not in "0123456789abcdefABCDEF" for c in seed):
+              raise SystemExit("Invalid per-build seal seed")
+          path = Path("app/src/main/cpp/rasp_guard.cpp")
+          source = path.read_text()
+          old = "static const unsigned char _alvsia_seal_seed[32] = {0};"
+          values = ", ".join("0x" + seed[i:i+2] for i in range(0, 64, 2))
+          if source.count(old) != 1:
+              raise SystemExit("Native seed placeholder missing or ambiguous")
+          path.write_text(source.replace(old, "static const unsigned char _alvsia_seal_seed[32] = {" + values + "};"))
+          PY
+
+      - name: Build release APK
+        run: |
+          set -euo pipefail
+          ./gradlew assembleRelease --no-daemon --stacktrace
+          APK="$(find app/build/outputs/apk/release -type f -name '*.apk' | head -n 1)"
+          test -n "$APK"
+          python3 tools/audit_release_apk.py "$APK"
+          mkdir -p validation-artifacts
+          cp "$APK" validation-artifacts/ALVISIA_PRO_5.5.0_release_unsigned.apk
+          cp release_security_audit.txt validation-artifacts/
+          sha256sum validation-artifacts/*.apk
+
+      - name: Restore source files after sealed build
+        if: always()
+        run: python3 tools/seal_python.py --restore
 
       - name: Check no debug flags in manifest
         run: |
