@@ -3,6 +3,7 @@ package com.alvsia.pro.sec
 import android.content.Context
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
+import java.security.MessageDigest
 
 /**
  * ALVISIA PRO 5.5.0 — SessionGate HARDENED v2
@@ -42,6 +43,27 @@ object SessionGate {
 
     val sessionToken: String
         get() = if (sessionOk) token else ""
+
+    /**
+     * Stable Java/Chaquopy bridge API. Python must ask the Kotlin session gate
+     * instead of treating an environment variable or a 64-hex token shape as
+     * proof of authorization.
+     */
+    @JvmStatic
+    fun isSessionAuthorized(): Boolean = sessionOk
+
+    @JvmStatic
+    fun isTokenCurrent(candidate: String): Boolean {
+        if (!sessionOk || candidate.isBlank()) return false
+        return try {
+            MessageDigest.isEqual(
+                token.toByteArray(Charsets.UTF_8),
+                candidate.toByteArray(Charsets.UTF_8)
+            )
+        } catch (_: Exception) {
+            false
+        }
+    }
 
     // ── Token HMAC ────────────────────────────────────────────────────────
     private fun computeMac(tok: String): String {
