@@ -15,7 +15,7 @@ except ImportError:
 
 CERT_HEX = "99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c"
 PKG = "com.alvsia.pro"
-MAGIC = b"ALVSA1\\x00"
+MAGIC = b"ALVSA1\x00"
 SEED_ENV = "ALVSIA_SEAL_SEED_HEX"
 
 
@@ -83,7 +83,7 @@ def main() -> None:
                 raise SystemExit("Malformed sealed asset index; refusing to continue")
             logical, filename = line.split("=", 1)
             logical, filename = logical.strip(), filename.strip()
-            if not logical or not filename or "/" in filename or "\\\\" in filename:
+            if not logical or not filename or "/" in filename or "\\" in filename:
                 raise SystemExit("Unsafe entry in sealed asset index")
             blob_path = out / filename
             if not blob_path.is_file():
@@ -108,7 +108,7 @@ def main() -> None:
         (out / filename).write_bytes(seal(plain, key))
         mapping.append(f"{logical}={filename}")
         print("sealed", logical, "->", filename)
-    index_path.write_bytes(seal("\\n".join(mapping).encode("utf-8"), key))
+    index_path.write_bytes(seal("\n".join(mapping).encode("utf-8"), key))
 
     for jar in jars:
         jar.unlink()
