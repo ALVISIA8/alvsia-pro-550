@@ -61,6 +61,25 @@ workflows:
           test ! -e app/src/main/assets/unluac/unluac.jar || \
             (echo "FAIL: plaintext jars still present after sealing" && exit 1)
 
+      - name: Inject release seal seed into native library
+        script: |
+          set -e
+          python3 - <<'PY'
+          import os, pathlib
+          seed = os.environ.get("ALVSIA_SEAL_SEED_HEX", "")
+          if len(seed) != 64 or any(c not in "0123456789abcdefABCDEF" for c in seed):
+              raise SystemExit("Invalid per-build seal seed")
+          values = ", ".join("0x" + seed[i:i+2] for i in range(0, 64, 2))
+          path = pathlib.Path("app/src/main/cpp/rasp_guard.cpp")
+          source = path.read_text()
+          old = "static const unsigned char _alvsia_seal_seed[32] = {0};"
+          new = "static const unsigned char _alvsia_seal_seed[32] = {" + values + "};"
+          if source.count(old) != 1:
+              raise SystemExit("Native seal seed placeholder missing or ambiguous")
+          path.write_text(source.replace(old, new))
+          print("Native seal seed injected for this release build")
+          PY
+
       - name: Build release APK
         script: |
           set -o pipefail
