@@ -27,11 +27,11 @@ _MAP = {
 }
 
 def _valid_session() -> bool:
-    token = os.environ.get("ALVSIA_SESSION_TOKEN", "")
-    return (
-        os.environ.get("ALVSIA_APK_SESSION") == "1"
-        and re.fullmatch(r"[0-9A-Fa-f]{64}", token) is not None
-    )
+    try:
+        from com.alvsia.pro.sec import SessionGate
+        return bool(SessionGate.isSessionAuthorized())
+    except Exception:
+        return False
 
 class _SealedLoader(importlib.abc.Loader):
     def __init__(self, fullname: str, blob: str):
