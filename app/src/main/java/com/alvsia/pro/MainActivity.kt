@@ -318,6 +318,13 @@ class MainActivity : ComponentActivity() {
                                         logs = result
                                         val success = result.any { it.startsWith("OK ") } &&
                                             result.none { it.startsWith("X ") }
+                                        val eventDetail = "${sub.id}: " +
+                                            (result.firstOrNull { it.startsWith("X ") } ?: if (success) "operation completed" else "operation needs review")
+                                        ThreatReport.emit(
+                                            this@MainActivity,
+                                            if (success) "TOOL_OK" else "TOOL_ERROR",
+                                            eventDetail.take(240)
+                                        )
                                         TacticalNotifier.post(
                                             this@MainActivity,
                                             if (success) "OPERATION COMPLETE" else "OPERATION NEEDS ATTENTION",
