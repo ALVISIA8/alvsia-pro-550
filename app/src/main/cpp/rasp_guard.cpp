@@ -159,21 +159,30 @@ static uint32_t hash_region(const uint8_t* p, size_t len) {
     return h;
 }
 
+static const uint8_t* native_code_page(size_t* length) {
+    if (length == nullptr) return nullptr;
+    long pageSize = sysconf(_SC_PAGESIZE);
+    if (pageSize <= 0 || (pageSize & (pageSize - 1)) != 0) pageSize = 4096;
+    const uintptr_t address = reinterpret_cast<uintptr_t>(
+        reinterpret_cast<void*>(native_scan_flags));
+    const uintptr_t pageStart = address & ~((uintptr_t)pageSize - 1U);
+    *length = (size_t)pageSize;
+    return reinterpret_cast<const uint8_t*>(pageStart);
+}
+
 static void init_self_hash() {
-    Dl_info info;
-    if (!dladdr(reinterpret_cast<void*>(init_self_hash), &info)) return;
-    if (!info.dli_fbase) return;
-    const uint8_t* base = reinterpret_cast<const uint8_t*>(info.dli_fbase);
-    g_text_hash_baseline = hash_region(base, 4096);
+    size_t length = 0;
+    const uint8_t* page = native_code_page(&length);
+    if (page == nullptr || length == 0) return;
+    g_text_hash_baseline = hash_region(page, length);
 }
 
 static int check_self_hash() {
     if (g_text_hash_baseline == 0) return 0; // not initialized
-    Dl_info info;
-    if (!dladdr(reinterpret_cast<void*>(check_self_hash), &info)) return 0;
-    if (!info.dli_fbase) return 0;
-    const uint8_t* base = reinterpret_cast<const uint8_t*>(info.dli_fbase);
-    uint32_t current = hash_region(base, 4096);
+    size_t length = 0;
+    const uint8_t* page = native_code_page(&length);
+    if (page == nullptr || length == 0) return 0;
+    const uint32_t current = hash_region(page, length);
     return (current != g_text_hash_baseline) ? FLAG_SELF_HASH_BAD : 0;
 }
 
