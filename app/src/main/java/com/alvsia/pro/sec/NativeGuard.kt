@@ -109,7 +109,7 @@ private external fun nativeSealSeed(): ByteArray?
  */
 fun decryptSealedPayload(payload: ByteArray, buildId: String): ByteArray? {
     return try {
-        val seed: ByteArray = if (nativeLoaded) {
+        val seed: ByteArray = if (NativeGuard.isNativeLoaded()) {
             try { nativeSealSeed() } catch (_: Throwable) { null }
                 ?: fallbackSeed()
         } else {
