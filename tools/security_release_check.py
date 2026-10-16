@@ -52,6 +52,14 @@ for rel in required_modules:
         fail.append("protected source missing from developer/test tree: " + rel)
 if "sealed_loader.install()" not in bridge or "ALVSIA_SEALED_RUNTIME" not in bridge:
     fail.append("bridge bootstrap does not install the sealed loader conditionally")
+if "def run_tool(" in bridge and "import alvsia_bridge_impl as impl" not in bridge:
+    fail.append("plaintext bridge must delegate tool routing to the sealed implementation")
+if "isTokenCurrent(token)" not in bridge:
+    fail.append("bridge must compare the supplied token with the authoritative Kotlin session")
+if "SessionGate.isSessionAuthorized()" not in loader:
+    fail.append("sealed imports must check the live Kotlin session gate")
+if "SessionGate.isSessionAuthorized()" not in read(PY / "alvsia_bridge_impl.py"):
+    fail.append("sealed tool dispatch must check the live Kotlin session gate")
 if "ALVSIA_SEAL_SEED" in tool_engine or "ALVSIA_SEAL_SEED" in loader:
     fail.append("seal seed must never be exposed through Python process environment")
 if "NativeGuard.decryptSealedPayload(raw, _BUILD_ID)" not in loader or "_CERT_SHA256" in loader:
