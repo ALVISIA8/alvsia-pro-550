@@ -25,8 +25,26 @@ import shutil
 import traceback
 from pathlib import Path
 
-# SECURITY: do NOT hardcode ALVSIA_APK_SESSION / ALVSIA_SOFT_AUTH here.
-# Kotlin sets ALVSIA_APK_SESSION=1 only AFTER successful key login + SessionGate.sessionOk.
+# SECURITY: session values are supplied by Kotlin only after SessionGate validation.
+def configure_runtime(token, sealed_runtime="1"):
+    """Set session state without relying on version-specific Chaquopy mapping APIs."""
+    import re as _re
+    if not isinstance(token, str) or _re.fullmatch(r"[0-9A-Fa-f]{64}", token) is None:
+        return False
+    os.environ["ALVSIA_APK_SESSION"] = "1"
+    os.environ["ALVSIA_SESSION_TOKEN"] = token
+    os.environ["ALVSIA_SEALED_RUNTIME"] = "1" if str(sealed_runtime) == "1" else "0"
+    # The bridge module is imported before the session is injected. Install the
+    # sealed loader now if this release actually contains its encrypted payload.
+    if os.environ["ALVSIA_SEALED_RUNTIME"] == "1":
+        try:
+            import pkgutil
+            if pkgutil.get_data("sealed", "alvsia_bridge_impl.alv") is not None:
+                import sealed_loader
+                sealed_loader.install()
+        except (ImportError, FileNotFoundError, RuntimeError, TypeError):
+            pass
+    return True
 
 def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
     lines = []
