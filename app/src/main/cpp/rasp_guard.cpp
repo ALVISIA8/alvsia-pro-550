@@ -6,6 +6,7 @@
 //           -Wl,--strip-all  -ffunction-sections  -fdata-sections  -Wl,--gc-sections
 
 #include <jni.h>
+#include <stdint.h>
 #include <android/log.h>
 #include <sys/ptrace.h>
 #include <sys/uio.h>
