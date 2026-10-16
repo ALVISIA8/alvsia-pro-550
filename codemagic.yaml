@@ -45,7 +45,8 @@ workflows:
         script: |
           set -e
           python3 tools/security_release_check.py
-          python3 tools/audit_release_apk.py --pre-build-check || true
+          # APK-level audit runs after assembleRelease; do not invoke it here
+          # with an unsupported pseudo-mode that is silently ignored.
 
       - name: Seal Python modules
         script: |
