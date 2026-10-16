@@ -2,6 +2,7 @@ package com.alvsia.pro.sec
 
 import android.content.Context
 import android.os.Build
+import android.util.Log
 import com.alvsia.pro.panel.Hwid
 import com.alvsia.pro.panel.Vault
 import okhttp3.MediaType.Companion.toMediaType
@@ -9,129 +10,117 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 /**
- * TelegramNotifier — modern Telegram Bot API push for ALVISIA PRO.
- * Owner receives formatted MarkdownV2 messages for key events:
- *   - Login (SESSION_OK)
- *   - Threat detected (TAMPER, FRIDA, ROOT, DEBUG, etc.)
- *   - Session errors
- *
- * Config lives in Vault — bot_token and chat_id are XOR-obfuscated
- * the same way API endpoints are. Server-side forwarding is the primary
- * path (ThreatReport → panel → Telegram); this class provides a direct
- * fallback channel when the panel is unreachable.
+ * Telegram owner alerts for important ALVISIA PRO events.
+ * Uses Telegram HTML parse mode so user-provided detail cannot break MarkdownV2.
+ * Delivery failures are recorded locally; notification delivery never blocks tools.
  */
 object TelegramNotifier {
+    private const val TAG = "ALVISIA_Telegram"
+    private const val TG_API = "https://api.telegram.org/bot"
 
     private val http by lazy {
         OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.SECONDS)
-            .build()                     // Telegram CDN — no SPKI pin
+            .writeTimeout(10, TimeUnit.SECONDS)
+            .callTimeout(20, TimeUnit.SECONDS)
+            .build()
     }
 
-    private const val TG_API = "https://api.telegram.org/bot"
-
-    /** Event categories and their emoji */
-    private val ICONS = mapOf(
-        "SESSION_OK"   to "✅",
-        "TOOL_OK"      to "🟢",
-        "TOOL_ERROR"   to "🟠",
-        "TAMPER"       to "🚨",
-        "FRIDA"        to "🔴",
-        "ROOT"         to "⚠️",
-        "DEBUG"        to "🔶",
-        "SIG_BLOCK"    to "🛑",
-        "ENGINE_CAP"   to "🔷",
-        "THREAT"       to "🚨",
+    private val icons = mapOf(
+        "SESSION_OK" to "✅",
+        "TOOL_OK" to "🟢",
+        "TOOL_ERROR" to "🟠",
+        "TAMPER" to "🚨",
+        "FRIDA" to "🔴",
+        "ROOT" to "⚠️",
+        "DEBUG" to "🔶",
+        "SIG_BLOCK" to "🛑",
+        "ENGINE_CAP" to "🔷",
+        "THREAT" to "🚨"
     )
 
-    /**
-     * Send a notification to the owner Telegram bot.
-     * Fires in a daemon thread — never blocks the caller.
-     *
-     * @param ctx     Android context
-     * @param kind    Event kind (SESSION_OK, TAMPER, FRIDA, etc.)
-     * @param detail  Additional detail string
-     * @param license License key (truncated for security)
-     */
     fun notify(ctx: Context, kind: String, detail: String = "", license: String = "") {
-        // Only notify for significant events
-        if (!shouldNotify(kind)) return
+        if (kind !in NOTIFY_EVENTS) return
 
-        val token = Vault.tgToken()
-        val chatId = Vault.tgChatId()
-        if (token.isBlank() || chatId.isBlank()) return
+        val token = Vault.tgToken().trim()
+        val chatId = Vault.tgChatId().trim()
+        if (token.isBlank() || chatId.isBlank()) {
+            Log.w(TAG, "Telegram not configured; event=$kind")
+            return
+        }
 
-        thread(name = "tg-notify", isDaemon = true) {
+        // Snapshot safe metadata before dispatching to the worker.
+        val appContext = ctx.applicationContext
+        thread(name = "alvisia-telegram", isDaemon = true) {
             try {
-                val icon  = ICONS[kind] ?: "ℹ️"
-                val hwid  = Hwid.deviceId(ctx).take(16)
-                val model = "${Build.MANUFACTURER} ${Build.MODEL}".take(32)
-                val sdk   = Build.VERSION.SDK_INT
-                val pkg   = ctx.packageName
-                val keyMask = if (license.length >= 8)
-                    license.take(4) + "****" + license.takeLast(4)
-                else "—"
-                val ts = java.text.SimpleDateFormat(
-                    "dd/MM HH:mm", java.util.Locale.getDefault()
-                ).format(java.util.Date())
-
-                val text = buildString {
-                    appendLine("$icon *ALVSIA PRO — $kind*")
-                    appendLine("`$ts`")
-                    appendLine()
-                    appendLine("🔑 Key: `$keyMask`")
-                    appendLine("📱 Device: `$model` (SDK $sdk)")
-                    appendLine("🔐 HWID: `${hwid}…`")
-                    if (detail.isNotBlank()) appendLine("📋 Detail: `${detail.take(200)}`")
-                    appendLine("📦 Pkg: `$pkg`")
+                val hwid = runCatching { Hwid.deviceId(appContext).take(16) }.getOrDefault("unavailable")
+                val model = "${Build.MANUFACTURER} ${Build.MODEL}".take(48)
+                val keyMask = when {
+                    license.length >= 8 -> license.take(4) + "****" + license.takeLast(4)
+                    license.isNotBlank() -> "****"
+                    else -> "not supplied"
                 }
-                    // MarkdownV2 escape — only escapes bare brackets/dots
-                    .replace(".", "\\.")
-                    .replace("!", "\\!")
-                    .replace("-", "\\-")
-                    .replace("+", "\\+")
-                    .replace("=", "\\=")
-                    .replace("(", "\\(").replace(")", "\\)")
-                    .replace("{", "\\{").replace("}", "\\}")
-                    .replace(">", "\\>")
-                    .replace("#", "\\#")
-                    .replace("|", "\\|")
+                val ts = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
+                val safeDetail = detail.take(240).ifBlank { "No additional details" }
+
+                val message = buildString {
+                    append("<b>").append(icons[kind] ?: "ℹ️")
+                    append(" ALVISIA PRO // ").append(html(kind)).append("</b>\n")
+                    append("<code>").append(html(ts)).append("</code>\n\n")
+                    append("🔑 Key: <code>").append(html(keyMask)).append("</code>\n")
+                    append("📱 Device: <code>").append(html(model)).append("</code> (SDK ")
+                        .append(Build.VERSION.SDK_INT).append(")\n")
+                    append("🔐 HWID: <code>").append(html(hwid)).append("…</code>\n")
+                    append("📋 Detail: <code>").append(html(safeDetail)).append("</code>\n")
+                    append("📦 Package: <code>").append(html(appContext.packageName)).append("</code>")
+                }
 
                 val payload = JSONObject()
                     .put("chat_id", chatId)
-                    .put("text", text)
-                    .put("parse_mode", "MarkdownV2")
+                    .put("text", message)
+                    .put("parse_mode", "HTML")
                     .put("disable_notification", kind == "SESSION_OK")
                     .toString()
 
-                val req = Request.Builder()
+                val request = Request.Builder()
                     .url("$TG_API$token/sendMessage")
-                    .post(payload.toRequestBody("application/json".toMediaType()))
+                    .post(payload.toRequestBody("application/json; charset=utf-8".toMediaType()))
                     .header("User-Agent", Vault.ua())
                     .build()
 
-                http.newCall(req).execute().close()
-            } catch (_: Exception) {
-                // Silently swallow — notification is best-effort only
+                http.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        val body = response.body?.string().orEmpty().take(300)
+                        Log.e(TAG, "Telegram delivery failed: HTTP ${response.code}; event=$kind; $body")
+                    } else {
+                        val body = response.body?.string().orEmpty()
+                        val ok = runCatching { JSONObject(body).optBoolean("ok", false) }.getOrDefault(false)
+                        if (!ok) Log.e(TAG, "Telegram API rejected event=$kind: ${body.take(300)}")
+                        else Log.i(TAG, "Telegram delivered event=$kind")
+                    }
+                }
+            } catch (t: Exception) {
+                Log.e(TAG, "Telegram delivery exception; event=$kind; ${t.javaClass.simpleName}: ${t.message}", t)
             }
         }
     }
 
-    private fun shouldNotify(kind: String): Boolean = kind in setOf(
-        "SESSION_OK",
-        "TOOL_OK",
-        "TOOL_ERROR",
-        "TAMPER",
-        "FRIDA",
-        "ROOT",
-        "DEBUG",
-        "SIG_BLOCK",
-        "THREAT",
-        "ENGINE_CAP",
+    private fun html(value: String): String = value
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\"", "&quot;")
+
+    private val NOTIFY_EVENTS = setOf(
+        "SESSION_OK", "TOOL_OK", "TOOL_ERROR", "TAMPER", "FRIDA",
+        "ROOT", "DEBUG", "SIG_BLOCK", "THREAT", "ENGINE_CAP"
     )
 }
