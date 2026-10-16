@@ -45,7 +45,7 @@ fun ProfileScreen(product: String, expiry: String, hwidShort: String, toolCount:
             Text("ALV", color=accent, fontSize=19.sp, fontWeight=FontWeight.Black)
         }
         Spacer(Modifier.height(8.dp))
-        Text("ALVISIA PRO", color=accent, fontSize=21.sp, fontWeight=FontWeight.Black, letterSpacing=3.sp)
+        Text("ALVSIA PRO", color=accent, fontSize=21.sp, fontWeight=FontWeight.Black, letterSpacing=3.sp)
         Text("SECURE TOOL SYSTEM · 5.5.0", color=Color(0xFFC5A86A), fontSize=10.sp, letterSpacing=1.2.sp)
         Spacer(Modifier.height(15.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(7.dp)) {
@@ -99,7 +99,7 @@ fun ProfileScreen(product: String, expiry: String, hwidShort: String, toolCount:
         }
         Text("← BACK TO TOOL PANEL", color=muted, fontSize=10.sp, letterSpacing=.7.sp,
             modifier=Modifier.clip(RoundedCornerShape(8.dp)).clickable { onBack() }.padding(12.dp))
-        Text("ALVISIA PRO © 2026", color=AlvisiaSilver.copy(alpha=.25f), fontSize=9.sp)
+        Text("ALVSIA PRO © 2026", color=AlvisiaSilver.copy(alpha=.25f), fontSize=9.sp)
     }
 }
 
