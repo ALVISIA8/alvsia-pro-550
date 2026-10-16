@@ -90,3 +90,10 @@
 # Aggressive repackaging/overload obfuscation otherwise breaks this runtime call.
 -keep class unluac.** { *; }
 -keep class unluac.Main { public static void main(java.lang.String[]); }
+
+# The bundled unluac_pro.jar may already contain relocated/obfuscated packages
+# (observed ART failure: NoSuchMethodException a.eb0.main(String[])). Preserve
+# any class exposing the reflective Java entry point, regardless of package.
+-keepclasseswithmembers class * {
+    public static void main(java.lang.String[]);
+}
