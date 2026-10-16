@@ -30,6 +30,27 @@ workflows:
           fi
           echo "Branch OK: ${CM_BRANCH}"
 
+      - name: Validate release signing configuration
+        script: |
+          set -euo pipefail
+          : "${CM_KEYSTORE:?Missing CM_KEYSTORE (base64-encoded keystore) in Codemagic environment group signing}"
+          : "${CM_KEYSTORE_PASSWORD:?Missing CM_KEYSTORE_PASSWORD in Codemagic environment group signing}"
+          python3 - <<'PY'
+          import base64, os
+          raw = os.environ["CM_KEYSTORE"].strip()
+          try:
+              decoded = base64.b64decode(raw, validate=True)
+          except Exception as exc:
+              raise SystemExit("CM_KEYSTORE is not valid base64") from exc
+          if len(decoded) < 1024:
+              raise SystemExit("Decoded keystore is unexpectedly small; check the CM_KEYSTORE value")
+          print("PASS: required signing secrets are present and keystore base64 is valid")
+          PY
+          grep -q 'CERT_SHA256' app/build.gradle.kts || {
+            echo "ERROR: certificate pin CERT_SHA256 is missing"
+            exit 1
+          }
+
       - name: Set gradlew permission
         script: |
           chmod +x ./gradlew
@@ -128,15 +149,35 @@ workflows:
           : "${CM_KEYSTORE:?Missing CM_KEYSTORE (base64 keystore) in Codemagic environment group signing}"
           : "${CM_KEYSTORE_PASSWORD:?Missing CM_KEYSTORE_PASSWORD in Codemagic environment group signing}"
           KS=/tmp/alvsia-release.keystore
-          printf '%s' "$CM_KEYSTORE" | base64 --decode > "$KS"
+          # Decode with Python for compatibility with both macOS and Linux base64 tools.
+          python3 - "$KS" <<'PY'
+          import base64, os, sys
+          with open(sys.argv[1], "wb") as out:
+              out.write(base64.b64decode(os.environ["CM_KEYSTORE"].strip(), validate=True))
+          PY
           test -s "$KS" || { echo "ERROR: decoded keystore is empty"; exit 1; }
           KSPASS="$CM_KEYSTORE_PASSWORD"
           ALIAS="${CM_KEY_ALIAS:-alvsia}"
           KEYPASS="${CM_KEY_PASSWORD:-$KSPASS}"
 
-          BUILD_TOOLS="$(find "$ANDROID_SDK_ROOT/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
-          test -x "$BUILD_TOOLS/zipalign" || { echo "ERROR: zipalign not found"; exit 1; }
-          test -x "$BUILD_TOOLS/apksigner" || { echo "ERROR: apksigner not found"; exit 1; }
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          test -n "$SDK_ROOT" && test -d "$SDK_ROOT/build-tools" || {
+            echo "ERROR: Android SDK/build-tools not found (ANDROID_SDK_ROOT/ANDROID_HOME)"
+            exit 1
+          }
+          BUILD_TOOLS="$(python3 - "$SDK_ROOT/build-tools" <<'PY'
+          import os, re, sys
+          root = sys.argv[1]
+          dirs = [os.path.join(root, x) for x in os.listdir(root)
+                  if os.path.isdir(os.path.join(root, x))]
+          def version(path):
+              nums = re.findall(r'\d+', os.path.basename(path))
+              return tuple(int(n) for n in nums) if nums else (0,)
+          print(max(dirs, key=version) if dirs else "")
+          PY
+          )"
+          test -x "$BUILD_TOOLS/zipalign" || { echo "ERROR: zipalign not found in $BUILD_TOOLS"; exit 1; }
+          test -x "$BUILD_TOOLS/apksigner" || { echo "ERROR: apksigner not found in $BUILD_TOOLS"; exit 1; }
 
           "$BUILD_TOOLS/zipalign" -f 4 "$UNSIGNED" /tmp/alvsia-release-aligned.apk
           "$BUILD_TOOLS/apksigner" sign \
