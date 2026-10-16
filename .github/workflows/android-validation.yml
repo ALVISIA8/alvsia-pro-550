@@ -19,6 +19,11 @@ jobs:
       - name: Run source-level security checks
         run: python3 tools/security_release_check.py
 
+      - name: Run sealed payload cryptographic tests
+        run: |
+          python3 -m pip install --disable-pip-version-check pycryptodome
+          python3 tests/test_seal_python_payloads.py
+
       - name: Run APK pre-build audit
         run: python3 tools/audit_release_apk.py --pre-build-check || true
 
