@@ -5,8 +5,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * ALVSIA PRO 5.5.0 — expanded 17-module catalog.
- * Modules 1-9: original. 10-17: new additions from v5.5.0-upgrade.
+ * ALVSIA PRO 5.5.0 — expanded 18-module catalog.
+ * Modules 1-9: original. 10-18: new additions from v5.5.0-upgrade.
  */
 object ToolCatalog {
     fun defaults(): List<ToolItem> = listOf(
@@ -29,6 +29,7 @@ object ToolCatalog {
         ToolItem(15, "String Recover",  "Obfuscated string restore · constant pool dump"),
         ToolItem(16, "Lua Inject",      "Patch lua bytecode · inject hook · mod repack"),
         ToolItem(17, "Anti-RE Audit",   "Detect weak points in target APK · generate report"),
+        ToolItem(18, "Lua Protector",    "AES-256-GCM encrypt Lua source into authenticated protected payload"),
     )
 
     fun parseCore(bytes: ByteArray?): List<ToolItem> {
