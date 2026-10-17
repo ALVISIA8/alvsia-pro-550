@@ -78,20 +78,20 @@ object TelegramNotifier {
                     else -> "INFO / EVENT"
                 }
                 val message = buildString {
-                    append("<b>⟦ ALVISIA PRO // STEALTH COMMAND ⟧</b>\\n")
-                    append("<code>━━━━━━━━━━━━━━━━━━━━</code>\\n")
+                    append("<b>⟦ ALVISIA PRO // STEALTH COMMAND ⟧</b>\n")
+                    append("<code>━━━━━━━━━━━━━━━━━━━━</code>\n")
                     append(icons[kind] ?: "ℹ️").append(" <b>STATUS:</b> <code>")
-                        .append(html(severity)).append("</code>\\n")
-                    append("🛰 <b>EVENT:</b> <code>").append(html(kind)).append("</code>\\n")
-                    append("🕒 <b>TIME:</b> <code>").append(html(ts)).append("</code>\\n")
-                    append("<code>━━━━━━━━━━━━━━━━━━━━</code>\\n")
-                    append("🔑 <b>SESSION:</b> <code>").append(html(keyMask)).append("</code>\\n")
+                        .append(html(severity)).append("</code>\n")
+                    append("🛰 <b>EVENT:</b> <code>").append(html(kind)).append("</code>\n")
+                    append("🕒 <b>TIME:</b> <code>").append(html(ts)).append("</code>\n")
+                    append("<code>━━━━━━━━━━━━━━━━━━━━</code>\n")
+                    append("🔑 <b>SESSION:</b> <code>").append(html(keyMask)).append("</code>\n")
                     append("📱 <b>DEVICE:</b> <code>").append(html(model)).append("</code> · API ")
-                        .append(Build.VERSION.SDK_INT).append("\\n")
-                    append("🔐 <b>DEVICE ID:</b> <code>").append(html(hwid)).append("…</code>\\n")
-                    append("⚙️ <b>OPERATION:</b> <code>").append(html(safeDetail)).append("</code>\\n")
-                    append("📦 <b>PACKAGE:</b> <code>").append(html(appContext.packageName)).append("</code>\\n")
-                    append("<code>━━━━━━━━━━━━━━━━━━━━</code>\\n")
+                        .append(Build.VERSION.SDK_INT).append("\n")
+                    append("🔐 <b>DEVICE ID:</b> <code>").append(html(hwid)).append("…</code>\n")
+                    append("⚙️ <b>OPERATION:</b> <code>").append(html(safeDetail)).append("</code>\n")
+                    append("📦 <b>PACKAGE:</b> <code>").append(html(appContext.packageName)).append("</code>\n")
+                    append("<code>━━━━━━━━━━━━━━━━━━━━</code>\n")
                     append("<i>OWNER ALERT · NO PRECISE LOCATION COLLECTED</i>")
                 }
 
