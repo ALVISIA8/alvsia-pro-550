@@ -1,0 +1,135 @@
+name: Free API Source Audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: "Audit scope"
+        required: true
+        default: "full"
+        type: choice
+        options:
+          - full
+          - Kotlin
+          - Python
+          - Native
+          - Build and CI
+
+permissions:
+  contents: read
+
+concurrency:
+  group: free-api-audit-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Collect source safely
+        id: collect
+        env:
+          SCOPE: ${{ inputs.scope }}
+        run: |
+          python3 - <<'PY'
+          import os, pathlib
+          root = pathlib.Path(".")
+          scope = os.environ.get("SCOPE", "full")
+          allowed = {".kt", ".kts", ".java", ".py", ".cpp", ".c", ".h", ".hpp", ".gradle", ".xml", ".yml", ".yaml", ".toml", ".properties", ".sh"}
+          excluded_parts = {".git", ".gradle", "build", "outputs", "captures", "node_modules", ".idea"}
+          selected = []
+          for p in root.rglob("*"):
+              if not p.is_file() or p.suffix.lower() not in allowed:
+                  continue
+              if any(part in excluded_parts for part in p.parts):
+                  continue
+              if any(x in p.name.lower() for x in (".jks", ".keystore", "secret", "credential")):
+                  continue
+              rel = p.as_posix()
+              if scope == "Kotlin" and p.suffix.lower() not in {".kt", ".kts", ".java"}: continue
+              if scope == "Python" and p.suffix.lower() != ".py": continue
+              if scope == "Native" and p.suffix.lower() not in {".cpp", ".c", ".h", ".hpp"}: continue
+              if scope == "Build and CI" and not (rel.endswith((".gradle", ".gradle.kts", ".yml", ".yaml", ".properties", ".sh")) or rel.startswith(".github/")): continue
+              selected.append(p)
+          selected.sort()
+          out = []
+          total = 0
+          limit = 65000
+          for p in selected:
+              try: data = p.read_text(encoding="utf-8", errors="replace")
+              except Exception: continue
+              block = f"\n\n===== FILE: {p.as_posix()} =====\n{data}\n"
+              if total + len(block) > limit:
+                  out.append(f"\n[TRUNCATED: source bundle reached {limit} characters; {len(selected)} files discovered]\n")
+                  break
+              out.append(block); total += len(block)
+          pathlib.Path("/tmp/alvisia-source.txt").write_text("".join(out), encoding="utf-8")
+          print(f"Discovered {len(selected)} eligible source files; sent up to {total} characters for review.")
+          PY
+
+      - name: Validate API configuration
+        env:
+          API_KEY: ${{ secrets.FREE_CHATGPT_API_KEY }}
+          API_BASE_URL: ${{ vars.FREE_CHATGPT_API_BASE_URL }}
+          API_MODEL: ${{ vars.FREE_CHATGPT_API_MODEL }}
+        run: |
+          test -n "$API_KEY" || { echo "::error::Add repository secret FREE_CHATGPT_API_KEY."; exit 1; }
+          test -n "$API_BASE_URL" || { echo "::error::Add repository variable FREE_CHATGPT_API_BASE_URL using the exact base URL from your API provider docs."; exit 1; }
+          test -n "$API_MODEL" || { echo "::error::Add repository variable FREE_CHATGPT_API_MODEL using a model supported by your API key."; exit 1; }
+          case "$API_BASE_URL" in https://*) ;; *) echo "::error::API base URL must use HTTPS."; exit 1;; esac
+
+      - name: Request audit from configured API
+        env:
+          API_KEY: ${{ secrets.FREE_CHATGPT_API_KEY }}
+          API_BASE_URL: ${{ vars.FREE_CHATGPT_API_BASE_URL }}
+          API_MODEL: ${{ vars.FREE_CHATGPT_API_MODEL }}
+          SCOPE: ${{ inputs.scope }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, urllib.request, urllib.error
+          base = os.environ["API_BASE_URL"].rstrip("/")
+          if not base.endswith("/v1"): raise SystemExit("API base URL should end in /v1, as documented by your provider.")
+          model = os.environ["API_MODEL"]
+          source = pathlib.Path("/tmp/alvisia-source.txt").read_text(encoding="utf-8")
+          prompt = """You are a careful senior Android/Kotlin/Python/NDK build auditor reviewing ALVISIA PRO.
+          Audit only the supplied source. Do not claim tests ran unless the workflow actually ran them.
+          Preserve existing product behavior and architecture. Do not recommend disabling authentication, OTP, authorization, TLS checks, RASP, integrity checks, or permission gates just to make tests pass.
+          Do not propose covert data exfiltration or silently collecting device/user data.
+          Report: (1) confirmed defects with file/path and relevant code evidence, (2) likely defects clearly labeled as hypotheses, (3) build/runtime compatibility issues, (4) regression risks, (5) prioritized minimal patches and concrete tests.
+          Avoid generic advice and never invent files or functions. If source context is insufficient, say exactly what is missing.
+          Audit scope: """ + os.environ.get("SCOPE", "full") + "\n\nSOURCE:\n" + source
+          body = json.dumps({"model": model, "messages": [
+              {"role":"system","content":"You are a precise code auditor. Be evidence-based and security-conscious."},
+              {"role":"user","content":prompt}
+          ], "temperature":0.1}).encode()
+          req = urllib.request.Request(base + "/chat/completions", data=body, headers={
+              "Authorization":"Bearer " + os.environ["API_KEY"],
+              "Content-Type":"application/json"
+          }, method="POST")
+          try:
+              with urllib.request.urlopen(req, timeout=180) as resp:
+                  result = json.loads(resp.read().decode("utf-8"))
+          except urllib.error.HTTPError as e:
+              detail = e.read(1500).decode("utf-8", "replace")
+              raise SystemExit(f"API HTTP {e.code}: {detail}")
+          except Exception as e:
+              raise SystemExit(f"API request failed: {type(e).__name__}: {e}")
+          try: answer = result["choices"][0]["message"]["content"]
+          except Exception: raise SystemExit("Unexpected API response format; expected OpenAI-compatible choices[0].message.content.")
+          pathlib.Path("FREE_API_AUDIT_REPORT.md").write_text("# ALVISIA PRO — Free API Audit\n\n" + answer + "\n", encoding="utf-8")
+          print("Audit report created.")
+          PY
+
+      - name: Upload audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: alvisia-free-api-audit
+          path: FREE_API_AUDIT_REPORT.md
+          if-no-files-found: error
+          retention-days: 14
