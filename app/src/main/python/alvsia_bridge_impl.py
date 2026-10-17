@@ -14,11 +14,13 @@ from pathlib import Path
 # This is defense-in-depth, not a substitute for server-signed operation grants.
 
 def _valid_apk_session():
-    token = os.environ.get("ALVSIA_SESSION_TOKEN", "")
-    return (
-        os.environ.get("ALVSIA_APK_SESSION") == "1"
-        and re.fullmatch(r"[0-9A-Fa-f]{64}", token) is not None
-    )
+    if os.environ.get("ALVSIA_APK_SESSION") != "1":
+        return False
+    try:
+        from com.alvsia.pro.sec import SessionGate
+        return bool(SessionGate.isSessionAuthorized())
+    except Exception:
+        return False
 
 def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
     lines = []

@@ -210,6 +210,8 @@ object UnluacRunner {
         ).containsMatchIn(t)
 
         val looksLua =
+            t == "return" ||
+            Regex("""(?m)^\s*return(?:\s|$)""").containsMatchIn(t) ||
             t.contains("function") ||
             t.contains("local ") ||
             t.contains("return ") ||
@@ -242,14 +244,15 @@ object UnluacRunner {
 
         output.parentFile?.mkdirs()
 
-        // Avoid running large bytecode in ART's limited app heap: unluac may request >1 GiB.
-        // Let the Python bridge handle large inputs instead of crashing the process.
-        val artLimit = 1024L * 1024L
+        // The old 1 MiB cutoff rejected the reported 5.58 MB input before
+        // Unluac could inspect it. Keep a bounded limit to avoid unbounded memory
+        // use on arbitrarily large or malformed bytecode.
+        val artLimit = 8L * 1024L * 1024L
         if (input.length() > artLimit) {
             output.delete()
             return listOf(
                 "... ART unluac skipped: input ${input.length()} bytes exceeds safe ${artLimit}-byte limit",
-                "diagnostic: large Lua bytecode must use Python bridge first"
+                "diagnostic: input exceeds the 8 MiB in-process safety limit; Python fallback will run"
             )
         }
 

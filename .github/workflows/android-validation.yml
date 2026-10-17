@@ -31,6 +31,9 @@ jobs:
           python3 -m pip install --disable-pip-version-check cryptography
           python3 tests/test_seal_python_payloads.py
 
+      - name: Run Lua decompiler safety regression tests
+        run: python3 -m unittest discover -s tests -p 'test_lua*.py'
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -103,7 +106,7 @@ jobs:
           echo "APK SHA-256: $(sha256sum "$APK" | awk '{print $1}')"
 
       - name: Publish private draft validation release (avoids Actions artifact quota)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: alvsia-validation-${{ github.run_number }}
@@ -137,3 +140,66 @@ jobs:
             echo "WARNING: push from non-main branch: $BRANCH"
           fi
           echo "Branch: $BRANCH"
+
+      - name: Send STEALTH Telegram build report
+        if: always()
+        timeout-minutes: 1
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          JOB_STATUS: ${{ job.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REPOSITORY: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+          WORKFLOW_NAME: ${{ github.workflow }}
+        run: |
+          python3 - <<'PY'
+          import html, json, os, urllib.request
+          token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+          chat = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+          if not token or not chat:
+              print("SKIP: Telegram secrets are not configured; build result remains unchanged.")
+              raise SystemExit(0)
+          status = os.environ.get("JOB_STATUS", "unknown").upper()
+          icon = "🟢" if status == "SUCCESS" else "🔴" if status == "FAILURE" else "🟠"
+          esc = lambda s: html.escape(s, quote=True)
+          repo = os.environ.get("REPOSITORY", "unknown")
+          ref = os.environ.get("REF_NAME", "unknown")
+          sha = os.environ.get("COMMIT_SHA", "")[:12]
+          workflow = os.environ.get("WORKFLOW_NAME", "Android validation")
+          run_url = os.environ.get("RUN_URL", "")
+          message = (
+              "<b>⟦ ALVISIA PRO // STEALTH BUILD INTEL ⟧</b>\n"
+              "━━━━━━━━━━━━━━━━━━\n"
+              f"{icon} <b>STATUS:</b> <code>{esc(status)}</code>\n"
+              f"🛰 <b>PIPELINE:</b> <code>{esc(workflow)}</code>\n"
+              f"📦 <b>REPOSITORY:</b> <code>{esc(repo)}</code>\n"
+              f"🌿 <b>BRANCH:</b> <code>{esc(ref)}</code>\n"
+              f"🔏 <b>COMMIT:</b> <code>{esc(sha)}</code>\n"
+              "━━━━━━━━━━━━━━━━━━\n"
+              f'🔎 <a href="{esc(run_url)}">OPEN BUILD LOG</a>\n'
+              "<i>ALVISIA // AUTOMATED CI REPORT</i>"
+          )
+          payload = json.dumps({
+              "chat_id": chat,
+              "text": message,
+              "parse_mode": "HTML",
+              "disable_web_page_preview": True
+          }).encode()
+          request = urllib.request.Request(
+              f"https://api.telegram.org/bot{token}/sendMessage",
+              data=payload,
+              headers={"Content-Type": "application/json"},
+              method="POST"
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=15) as response:
+                  data = json.loads(response.read().decode("utf-8"))
+              if not data.get("ok"):
+                  raise SystemExit("Telegram API rejected the build report")
+              print("PASS: STEALTH Telegram build report delivered")
+          except Exception as exc:
+              print(f"WARNING: Telegram report delivery failed: {type(exc).__name__}: {exc}")
+              # Notification failure must not mask the real build result.
+          PY

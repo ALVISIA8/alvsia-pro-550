@@ -303,11 +303,22 @@ native_seal_seed(JNIEnv* env, jobject) {
 
 // Resolve JNI entry points by registration instead of exporting predictable
 // Java_com_* symbols in the dynamic symbol table.
+static jstring JNICALL
+native_seal_build_id(JNIEnv* env, jobject) {
+    static const unsigned char encoded[] = {0x1b, 0x16, 0x0c, 0x13, 0x09, 0x13, 0x1b, 0x77, 0x68, 0x6a, 0x68, 0x6c, 0x6b, 0x6a, 0x6b, 0x6a, 0x77, 0x17, 0x1b, 0x13, 0x14, 0x77, 0x09, 0x1f, 0x1b, 0x16, 0x6b};
+    char decoded[sizeof(encoded) + 1] = {};
+    for (size_t i = 0; i < sizeof(encoded); ++i) decoded[i] = static_cast<char>(encoded[i] ^ 0x5a);
+    jstring result = env->NewStringUTF(decoded);
+    memset(decoded, 0, sizeof(decoded));
+    return result;
+}
+
 static JNINativeMethod kNativeMethods[] = {
     {const_cast<char*>("nativeScanFlags"), const_cast<char*>("()I"), reinterpret_cast<void*>(native_scan_flags)},
     {const_cast<char*>("nativeWipe"), const_cast<char*>("([B)V"), reinterpret_cast<void*>(native_wipe)},
     {const_cast<char*>("nativeAntiDump"), const_cast<char*>("()I"), reinterpret_cast<void*>(native_anti_dump)},
     {const_cast<char*>("nativeSealSeed"), const_cast<char*>("()[B"), reinterpret_cast<void*>(native_seal_seed)},
+    {const_cast<char*>("nativeSealBuildId"), const_cast<char*>("()Ljava/lang/String;"), reinterpret_cast<void*>(native_seal_build_id)},
 };
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {

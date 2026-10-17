@@ -7,13 +7,16 @@ import pkgutil
 import re
 import sys
 
-_BUILD_ID = "ALVISIA-20261010-MAIN-SEAL1"
 _MAGIC = b"ALVSEAL2"
 _MAP = {
     "alvsia_bridge_impl": "alvsia_bridge_impl.alv",
     "alvsia_core": "alvsia_core.alv",
     "alvsia_ultimate": "alvsia_ultimate.alv",
+    "alvsia_ultimate_compat": "alvsia_ultimate_compat.alv",
     "alvsia_features": "alvsia_features.alv",
+    "pinned_http": "pinned_http.alv",
+    "lua_engine.lua_decompiler_final": "lua_engine_lua_decompiler_final.alv",
+    "lua_engine.lua_protector": "lua_engine_lua_protector.alv",
     "lua_output_validator": "lua_output_validator.alv",
     "lua_string_recover": "lua_string_recover.alv",
     "lua_engine.engine": "lua_engine_engine.alv",
@@ -27,11 +30,11 @@ _MAP = {
 }
 
 def _valid_session() -> bool:
-    token = os.environ.get("ALVSIA_SESSION_TOKEN", "")
-    return (
-        os.environ.get("ALVSIA_APK_SESSION") == "1"
-        and re.fullmatch(r"[0-9A-Fa-f]{64}", token) is not None
-    )
+    try:
+        from com.alvsia.pro.sec import SessionGate
+        return bool(SessionGate.isSessionAuthorized())
+    except Exception:
+        return False
 
 class _SealedLoader(importlib.abc.Loader):
     def __init__(self, fullname: str, blob: str):
@@ -55,9 +58,11 @@ class _SealedLoader(importlib.abc.Loader):
             # call the singleton explicitly so the payload is never mistaken for `self`.
             guard = getattr(NativeGuard, "INSTANCE", None)
             if guard is not None:
-                decrypted = guard.decryptSealedPayload(raw, _BUILD_ID)
+                build_id = guard.sealBuildId()
+                decrypted = guard.decryptSealedPayload(raw, build_id) if build_id else None
             else:
-                decrypted = NativeGuard.decryptSealedPayload(raw, _BUILD_ID)
+                build_id = NativeGuard.sealBuildId()
+                decrypted = NativeGuard.decryptSealedPayload(raw, build_id) if build_id else None
             if decrypted is None:
                 raise ValueError("native sealed payload decryption returned null")
             source = bytes(decrypted)

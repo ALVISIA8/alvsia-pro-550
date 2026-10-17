@@ -61,9 +61,20 @@ class Reader:
         self.lua_num_size = 8
         self.little = True
 
+    def remaining(self):
+        return len(self._d) - self._pos
+
     def _read(self, n):
-        v = bytes(self._d[self._pos:self._pos + n])
-        self._pos += n
+        if not isinstance(n, int) or n < 0:
+            raise ValueError(f"invalid Lua chunk read length {n!r} at offset {self._pos}")
+        end = self._pos + n
+        if end > len(self._d):
+            raise ValueError(
+                f"truncated Lua chunk at offset {self._pos}: "
+                f"need {n} bytes, have {self.remaining()}"
+            )
+        v = bytes(self._d[self._pos:end])
+        self._pos = end
         return v
 
     def byte(self): return self._read(1)[0]
@@ -129,7 +140,25 @@ class Proto:
     def __init__(self): pass
 
 
-def load_proto(r: Reader) -> Proto:
+def _read_count(r: Reader, label: str, min_item_bytes: int, *, allow_zero: bool = True) -> int:
+    count = r.int_()
+    if count < 0 or (not allow_zero and count == 0):
+        raise ValueError(f"invalid {label} count {count} at offset {r._pos}")
+    # A count cannot describe more minimum-sized entries than remain in the file.
+    if min_item_bytes <= 0 or count > r.remaining() // min_item_bytes:
+        raise ValueError(
+            f"invalid {label} count {count} at offset {r._pos}: "
+            f"{r.remaining()} bytes remain"
+        )
+    # Avoid pathological allocations from corrupted or intentionally malformed chunks.
+    if count > 2_000_000:
+        raise ValueError(f"{label} count exceeds safety limit: {count}")
+    return count
+
+
+def load_proto(r: Reader, depth: int = 0) -> Proto:
+    if depth > 200:
+        raise ValueError("Lua prototype nesting exceeds safety limit")
     p = Proto()
     p.source = r.string()
     p.linedefined = r.int_()
@@ -139,11 +168,11 @@ def load_proto(r: Reader) -> Proto:
     p.maxstacksize = r.uint8()
 
     # code
-    n = r.int_()
+    n = _read_count(r, "instruction", 4, allow_zero=False)
     p.code = [r.instruction() for _ in range(n)]
 
     # constants
-    n = r.int_()
+    n = _read_count(r, "constant", 1)
     p.constants = []
     for _ in range(n):
         t = r.uint8()
@@ -161,7 +190,7 @@ def load_proto(r: Reader) -> Proto:
             p.constants.append(None)
 
     # upvalues (preliminary — names come later)
-    n = r.int_()
+    n = _read_count(r, "upvalue", 2)
     p.upvalues = []
     for _ in range(n):
         instack = r.uint8()
@@ -169,15 +198,15 @@ def load_proto(r: Reader) -> Proto:
         p.upvalues.append({"instack": instack, "idx": idx, "name": None})
 
     # nested protos
-    n = r.int_()
-    p.protos = [load_proto(r) for _ in range(n)]
+    n = _read_count(r, "nested prototype", 1)
+    p.protos = [load_proto(r, depth + 1) for _ in range(n)]
 
     # debug: lineinfo
-    n = r.int_()
+    n = _read_count(r, "lineinfo", 4)
     p.lineinfo = [r.int_() for _ in range(n)]
 
     # debug: locvars
-    n = r.int_()
+    n = _read_count(r, "local variable", 9)
     p.locvars = []
     for _ in range(n):
         name = r.string()
@@ -186,7 +215,9 @@ def load_proto(r: Reader) -> Proto:
         p.locvars.append({"name": name, "startpc": startpc, "endpc": endpc})
 
     # debug: upvalue names
-    n = r.int_()
+    n = _read_count(r, "upvalue name", 1)
+    if n > len(p.upvalues):
+        raise ValueError(f"upvalue-name count {n} exceeds upvalue count {len(p.upvalues)}")
     for i in range(n):
         name = r.string()
         if i < len(p.upvalues):
@@ -206,13 +237,25 @@ def load_chunk(data: bytes) -> Proto:
         raise ValueError(f"expected Lua 5.3 (0x53), got {version:#x}")
     fmt = r.byte()
     luac_data = r._read(6)   # 0x19 0x93 0x0d 0x0a 0x1a 0x0a
+    if fmt != 0:
+        raise ValueError(f"unsupported Lua 5.3 chunk format {fmt}")
+    if luac_data != b"\x19\x93\x0d\x0a\x1a\x0a":
+        raise ValueError("Lua 5.3 header check bytes do not match; input may be wrapped or protected")
     r.int_size = r.byte()
     r.sizet_size = r.byte()
     r.instr_size = r.byte()
     r.lua_int_size = r.byte()
     r.lua_num_size = r.byte()
+    if r.int_size != 4 or r.instr_size != 4 or r.sizet_size not in (4, 8) or r.lua_int_size not in (4, 8) or r.lua_num_size not in (4, 8):
+        raise ValueError(
+            "unsupported Lua 5.3 field sizes: "
+            f"int={r.int_size}, size_t={r.sizet_size}, instruction={r.instr_size}, "
+            f"lua_Integer={r.lua_int_size}, lua_Number={r.lua_num_size}"
+        )
     _lua_int_check = r.lua_int()   # LUAC_INT  = 0x5678
     _lua_num_check = r.lua_num()   # LUAC_NUM  = 370.5
+    if _lua_int_check != 0x5678 or _lua_num_check != 370.5:
+        raise ValueError("Lua 5.3 integer/number format check failed; input may be endian-swapped or protected")
     # main upvalue count (upvalues field before main proto)
     _upval_count = r.byte()
     return load_proto(r)
@@ -830,6 +873,14 @@ def decompile_file(src: Path, dst: Path) -> dict:
         return {"ok": False, "error": f"Lua version {ver:#x} not 5.3 — only 5.3 supported"}
     try:
         src_text = decompile_bytes(data)
+        # A valid Lua chunk always contains executable instructions; header-only
+        # output is a parse artifact, not a successful decompile.
+        if not src_text.strip() or src_text.count("\n") < 2:
+            return {"ok": False, "error": "decompile produced no executable Lua source"}
+        if "-- Decompiled by ALVSIA PRO" in src_text and len(data) > 16:
+            body = src_text.split("\n\n", 1)[-1].strip()
+            if not body:
+                return {"ok": False, "error": "decompile produced an empty Lua body"}
     except Exception as e:
         return {"ok": False, "error": f"decompile failed: {e}"}
     dst.parent.mkdir(parents=True, exist_ok=True)

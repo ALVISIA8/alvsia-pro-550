@@ -71,16 +71,28 @@ object TelegramNotifier {
                 val ts = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
                 val safeDetail = detail.take(240).ifBlank { "No additional details" }
 
+                val severity = when (kind) {
+                    "SESSION_OK", "TOOL_OK" -> "GREEN / AUTHORIZED"
+                    "TOOL_ERROR", "ROOT", "DEBUG", "ENGINE_CAP" -> "AMBER / REVIEW"
+                    "TAMPER", "FRIDA", "SIG_BLOCK", "THREAT" -> "RED / SECURITY ALERT"
+                    else -> "INFO / EVENT"
+                }
                 val message = buildString {
-                    append("<b>").append(icons[kind] ?: "ℹ️")
-                    append(" ALVISIA PRO // ").append(html(kind)).append("</b>\n")
-                    append("<code>").append(html(ts)).append("</code>\n\n")
-                    append("🔑 Key: <code>").append(html(keyMask)).append("</code>\n")
-                    append("📱 Device: <code>").append(html(model)).append("</code> (SDK ")
-                        .append(Build.VERSION.SDK_INT).append(")\n")
-                    append("🔐 HWID: <code>").append(html(hwid)).append("…</code>\n")
-                    append("📋 Detail: <code>").append(html(safeDetail)).append("</code>\n")
-                    append("📦 Package: <code>").append(html(appContext.packageName)).append("</code>")
+                    append("<b>⟦ ALVISIA PRO // STEALTH COMMAND ⟧</b>\n")
+                    append("<code>━━━━━━━━━━━━━━━━━━━━</code>\n")
+                    append(icons[kind] ?: "ℹ️").append(" <b>STATUS:</b> <code>")
+                        .append(html(severity)).append("</code>\n")
+                    append("🛰 <b>EVENT:</b> <code>").append(html(kind)).append("</code>\n")
+                    append("🕒 <b>TIME:</b> <code>").append(html(ts)).append("</code>\n")
+                    append("<code>━━━━━━━━━━━━━━━━━━━━</code>\n")
+                    append("🔑 <b>SESSION:</b> <code>").append(html(keyMask)).append("</code>\n")
+                    append("📱 <b>DEVICE:</b> <code>").append(html(model)).append("</code> · API ")
+                        .append(Build.VERSION.SDK_INT).append("\n")
+                    append("🔐 <b>DEVICE ID:</b> <code>").append(html(hwid)).append("…</code>\n")
+                    append("⚙️ <b>OPERATION:</b> <code>").append(html(safeDetail)).append("</code>\n")
+                    append("📦 <b>PACKAGE:</b> <code>").append(html(appContext.packageName)).append("</code>\n")
+                    append("<code>━━━━━━━━━━━━━━━━━━━━</code>\n")
+                    append("<i>OWNER ALERT · NO PRECISE LOCATION COLLECTED</i>")
                 }
 
                 val payload = JSONObject()

@@ -12,7 +12,11 @@ EXPECTED_SEALED = {
     "alvsia_bridge_impl.alv",
     "alvsia_core.alv",
     "alvsia_ultimate.alv",
+    "alvsia_ultimate_compat.alv",
     "alvsia_features.alv",
+    "pinned_http.alv",
+    "lua_engine_lua_decompiler_final.alv",
+    "lua_engine_lua_protector.alv",
     "lua_output_validator.alv",
     "lua_string_recover.alv",
     "lua_engine_engine.alv",
@@ -25,7 +29,9 @@ EXPECTED_SEALED = {
     "lua_engine_vm_deobfuscator.alv",
 }
 PROTECTED_MODULES = {
-    "alvsia_bridge_impl", "alvsia_core", "alvsia_ultimate", "alvsia_features",
+    "alvsia_bridge_impl", "alvsia_core", "alvsia_ultimate", "alvsia_ultimate_compat",
+    "alvsia_features", "pinned_http", "lua_engine/lua_decompiler_final",
+    "lua_engine/lua_protector",
     "lua_output_validator", "lua_string_recover",
     "lua_engine/engine", "lua_engine/decompiler53", "lua_engine/bgmi",
     "lua_engine/luajit_decompiler", "lua_engine/container", "lua_engine/detector",
@@ -62,6 +68,8 @@ def main() -> int:
             check(not vcs_entries, "VCS revision metadata absent" if not vcs_entries else "VCS revision metadata absent; found: " + ", ".join(vcs_entries))
             dex_names = sorted(n for n in names if re.fullmatch(r"classes(?:[0-9]+)?\.dex", n))
             dex_bytes = b"".join(outer.read(n) for n in dex_names)
+            check(b"ALVISIA-20261010-MAIN-SEAL1" not in dex_bytes,
+                  "sealed build ID absent from plaintext DEX")
             check(b"com/securevale/" not in dex_bytes,
                   "recognizable SecureVale SDK classes absent from DEX")
             manifest = outer.read("AndroidManifest.xml") if "AndroidManifest.xml" in names else b""
@@ -85,6 +93,12 @@ def main() -> int:
                     check(not any("version-control-info.textproto" in n for n in inner.namelist()), "VCS metadata absent from Chaquopy bundle")
                     members = inner.namelist()
                     by_base = {Path(n).name: n for n in members}
+                    bridge_name = by_base.get("alvsia_bridge.py")
+                    bridge_bytes = inner.read(bridge_name) if bridge_name else b""
+                    check(bool(bridge_bytes) and len(bridge_bytes) < 2000,
+                          "plaintext bridge is a small bootstrap stub")
+                    check(b"import alvsia_bridge_impl as impl" in bridge_bytes and b"if mid == 1" not in bridge_bytes,
+                          "tool routing is not shipped in plaintext bridge")
                     missing = sorted(EXPECTED_SEALED - set(by_base))
                     check(not missing, "all protected Python payloads exist" if not missing else "missing sealed payloads: " + ", ".join(missing))
                     for name in sorted(EXPECTED_SEALED & set(by_base)):

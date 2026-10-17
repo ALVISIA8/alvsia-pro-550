@@ -34,7 +34,9 @@ workflow = read(ROOT / ".github/workflows/android-validation.yml")
 
 required_modules = {
     "alvsia_bridge_impl.py", "alvsia_core.py", "alvsia_ultimate.py",
-    "alvsia_features.py", "lua_output_validator.py", "lua_string_recover.py",
+    "alvsia_ultimate_compat.py", "alvsia_features.py", "pinned_http.py",
+    "lua_engine/lua_decompiler_final.py", "lua_engine/lua_protector.py",
+    "lua_output_validator.py", "lua_string_recover.py",
     "lua_engine/engine.py", "lua_engine/decompiler53.py", "lua_engine/bgmi.py",
     "lua_engine/luajit_decompiler.py", "lua_engine/container.py",
     "lua_engine/detector.py", "lua_engine/multi_format.py",
@@ -52,10 +54,22 @@ for rel in required_modules:
         fail.append("protected source missing from developer/test tree: " + rel)
 if "sealed_loader.install()" not in bridge or "ALVSIA_SEALED_RUNTIME" not in bridge:
     fail.append("bridge bootstrap does not install the sealed loader conditionally")
+if "def run_tool(" in bridge and "import alvsia_bridge_impl as impl" not in bridge:
+    fail.append("plaintext bridge must delegate tool routing to the sealed implementation")
+if len(bridge.encode("utf-8")) >= 2000 or "if mid == 1" in bridge:
+    fail.append("plaintext bridge must remain a small stub without module-routing logic")
+if "isTokenCurrent(token)" not in bridge:
+    fail.append("bridge must compare the supplied token with the authoritative Kotlin session")
+if "SessionGate.isSessionAuthorized()" not in loader:
+    fail.append("sealed imports must check the live Kotlin session gate")
+if "SessionGate.isSessionAuthorized()" not in read(PY / "alvsia_bridge_impl.py"):
+    fail.append("sealed tool dispatch must check the live Kotlin session gate")
 if "ALVSIA_SEAL_SEED" in tool_engine or "ALVSIA_SEAL_SEED" in loader:
     fail.append("seal seed must never be exposed through Python process environment")
-if "NativeGuard.decryptSealedPayload(raw, _BUILD_ID)" not in loader or "_CERT_SHA256" in loader:
-    fail.append("sealed loader must delegate authenticated decryption and keep certificate digest out of Python")
+if "sealBuildId()" not in loader or "_BUILD_ID" in loader or "_CERT_SHA256" in loader:
+    fail.append("sealed loader must obtain its build ID natively and keep certificate digest out of Python")
+if "fun sealBuildId(): String?" not in native_guard or "nativeSealBuildId" not in native:
+    fail.append("sealed build ID must be provided through the native bridge")
 if "fun decryptSealedPayload(payload: ByteArray, buildId: String)" not in native_guard or "nativeSealSeed()" not in native_guard:
     fail.append("Kotlin/native bridge must decrypt sealed payload without exposing the seed to Python")
 if "ALVSIA_SEALED_RUNTIME" not in tool_engine:

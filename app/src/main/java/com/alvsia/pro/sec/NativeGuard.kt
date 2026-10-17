@@ -37,6 +37,7 @@ object NativeGuard {
     private external fun nativeWipe(buf: ByteArray)
     private external fun nativeAntiDump(): Int
     private external fun nativeSealSeed(): ByteArray?
+    private external fun nativeSealBuildId(): String?
 
     // ── Public API ────────────────────────────────────────────────────
 
@@ -56,6 +57,13 @@ object NativeGuard {
             try { nativeWipe(buf); return } catch (_: Exception) {}
         }
         buf.fill(0)
+    }
+
+    /** Build identifier for sealed payloads, supplied by native code. */
+    @JvmStatic
+    fun sealBuildId(): String? {
+        if (!nativeLoaded) return null
+        return try { nativeSealBuildId()?.takeIf { it.isNotBlank() && it.length <= 128 } } catch (_: Throwable) { null }
     }
 
     /**
