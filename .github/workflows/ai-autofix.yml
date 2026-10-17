@@ -1,0 +1,137 @@
+name: ALVISIA AI Auto-Fix Proposal
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: "Describe the failing tool or error"
+        required: true
+        type: string
+      scope:
+        description: "Source area to inspect"
+        required: true
+        default: "full"
+        type: choice
+        options:
+          - full
+          - Kotlin
+          - Python
+          - Native
+          - Build and CI
+
+permissions:
+  contents: read
+
+jobs:
+  propose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout source without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Build a bounded source snapshot
+        env:
+          SCOPE: ${{ inputs.scope }}
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, subprocess
+          allowed = {".kt", ".kts", ".java", ".py", ".cpp", ".c", ".h", ".hpp", ".gradle", ".xml", ".yml", ".yaml", ".toml", ".properties", ".sh"}
+          excluded = {".git", ".gradle", "build", "outputs", "captures", "node_modules", ".idea"}
+          scope = os.environ.get("SCOPE", "full")
+          files = subprocess.check_output(["git", "ls-files", "-z"]).decode().split("\0")
+          out, total = [], 0
+          for name in files:
+              if not name: continue
+              p = pathlib.Path(name)
+              if p.suffix.lower() not in allowed or any(x in excluded for x in p.parts): continue
+              if any(x in p.name.lower() for x in ("secret", "credential", "token", "private_key", ".jks", ".keystore")): continue
+              if scope == "Kotlin" and p.suffix.lower() not in {".kt", ".kts", ".java"}: continue
+              if scope == "Python" and p.suffix.lower() != ".py": continue
+              if scope == "Native" and p.suffix.lower() not in {".cpp", ".c", ".h", ".hpp"}: continue
+              if scope == "Build and CI" and not (p.suffix.lower() in {".gradle", ".kts", ".yml", ".yaml", ".properties", ".sh"} or name.startswith(".github/")): continue
+              try: data = p.read_text(encoding="utf-8", errors="replace")
+              except Exception: continue
+              block = f"\n\n===== FILE: {name} =====\n{data}\n"
+              if total + len(block) > 50000:
+                  out.append("\n[Source snapshot truncated at 50000 characters]\n")
+                  break
+              out.append(block); total += len(block)
+          pathlib.Path("/tmp/alvisia-source.txt").write_text("".join(out), encoding="utf-8")
+          print(f"Prepared bounded source snapshot: {total} characters.")
+          PY
+
+      - name: Ask configured API for a minimal patch
+        env:
+          API_KEY: ${{ secrets.FREE_CHATGPT_API_KEY }}
+          API_BASE_URL: ${{ vars.FREE_CHATGPT_API_BASE_URL }}
+          API_MODEL: ${{ vars.FREE_CHATGPT_API_MODEL }}
+          ISSUE: ${{ inputs.issue }}
+          SCOPE: ${{ inputs.scope }}
+        run: |
+          test -n "$API_KEY" || { echo "::error::Missing FREE_CHATGPT_API_KEY repository secret."; exit 1; }
+          test -n "$API_BASE_URL" || { echo "::error::Missing FREE_CHATGPT_API_BASE_URL repository variable."; exit 1; }
+          case "$API_BASE_URL" in https://*) ;; *) echo "::error::API base URL must use HTTPS."; exit 1;; esac
+          python3 - <<'PY'
+          import json, os, pathlib, urllib.request, urllib.error
+          base = os.environ["API_BASE_URL"].rstrip("/")
+          v1 = base if base.endswith("/v1") else base + "/v1"
+          key = os.environ["API_KEY"]
+          def request(url, payload=None):
+              data = None if payload is None else json.dumps(payload).encode()
+              headers = {"Authorization": "Bearer " + key, "Accept": "application/json"}
+              if data is not None: headers["Content-Type"] = "application/json"
+              req = urllib.request.Request(url, data=data, headers=headers, method="GET" if data is None else "POST")
+              with urllib.request.urlopen(req, timeout=180) as response:
+                  return json.loads(response.read().decode("utf-8"))
+          model = os.environ.get("API_MODEL", "").strip()
+          if not model:
+              catalog = request(v1 + "/models")
+              ids = [m.get("id") for m in catalog.get("data", []) if isinstance(m, dict) and m.get("id")]
+              if not ids: raise SystemExit("No models returned; set FREE_CHATGPT_API_MODEL to a provider-supported model ID.")
+              model = next((m for m in ids if "gpt-4o-mini" in m.lower()), ids[0])
+          source = pathlib.Path("/tmp/alvisia-source.txt").read_text(encoding="utf-8")
+          prompt = f"""User issue: {os.environ.get('ISSUE', '')}
+          Scope: {os.environ.get('SCOPE', 'full')}
+          Act as a senior Android/Kotlin/Python/NDK engineer. Return ONLY a minimal unified diff compatible with git apply, or exactly NO_SAFE_PATCH. No markdown fences, commentary, or new files.
+          Modify only existing files included in the source. Never weaken or remove login, OTP, session authorization, operation grants, TLS/network security, RASP, integrity checks, or permission checks. Do not add covert telemetry or exfiltrate user/device data. Preserve unrelated behavior. If evidence is insufficient, return NO_SAFE_PATCH.
+          SOURCE:
+          {source}
+          """
+          payload = {"model": model, "messages": [{"role":"system","content":"Return only a valid minimal unified diff or NO_SAFE_PATCH."},{"role":"user","content":prompt}], "temperature":0.1}
+          try:
+              result = request(v1 + "/chat/completions", payload)
+          except urllib.error.HTTPError as e:
+              raise SystemExit(f"API HTTP {e.code}: {e.read(1000).decode('utf-8','replace')}")
+          answer = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+          if not isinstance(answer, str) or not answer.strip(): raise SystemExit("Unexpected empty API response.")
+          if answer.strip() == "NO_SAFE_PATCH":
+              pathlib.Path("AI_FIX_STATUS.md").write_text("# AI Auto-Fix Proposal\n\nNo safe patch was justified. No source files were changed.\n", encoding="utf-8")
+          elif answer.lstrip().startswith("```") or "diff --git " not in answer:
+              raise SystemExit("API did not return a raw unified diff; no source files were changed.")
+          else:
+              pathlib.Path("AI_FIX.patch").write_text(answer, encoding="utf-8")
+          print("Generated proposal response; API secret was not printed.")
+          PY
+
+      - name: Validate patch without applying it
+        run: |
+          if [ -f AI_FIX.patch ]; then
+            git apply --check AI_FIX.patch
+            echo "Patch syntax and context validation passed; source remains unchanged."
+          else
+            echo "No safe patch was generated."
+          fi
+
+      - name: Upload proposed patch
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: alvisia-ai-fix-proposal-${{ github.run_id }}
+          path: |
+            AI_FIX.patch
+            AI_FIX_STATUS.md
+          if-no-files-found: ignore
+          retention-days: 14
