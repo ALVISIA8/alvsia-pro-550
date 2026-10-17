@@ -1,6 +1,9 @@
 package com.alvsia.pro.tool
 
 import com.alvsia.pro.sec.SessionGate
+import android.content.Context
+import java.io.File
+import java.io.FileOutputStream
 
 /**
  * Safe reflection-based runner for Chaquopy Python bridge.
@@ -10,6 +13,7 @@ import com.alvsia.pro.sec.SessionGate
  */
 object PythonBridgeRunner {
     @Volatile private var startupError: String = "startup not attempted"
+    @Volatile private var appContext: Context? = null
 
     fun startupDiagnostic(): String = startupError
 
@@ -22,6 +26,7 @@ object PythonBridgeRunner {
     }
 
     fun startPlatform(app: android.app.Application) {
+        appContext = app.applicationContext
         startupError = "startup in progress"
         try {
             val pyClass = Class.forName("com.chaquo.python.Python")
@@ -49,6 +54,29 @@ object PythonBridgeRunner {
         }
     }
 
+    /** Stage the bundled Unluac jar into the Python engine's configured jars directory.
+     * The Python fallback only searches jarsDirPath, whereas Android assets are not
+     * filesystem paths. Keep this lazy and scoped to the Lua fallback dependency.
+     */
+    private fun ensureBundledUnluacJar(jarsDirPath: String): String? {
+        return try {
+            val context = appContext ?: return null
+            val dir = File(jarsDirPath)
+            if (!dir.exists() && !dir.mkdirs()) return null
+            val candidates = listOf("unluac_2025_12_23.jar", "unluac.jar")
+            candidates.map { File(dir, it) }.firstOrNull { it.isFile && it.length() > 1000 }?.let {
+                return it.absolutePath
+            }
+            val dest = File(dir, "unluac_2025_12_23.jar")
+            context.assets.open("unluac/unluac_2025_12_23.jar").use { source ->
+                FileOutputStream(dest).use { output -> source.copyTo(output) }
+            }
+            if (dest.isFile && dest.length() > 1000) dest.absolutePath else null
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
     fun runBridge(
         moduleId: Int,
         subId: String,
@@ -61,6 +89,10 @@ object PythonBridgeRunner {
             val pyClass = Class.forName("com.chaquo.python.Python")
             val isStarted = pyClass.getMethod("isStarted").invoke(null) as Boolean
             if (!isStarted) return false to listOf("... Python runtime not ready — native fallback")
+            val resolvedJarsDir = jarsDirPath.ifBlank {
+                File(appContext?.filesDir ?: File("/data/local/tmp"), "jars").absolutePath
+            }
+            val stagedUnluacJar = ensureBundledUnluacJar(resolvedJarsDir)
 
             val py = pyClass.getMethod("getInstance").invoke(null) ?: return false to listOf("... Python instance null")
             val getModule = pyClass.getMethod("getModule", String::class.java)
@@ -88,10 +120,11 @@ object PythonBridgeRunner {
             val rawResult = callAttr.invoke(
                 bridge,
                 "bridge_run_sub",
-                arrayOf<Any?>(moduleId, subId, inputPath, extraName ?: "", workDirPath, jarsDirPath)
+                arrayOf<Any?>(moduleId, subId, inputPath, extraName ?: "", workDirPath, resolvedJarsDir)
             )
             val log = rawResult?.toString().orEmpty()
-            val lines = log.split("\n").filter { it.isNotBlank() }
+            val lines = log.split("\n").filter { it.isNotBlank() }.toMutableList()
+            if (stagedUnluacJar != null) lines.add(0, "OK bundled Unluac available: $stagedUnluacJar")
             val bridgeFailed = log.contains("'ok': False") ||
                     lines.any { it.startsWith("X ") || it.startsWith("ERROR:") || it.startsWith("CRITICAL:") } ||
                     lines.none { it.startsWith("OK ") || it.startsWith("OUT ") || it.startsWith("> ") }
