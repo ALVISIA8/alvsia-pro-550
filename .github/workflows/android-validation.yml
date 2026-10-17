@@ -106,7 +106,7 @@ jobs:
           echo "APK SHA-256: $(sha256sum "$APK" | awk '{print $1}')"
 
       - name: Publish private draft validation release (avoids Actions artifact quota)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: alvsia-validation-${{ github.run_number }}
