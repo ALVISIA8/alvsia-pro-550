@@ -799,6 +799,53 @@ def run_rebrand_auto(input_path, out_dir, out_root=None):
     return run_rebrand_file(p, out_dir, out_root=out_root)
 
 
+def run_rebrand(input_path, out_dir, cfg_path=None, auto=False, out_root=None):
+    """Bridge entry: dispatch to file or tree based on input type.
+
+    Args:
+        input_path: .lua/.txt file OR unpacked directory tree
+        out_dir:    destination directory
+        cfg_path:   path to WORK/rebrand_config.txt (manual mode)
+        auto:       True = ALVSIA PRO defaults; False = read cfg_path overrides
+        out_root:   parent of WORK/ (used to locate rebrand_config.txt)
+
+    Returns: dict from run_rebrand_file or run_rebrand_tree.
+    """
+    p = Path(input_path) if input_path else None
+    if p is None or not p.exists():
+        return {"ok": False, "error": "input not found: %r" % input_path}
+
+    # Resolve out_root from explicit arg or derive from out_dir
+    if out_root is None:
+        out_root = Path(out_dir).parent  # OUT/REBRAND → OUT, then look for WORK sibling
+
+    if auto:
+        # Auto mode: ALVSIA PRO defaults, no manual config needed
+        return run_rebrand_auto(p, out_dir, out_root=out_root)
+
+    # Manual mode: try cfg_path; if not present, look for WORK/rebrand_config.txt
+    # under out_root (which is where _load_rebrand_config looks).
+    if cfg_path:
+        cfg_file = Path(cfg_path)
+        if cfg_file.is_file():
+            # _load_rebrand_config expects the file at <out_root>/WORK/rebrand_config.txt
+            # If the caller passed a different path, copy it to that location
+            # so the existing loader picks it up.
+            target_work_dir = Path(out_root) / "WORK"
+            target_work_dir.mkdir(parents=True, exist_ok=True)
+            target = target_work_dir / "rebrand_config.txt"
+            if cfg_file.resolve() != target.resolve():
+                try:
+                    target.write_text(cfg_file.read_text(encoding="utf-8"),
+                                      encoding="utf-8")
+                except Exception:
+                    pass  # best-effort; loader will fall back to defaults
+    # Dispatch to file or tree handler (both call _load_rebrand_config internally)
+    if p.is_dir():
+        return run_rebrand_tree(p, out_dir, out_root=out_root)
+    return run_rebrand_file(p, out_dir, out_root=out_root)
+
+
 # ── Missing features added for full 17-module coverage ──────────────────────
 
 def run_lua_analyze(input_path, out_dir):

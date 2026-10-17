@@ -7,7 +7,7 @@
 
 ## Overview
 
-ALVSIA PRO is a hardened Android toolkit for PAK/OBB/Lua file analysis and manipulation. It ships with a 7-layer RASP security stack, AES-256-GCM session encryption backed by Android Keystore TEE, TLS 1.3 certificate pinning, and a full 17-module tool catalog.
+ALVSIA PRO is a hardened Android toolkit for PAK/OBB/Lua file analysis and manipulation. It ships with a 7-layer RASP security stack, AES-256-GCM session encryption backed by Android Keystore TEE, TLS 1.3 certificate pinning, and a full **18-module** tool catalog including VM-style Lua protection + deobfuscation.
 
 ## Build — CodeMagic
 
@@ -61,6 +61,7 @@ bash RELEASE_SIGN_TERMUX.sh
 | 15 | String Recover | Obfuscated string restore · constant pool dump · XRef |
 | 16 | Lua Inject | Patch bytecode · inject hook function · mod repack |
 | 17 | Anti-RE Audit | APK · LUA · SO posture analysis report |
+| 18 | Lua Protector | AES-256-GCM encrypt · VM-style BGMI-pattern protect · VM deobfuscate |
 
 ## Security Architecture
 
@@ -70,7 +71,8 @@ bash RELEASE_SIGN_TERMUX.sh
 - **TLS Pinning** — SPKI SHA-256 pin · blocks MITM in release builds
 - **Integrity Bomb** — cert SHA-256 · DEX count · clone container check
 - **Frida Probe** — `/proc/maps` · port 27042 · hook package scan
-- **OTP Gate** — Telegram delivery · session token rotation after verify
+- **Key Gate** — panel key login · HMAC-tagged session token rotation
+- **Strike Counter** — HMAC-SHA256 integrity tag · max 3 strikes
 
 ## Output Structure
 

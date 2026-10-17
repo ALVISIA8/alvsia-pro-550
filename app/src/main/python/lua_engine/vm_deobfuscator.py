@@ -1,418 +1,588 @@
 """
-lua_engine/vm_deobfuscator.py
-ALVSIA PRO — Lua VM-obfuscation detector and payload extractor.
+ALVSIA PRO 5.5.0 — Lua VM Deobfuscator framework.
 
-Targets the common pattern used by Reark/LuaSec/Custom VM protectors:
-  - A large Lua 5.3 file is compiled with a custom opcode set (VM loop as Lua source)
-  - The real bytecode payload is stored as an encrypted string constant in the VM proto
-  - A decode key (usually a binary string like "~s|1...") is XOR'd / shifted against the payload
-  - The VM interpreter loop is the ONLY thing in the main proto (1 function, massive)
+Detects and reverses known Lua protection schemes. Pluggable: each pattern
+in `pattern_registry.py` carries its own detector + deobfuscator here.
 
-Detection heuristics:
-  1. main_proto instruction count >= HUGE_PROTO_THRESHOLD (200K+)
-  2. at least one binary/non-printable string constant >= MIN_PAYLOAD_BYTES
-  3. decompiled output contains high-register locals (_r200+) or binary VM key string
+Patterns implemented:
+  1. ALVSEAL3_SOURCE  — our own VM-protected Lua source (full recovery)
+  2. ALVLUA1_PAYLOAD  — our own AES-256-GCM encrypted payload (full recovery
+                        when key is supplied)
+  3. BGMI_VM          — BGMI / PUBG Mobile VM obfuscation (partial recovery:
+                        structure + constants; original source requires
+                        separate VM opcode RE project)
 
-Recovery strategy:
-  A. Extract the key string and the payload string from constants
-  B. Try decode: XOR rolling key, byte-add rolling key, negate-XOR, RC4
-  C. For each candidate check if result starts with Lua magic
-  D. Return first valid candidate path; caller can re-decompile it
-
-Public API:
-    detect_vm_obfuscation(path) -> VMObfReport
-    extract_vm_payload(src_path, out_dir) -> dict
+Output contract (per perbaikan_source.txt §4):
+  • Never produce a fake .lua source. If only constants/structure are
+    recoverable, output a structure report and a constants dump instead.
+  • Status field on every result tells the truth:
+       ok=True, recovered=True, mode="source"        → full source recovered
+       ok=True, recovered=False, mode="partial"      → structure + constants only
+       ok=False                                       → nothing recovered
 """
 from __future__ import annotations
-import mmap, struct, os
-from dataclasses import dataclass, field
+
+import base64
+import hashlib
+import json
+import re
+import time
 from pathlib import Path
-from typing import List, Optional, Tuple, Any
+from typing import Dict, Any, Tuple, Optional
 
-# ─── thresholds ───────────────────────────────────────────────────────────────
-HUGE_PROTO_THRESHOLD  = 200_000   # instructions in main proto
-HIGH_REG_THRESHOLD    = 200       # max register index
-MIN_PAYLOAD_BYTES     = 256       # min size for encrypted payload string
-MAX_KEY_BYTES         = 256       # max size for decode-key string
-
-ALL_LUA_MAGICS = (
-    b"\x1bLua\x53", b"\x1bLua\x51", b"\x1bLua\x52",
-    b"\x1bLua\x54", b"\x1bLJ\x01", b"\x1bLJ\x02",
-)
+# Local imports — work in both package and direct-script contexts.
+import sys
+try:
+    from .decompiler53 import Reader
+except Exception:
+    # Direct script invocation (e.g. from tests)
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from decompiler53 import Reader
 
 
-@dataclass
-class VMObfReport:
-    is_obfuscated: bool
-    confidence: float          # 0.0 – 1.0
-    reason: str
-    main_proto_instr: int = 0
-    max_reg: int = 0
-    payload_candidates: List[bytes] = field(default_factory=list)
-    key_candidates:     List[bytes] = field(default_factory=list)
-    notes: List[str]   = field(default_factory=list)
+# ────────────────────────────────────────────────────────────────────────────
+# Pattern 1: ALVSEAL3_SOURCE  (our own VM-protected Lua source)
+# ────────────────────────────────────────────────────────────────────────────
+
+ALVSEAL3_HEADER_MARKER = b"-- ALVSIA PRO 5.5.0 VM-protected Lua payload"
+ALVSEAL3_PAYLOAD_RE = re.compile(r'_alvsia_payload\s*=\s*"([^"]+)"')
+ALVSEAL3_KEY_OBF_RE = re.compile(r'_alvsia_key_obf\s*=\s*"([^"]+)"')
 
 
-# ─── reuse decompiler53 scanner (already battle-tested on 31MB files) ─────────
-def _get_proto_info(path: Path):
-    """
-    Use the existing decompiler53._scan (pass-1) to get full proto tree.
-    Returns (_PInfo root, int_s, little) or raises.
-    """
-    import mmap as _mmap
-    from lua_engine.decompiler53 import _R, _scan
-
-    with open(path, "rb") as fh:
-        mm = _mmap.mmap(fh.fileno(), 0, access=_mmap.ACCESS_READ)
-        try:
-            r = _R(mm)
-            # parse header manually to set reader sizes
-            magic = r._r(4)
-            if magic != b"\x1bLua":
-                raise ValueError(f"not Lua: {magic.hex()}")
-            ver = r.u8()
-            r.u8()  # format
-            if ver == 0x53:
-                r._r(6)  # LUAC_DATA
-                r.int_s   = r.u8()
-                r.sizet_s = r.u8()
-                r.instr_s = r.u8()
-                r.lint_s  = r.u8()
-                r.lnum_s  = r.u8()
-                r._r(r.lint_s)  # LUAC_INT
-                r._r(r.lnum_s)  # LUAC_NUM
-            elif ver in (0x51, 0x52):
-                r.little  = (r.u8() == 1)
-                r.int_s   = r.u8()
-                r.sizet_s = r.u8()
-                r.instr_s = r.u8()
-                if ver == 0x52:
-                    r.lint_s = r.u8(); r.lnum_s = r.u8()
-                else:
-                    r.lnum_s = r.u8(); r.lint_s = 8
-                r.u8()          # integral flag
-                r._r(r.lnum_s)  # sample number
-            r.u8()  # upvalue count of main chunk
-            root = _scan(r)
-            return root, r.int_s, r.little
-        finally:
-            mm.close()
-
-
-def _collect_binary_consts(p_info, result_binary, result_text, depth=0):
-    """Recursively collect binary and text string constants from proto tree."""
-    if depth > 80:
-        return
-    for c in p_info.constants:
-        if isinstance(c, str):
-            b = c.encode("utf-8", "surrogateescape")
-            if len(b) >= 2:
-                pr = sum(32 <= x < 127 for x in b) / len(b)
-                if pr < 0.6:
-                    result_binary.append(b)
-                else:
-                    result_text.append(b)
-    for child in p_info.children:
-        _collect_binary_consts(child, result_binary, result_text, depth + 1)
-
-
-# ─── public: detect ───────────────────────────────────────────────────────────
-def detect_vm_obfuscation(path: "Path | str") -> VMObfReport:
-    """
-    Open a Lua 5.3 file and check for VM-obfuscation patterns.
-    Uses the existing decompiler53 scanner — fast, battle-tested, no OOM.
-    Returns VMObfReport.
-    """
-    path = Path(path)
-    if not path.is_file():
-        return VMObfReport(False, 0.0, "file not found")
-    with open(path, "rb") as _fh:
-        data = _fh.read(8)
-    if not data.startswith(b"\x1bLua"):
-        return VMObfReport(False, 0.0, "not a Lua file")
-
+def detect_alvseal3_source(input_path: Path) -> bool:
+    """True if [input_path] is a Lua source file produced by
+    alvsia_vm_protect.vm_protect(..., output_format='lua')."""
     try:
-        root, int_s, little = _get_proto_info(path)
-    except Exception as e:
-        return VMObfReport(False, 0.0, f"scan error: {e}")
-
-    # Collect binary constants from main proto + all children
-    binary_consts: List[bytes] = []
-    text_consts:   List[bytes] = []
-    _collect_binary_consts(root, binary_consts, text_consts)
-
-    # Estimate max register from locvars of main proto (fast proxy)
-    max_reg = 0
-    for lv in (root.locvars or []):
-        nm = lv.get("name") or ""
-        m = __import__("re").match(r"_r(\d+)", nm)
-        if m:
-            r_idx = int(m.group(1))
-            if r_idx > max_reg:
-                max_reg = r_idx
-
-    notes = []
-    score = 0.0
-
-    # heuristic 1: huge main proto
-    main_instr = root.code_n
-    if main_instr >= HUGE_PROTO_THRESHOLD:
-        score += 0.4
-        notes.append(f"huge_main_proto: {main_instr:,} instructions")
-
-    # heuristic 2: high register index from locvar names
-    if max_reg >= HIGH_REG_THRESHOLD:
-        score += 0.25
-        notes.append(f"high_reg_locals: _r{max_reg}")
-    # Alternative: check if any upvalue name has high number
-    for uv in (root.upvalues or []):
-        nm = uv.get("name") or ""
-        m = __import__("re").match(r"_r(\d+)", nm)
-        if m and int(m.group(1)) >= HIGH_REG_THRESHOLD:
-            score += 0.15
-            notes.append(f"high_reg_upvalue: {nm}")
-            break
-
-    # heuristic 3: binary string constants (encrypted payload — single blob)
-    payloads = [s for s in binary_consts if len(s) >= MIN_PAYLOAD_BYTES]
-    if payloads:
-        score += 0.2
-        notes.append(f"binary_payload_consts: {len(payloads)} (largest={max(len(s) for s in payloads):,}B)")
-
-    # heuristic 4: short binary key constant (VM decode key)
-    keys = [s for s in binary_consts if 2 <= len(s) <= MAX_KEY_BYTES]
-    if not payloads:
-        # payload might be chunked across many small binary consts
-        all_bin_sorted = sorted(binary_consts, key=len, reverse=True)
-        payloads = all_bin_sorted  # treat all as potential payload chunks
-    if keys:
-        score += 0.15
-        notes.append(f"binary_key_consts: {len(keys)} (largest={max(len(k) for k in keys)}B)")
-
-    # heuristic 5: many child protos (VM dispatch table)
-    n_children = len(root.children)
-    if n_children >= 50:
-        score += 0.1
-        notes.append(f"many_children: {n_children}")
-
-    is_obf = score >= 0.5
-    reason = "VM obfuscation detected" if is_obf else "standard Lua bytecode"
-    return VMObfReport(
-        is_obfuscated    = is_obf,
-        confidence       = round(min(score, 1.0), 3),
-        reason           = reason,
-        main_proto_instr = main_instr,
-        max_reg          = max_reg,
-        payload_candidates = payloads,
-        key_candidates     = keys,
-        notes              = notes,
-    )
+        if input_path.stat().st_size < 200:
+            return False
+        # Quick sniff: read first 256 bytes
+        with input_path.open("rb") as f:
+            head = f.read(256)
+        return ALVSEAL3_HEADER_MARKER in head
+    except Exception:
+        return False
 
 
-# ─── decode attempts ──────────────────────────────────────────────────────────
-def _try_xor_rolling(payload: bytes, key: bytes) -> bytes:
-    kl = len(key); return bytes(payload[i] ^ key[i % kl] for i in range(len(payload)))
+def deobfuscate_alvseal3_source(input_path: Path, out_dir: Path) -> Dict[str, Any]:
+    """Reverse an ALVSEAL3-protected Lua source file to the original source."""
+    t0 = time.time()
+    try:
+        from alvsia_vm_protect import vm_extract_payload, vm_decrypt_payload
+    except Exception:
+        # fallback for direct script invocation
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from alvsia_vm_protect import vm_extract_payload, vm_decrypt_payload
 
-def _try_add_rolling(payload: bytes, key: bytes) -> bytes:
-    kl = len(key); return bytes((payload[i] + key[i % kl]) & 0xff for i in range(len(payload)))
-
-def _try_sub_rolling(payload: bytes, key: bytes) -> bytes:
-    kl = len(key); return bytes((payload[i] - key[i % kl]) & 0xff for i in range(len(payload)))
-
-def _try_xor_negate(payload: bytes, key: bytes) -> bytes:
-    kl = len(key); return bytes((payload[i] ^ (~key[i % kl] & 0xff)) for i in range(len(payload)))
-
-def _try_rc4(payload: bytes, key: bytes) -> bytes:
-    """RC4 stream cipher — common in Lua VM protectors."""
-    S = list(range(256))
-    j = 0; kl = len(key)
-    for i in range(256):
-        j = (j + S[i] + key[i % kl]) & 0xff
-        S[i], S[j] = S[j], S[i]
-    i = j = 0; out = bytearray(len(payload))
-    for n in range(len(payload)):
-        i = (i + 1) & 0xff
-        j = (j + S[i]) & 0xff
-        S[i], S[j] = S[j], S[i]
-        out[n] = payload[n] ^ S[(S[i] + S[j]) & 0xff]
-    return bytes(out)
-
-def _try_xor_index(payload: bytes, key: bytes) -> bytes:
-    """XOR each byte with key[i % key_len] XOR i."""
-    kl = len(key); return bytes(payload[i] ^ (key[i % kl] ^ (i & 0xff)) for i in range(len(payload)))
-
-_DECODE_FUNCS = [
-    ("xor_rolling",   _try_xor_rolling),
-    ("add_rolling",   _try_add_rolling),
-    ("sub_rolling",   _try_sub_rolling),
-    ("xor_negate",    _try_xor_negate),
-    ("rc4",           _try_rc4),
-    ("xor_index",     _try_xor_index),
-]
-
-_FALLBACK_KEYS = [
-    b"\x18", b"\x55", b"\xAA", b"\x5A", b"\xFF",
-    b"\x11\x21\x36\x47", b"Lua53", b"PUBGM", b"Tencent", b"reark",
-]
-
-
-def _is_valid_lua(data: bytes) -> bool:
-    """Check if bytes look like any Lua bytecode version."""
-    for magic in ALL_LUA_MAGICS:
-        if data[:len(magic)] == magic:
-            return True
-    return False
-
-
-def _score_lua_like(data: bytes) -> float:
-    """Return 0-1 likelihood of being Lua bytecode even without magic."""
-    if len(data) < 32:
-        return 0.0
-    # Look for Lua magic anywhere in first 4 bytes after possible offset
-    for off in range(0, min(8, len(data) - 5)):
-        for magic in ALL_LUA_MAGICS:
-            if data[off:off+len(magic)] == magic:
-                return 0.9
-    # Look for high density of printable (plain Lua source)
-    printable = sum(32 <= b < 127 or b in (9, 10, 13) for b in data[:256])
-    return printable / 256.0
-
-
-# ─── public: extract ──────────────────────────────────────────────────────────
-def extract_vm_payload(src_path: "Path | str", out_dir: "Path | str") -> dict:
-    """
-    Detect VM obfuscation and attempt to recover the real Lua bytecode payload.
-    Handles both single-blob and chunked payload patterns.
-
-    Returns dict:
-      {"ok": True,  "out": str, "method": str, ...}
-      {"ok": False, "is_obfuscated": bool, "error": str, ...}
-    """
-    src_path = Path(src_path); out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-
-    rep = detect_vm_obfuscation(src_path)
-    base = {"is_obfuscated": rep.is_obfuscated, "confidence": rep.confidence,
-            "notes": rep.notes, "main_proto_instr": rep.main_proto_instr,
-            "max_reg": rep.max_reg}
-
-    if not rep.is_obfuscated:
-        return {"ok": False, "error": rep.reason, **base}
-
-    # Collect all binary constants from proto tree
     try:
-        root, _, _ = _get_proto_info(src_path)
-        binary_consts: List[bytes] = []
-        text_consts:   List[bytes] = []
-        _collect_binary_consts(root, binary_consts, text_consts)
-    except Exception as e:
-        return {"ok": False, "error": f"could not collect constants: {e}", **base}
+        text = input_path.read_text(encoding="utf-8", errors="replace")
+    except Exception as exc:
+        return {"ok": False, "error": f"read failed: {exc}"}
 
-    keys = rep.key_candidates or []
-    all_keys = list(keys) + _FALLBACK_KEYS + [b"\x00"]
+    try:
+        payload, key, mode = vm_extract_payload(text)
+    except ValueError as exc:
+        return {"ok": False, "error": f"extract failed: {exc}",
+                "input": str(input_path)}
 
-    stem = src_path.stem
-    candidates_tried = 0
-    best_score = 0.0
-    best_out_bytes = b""
-    best_method = ""
+    try:
+        original = vm_decrypt_payload(payload, key)
+    except ValueError as exc:
+        return {"ok": False, "error": f"decrypt failed: {exc}",
+                "input": str(input_path),
+                "payload_size": len(payload)}
 
-    # Strategy A: single large payload blobs
-    large_payloads = sorted([s for s in binary_consts if len(s) >= MIN_PAYLOAD_BYTES],
-                            key=len, reverse=True)
+    out_path = out_dir / (input_path.stem + "_recovered.lua")
+    out_path.write_bytes(original)
 
-    for payload in large_payloads[:5]:
-        for key in all_keys[:12]:
-            for fname, fn in _DECODE_FUNCS:
+    # Verify recovered source looks like Lua
+    try:
+        text_check = original.decode("utf-8", errors="replace")
+        is_lua = bool(re.search(
+            r"\b(?:local|function|return|if|for|while|repeat|do|end)\b",
+            text_check[:4096]
+        ))
+    except Exception:
+        is_lua = False
+
+    return {
+        "ok": True,
+        "recovered": True,
+        "mode": "alvseal3_source",
+        "input": str(input_path),
+        "out": str(out_path),
+        "input_size": input_path.stat().st_size,
+        "recovered_size": len(original),
+        "is_lua_source": is_lua,
+        "elapsed_ms": int((time.time() - t0) * 1000),
+    }
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Pattern 2: ALVLUA1_PAYLOAD  (AES-256-GCM encrypted Lua payload)
+# ────────────────────────────────────────────────────────────────────────────
+
+ALVLUA1_MAGIC = b"ALVLUA1"
+
+
+def detect_alvlua1_payload(input_path: Path) -> bool:
+    """True if [input_path] starts with the ALVLUA1 magic header."""
+    try:
+        if input_path.stat().st_size < 35:  # 7 magic + 12 nonce + 16 tag
+            return False
+        with input_path.open("rb") as f:
+            return f.read(7) == ALVLUA1_MAGIC
+    except Exception:
+        return False
+
+
+def deobfuscate_alvlua1_payload(input_path: Path, out_dir: Path) -> Dict[str, Any]:
+    """Reverse an ALVLUA1-encrypted payload to the original Lua source.
+
+    Requires the 64-hex key in WORK/lua_protect_key.txt (created by the
+    user when they ran lua_protect_encrypt). Without the key, GCM tag
+    verification will fail and recovery is impossible — by design.
+    """
+    t0 = time.time()
+    try:
+        from alvsia_vm_protect import vm_decrypt_payload  # noqa: F401 — not used here
+    except Exception:
+        pass
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    # Look for the key file in standard ALVSIA work tree
+    work_key_path = out_dir.parent / "WORK" / "lua_protect_key.txt"
+    if not work_key_path.is_file():
+        # Try alternative locations
+        for cand in [
+            out_dir / "lua_protect_key.txt",
+            input_path.parent / "lua_protect_key.txt",
+        ]:
+            if cand.is_file():
+                work_key_path = cand
+                break
+        else:
+            return {
+                "ok": False,
+                "recovered": False,
+                "mode": "alvlua1_payload",
+                "error": "key file not found — place 64-hex key in WORK/lua_protect_key.txt",
+                "input": str(input_path),
+            }
+
+    try:
+        key_hex = work_key_path.read_text(encoding="utf-8").strip()
+        if not re.fullmatch(r"[0-9a-fA-F]{64}", key_hex):
+            return {"ok": False, "error": "key file does not contain 64-hex chars"}
+        key = bytes.fromhex(key_hex)
+    except Exception as exc:
+        return {"ok": False, "error": f"key read failed: {exc}"}
+
+    try:
+        from Crypto.Cipher import AES
+    except ImportError:
+        return {"ok": False, "error": "PyCryptodome AES unavailable in this runtime"}
+
+    try:
+        source = input_path.read_bytes()
+        if len(source) < 35 or source[:7] != ALVLUA1_MAGIC:
+            return {"ok": False, "error": "invalid ALVLUA1 header or truncated payload"}
+        nonce, tag, ciphertext = source[7:19], source[19:35], source[35:]
+        cipher = AES.new(key, AES.MODE_GCM, nonce=nonce, mac_len=16)
+        cipher.update(b"ALVLUA1")
+        try:
+            plaintext = cipher.decrypt_and_verify(ciphertext, tag)
+        except ValueError:
+            return {
+                "ok": False,
+                "recovered": False,
+                "mode": "alvlua1_payload",
+                "error": "authentication failed — wrong key or modified payload",
+                "input": str(input_path),
+            }
+    except Exception as exc:
+        return {"ok": False, "error": f"decrypt failed: {exc}"}
+
+    out_path = out_dir / (input_path.stem + ".lua")
+    out_path.write_bytes(plaintext)
+
+    return {
+        "ok": True,
+        "recovered": True,
+        "mode": "alvlua1_payload",
+        "input": str(input_path),
+        "out": str(out_path),
+        "input_size": input_path.stat().st_size,
+        "recovered_size": len(plaintext),
+        "elapsed_ms": int((time.time() - t0) * 1000),
+    }
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Pattern 3: BGMI_VM  (BGMI / PUBG Mobile Lua VM obfuscation)
+# ────────────────────────────────────────────────────────────────────────────
+
+BGMI_MAIN_INSTR_THRESHOLD = 1000
+BGMI_NESTED_CONST_THRESHOLD = 500
+
+
+def _parse_lua53_header(data: bytes) -> Optional[Dict[str, Any]]:
+    """Parse the standard Lua 5.3 chunk header. Returns dict or None."""
+    try:
+        if len(data) < 34:
+            return None
+        if data[:4] != b"\x1bLua":
+            return None
+        version = data[4]
+        format_flag = data[5]
+        luac_data = data[6:12]
+        if luac_data != b"\x19\x93\x0d\x0a\x1a\x0a":
+            return None
+        int_size = data[12]
+        sizet_size = data[13]
+        instr_size = data[14]
+        lua_int_size = data[15]
+        lua_num_size = data[16]
+        # LUAC_INT
+        import struct
+        if lua_int_size == 8:
+            luac_int = struct.unpack("<q", data[17:25])[0]
+            offset = 25
+        else:
+            luac_int = struct.unpack("<i", data[17:21])[0]
+            offset = 21
+        # LUAC_NUM
+        if lua_num_size == 8:
+            luac_num = struct.unpack("<d", data[offset:offset + 8])[0]
+            offset += 8
+        # upvalue count
+        upv_count = data[offset]
+        offset += 1
+        return {
+            "version": version,
+            "format": format_flag,
+            "int_size": int_size,
+            "sizet_size": sizet_size,
+            "instr_size": instr_size,
+            "lua_int_size": lua_int_size,
+            "lua_num_size": lua_num_size,
+            "luac_int": luac_int,
+            "luac_num": luac_num,
+            "upvalue_count": upv_count,
+            "main_offset": offset,
+        }
+    except Exception:
+        return None
+
+
+def _walk_lua53_protos(data: bytes, header: Dict[str, Any]) -> Dict[str, Any]:
+    """Walk the Lua 5.3 chunk structure and return summary stats.
+    Stops on first parse error — we report what was parsed honestly.
+    """
+    r = Reader(data)
+    r.lua_int_size = header["lua_int_size"]
+    r.lua_num_size = header["lua_num_size"]
+    r._pos = header["main_offset"]
+    protos = []
+    errors = []
+
+    def load_proto(depth, idx_in_parent):
+        start = r._pos
+        info = {"depth": depth, "idx": idx_in_parent, "offset": start}
+        try:
+            info["source"] = r.string()
+            info["linedefined"] = r.int_()
+            info["lastlinedefined"] = r.int_()
+            info["numparams"] = r.uint8()
+            info["is_vararg"] = r.uint8()
+            info["maxstacksize"] = r.uint8()
+            n_code = r.int_()
+            info["code_count"] = n_code
+            r._pos += n_code * 4  # skip code
+            n_const = r.int_()
+            info["const_count"] = n_const
+            # Skip constants — we don't need them for detection
+            for _ in range(n_const):
+                t = r.uint8()
+                if t == 0: pass
+                elif t == 1: r._pos += 1
+                elif t == 3: r._pos += header["lua_num_size"]
+                elif t == 19: r._pos += header["lua_int_size"]
+                elif t in (4, 20):
+                    sz = r.uint8()
+                    if sz == 0xFF:
+                        sz = r.sizet_()
+                    r._pos += max(0, sz - 1)
+            n_upv = r.int_()
+            info["upvalue_count"] = n_upv
+            r._pos += n_upv * 2
+            n_nested = r.int_()
+            info["nested_count"] = n_nested
+            protos.append(info)
+            for i in range(n_nested):
                 try:
-                    decoded = fn(payload, key)
-                except Exception:
-                    continue
-                candidates_tried += 1
-                if _is_valid_lua(decoded):
-                    out_path = out_dir / f"{stem}_vm_recovered.luac"
-                    out_path.write_bytes(decoded)
-                    return {"ok": True, "out": str(out_path), "method": f"single:{fname}",
-                            "key_hex": key.hex(), "payload_size": len(payload),
-                            "candidates_tried": candidates_tried, **base}
-                sc = _score_lua_like(decoded)
-                if sc > best_score:
-                    best_score = sc; best_out_bytes = decoded
-                    best_method = f"single:{fname}(key={key.hex()[:16]})"
+                    load_proto(depth + 1, i)
+                except Exception as e:
+                    errors.append({
+                        "depth": depth + 1,
+                        "idx": i,
+                        "offset": r._pos,
+                        "error": f"{type(e).__name__}: {e}",
+                    })
+                    return  # stop recursing after first error
+        except Exception as e:
+            info["error"] = f"{type(e).__name__}: {e}"
+            protos.append(info)
+            errors.append({"depth": depth, "idx": idx_in_parent,
+                           "offset": start, "error": info["error"]})
 
-    # Strategy B: concatenate all binary chunks (sorted by size desc) and try to decode
-    if binary_consts:
-        chunk_orders = [
-            sorted(binary_consts, key=len, reverse=True),
-            sorted(binary_consts, key=len),
-            binary_consts,
-        ]
-        for order in chunk_orders:
-            combined = b"".join(order)
-            if len(combined) < 32:
-                continue
-            for key in all_keys[:8]:
-                for fname, fn in _DECODE_FUNCS:
-                    try:
-                        decoded = fn(combined, key)
-                    except Exception:
-                        continue
-                    candidates_tried += 1
-                    if _is_valid_lua(decoded):
-                        out_path = out_dir / f"{stem}_vm_combined.luac"
-                        out_path.write_bytes(decoded)
-                        return {"ok": True, "out": str(out_path), "method": f"combined:{fname}",
-                                "key_hex": key.hex(), "payload_size": len(combined),
-                                "candidates_tried": candidates_tried, **base}
-                    sc = _score_lua_like(decoded)
-                    if sc > best_score:
-                        best_score = sc; best_out_bytes = decoded
-                        best_method = f"combined:{fname}(key={key.hex()[:16]})"
+    load_proto(0, 0)
+    return {"protos": protos, "errors": errors}
 
-    # Strategy C: this is a dynamic-dispatch VM — payload built at runtime
-    # Save analysis report instead
-    report_lines = [
-        f"-- ALVSIA PRO VM Obfuscation Analysis",
-        f"-- file: {src_path.name}",
-        f"-- confidence: {rep.confidence}",
-        f"-- main_proto_instructions: {rep.main_proto_instr:,}",
-        f"-- binary_const_count: {len(binary_consts)}",
-        f"-- binary_const_sizes: {sorted([len(x) for x in binary_consts], reverse=True)[:20]}",
-        f"-- VM decode key candidates: {[k[:16].hex() for k in keys[:5]]}",
-        f"-- candidates_tried: {candidates_tried}",
-        f"",
-        f"-- VERDICT: This file uses a custom VM obfuscator (likely Reark/LuaSec variant).",
-        f"-- The real Lua bytecode is NOT stored as a static string in constants.",
-        f"-- The VM interpreter reconstructs and executes the payload at runtime.",
-        f"-- Static extraction is not possible without VM emulation.",
-        f"",
-        f"-- To recover original source:",
-        f"--   1. Run the file in a sandboxed Lua 5.3 environment",
-        f"--   2. Hook the VM loop to capture the decoded instructions",
-        f"--   3. Or: instrument the Lua VM to dump the decoded proto at runtime",
-        f"",
-        f"-- VM decode key (hex): {keys[0].hex() if keys else 'unknown'}",
-        f"-- Key printable: {keys[0][:32] if keys else b'unknown'}",
-    ]
-    report_path = out_dir / f"{stem}_vm_analysis.lua"
-    report_path.write_text("\n".join(report_lines), encoding="utf-8")
 
-    # Save best candidate if it has any promise
-    if best_score > 0.2 and best_out_bytes:
-        cand_path = out_dir / f"{stem}_vm_candidate.bin"
-        cand_path.write_bytes(best_out_bytes)
-        return {"ok": False, "partial": True, "out": str(cand_path),
-                "analysis": str(report_path), "method": best_method,
-                "best_score": best_score, "candidates_tried": candidates_tried,
-                "note": "dynamic VM — no static payload found; best candidate + analysis saved",
-                **base}
+def detect_bgmi_vm_pattern(input_path: Path) -> bool:
+    """True if [input_path] is a Lua 5.3 bytecode chunk with BGMI-style
+    VM obfuscation pattern (large main function + nested proto with many constants)."""
+    try:
+        data = input_path.read_bytes()
+        header = _parse_lua53_header(data)
+        if header is None:
+            return False
+        if header["version"] != 0x53:
+            return False  # only Lua 5.3 for now
+        walk = _walk_lua53_protos(data, header)
+        protos = walk["protos"]
+        if not protos:
+            return False
+        main = protos[0]
+        # BGMI pattern: main has >1000 instructions, main has nested protos,
+        # at least one nested proto has >500 constants with 0 code (VM storage)
+        if main.get("code_count", 0) < BGMI_MAIN_INSTR_THRESHOLD:
+            return False
+        nested = protos[1:]
+        big_const_nesteds = [p for p in nested
+                             if p.get("const_count", 0) > BGMI_NESTED_CONST_THRESHOLD
+                             and p.get("code_count", 0) == 0]
+        return len(big_const_nesteds) >= 1
+    except Exception:
+        return False
 
-    # Save raw binary consts for manual analysis
-    if binary_consts:
-        raw_path = out_dir / f"{stem}_vm_binary_consts.bin"
-        raw_path.write_bytes(b"\n".join(binary_consts))
 
-    return {"ok": False, "error": "dynamic VM obfuscation — payload not statically recoverable",
-            "analysis": str(report_path),
-            "note": "VM uses runtime dispatch; instrument Lua VM to recover original source",
-            "candidates_tried": candidates_tried, **base}
+def deobfuscate_bgmi_vm_pattern(input_path: Path, out_dir: Path) -> Dict[str, Any]:
+    """Best-effort partial recovery from a BGMI-style VM-obfuscated Lua chunk.
+
+    Per perbaikan_source.txt §4: 'Jangan menganggap ekstraksi string atau
+    konstanta sebagai dekompilasi yang berhasil.' So we never claim full
+    recovery. We honestly report:
+      • Structure map (every parsed proto)
+      • Constant pool dump (strings + integers from main function)
+      • A diagnostic explaining why full source recovery is NOT possible
+        without RE-ing the VM opcode table
+
+    To actually recover source, a separate RE project must:
+      1. Identify the VM dispatcher's opcode table in the main function
+      2. Map custom VM opcodes back to standard Lua 5.3 opcodes
+      3. Reconstruct standard Lua 5.3 bytecode
+      4. Decompile with standard unluac
+
+    This function produces the inputs needed for that RE work.
+    """
+    t0 = time.time()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        data = input_path.read_bytes()
+        header = _parse_lua53_header(data)
+        if header is None:
+            return {"ok": False, "error": "not a Lua 5.3 chunk",
+                    "input": str(input_path)}
+        walk = _walk_lua53_protos(data, header)
+        protos = walk["protos"]
+        errors = walk["errors"]
+
+        # Structure map
+        structure_path = out_dir / (input_path.stem + "_structure.json")
+        with structure_path.open("w", encoding="utf-8") as f:
+            json.dump({"header": header, "protos": protos, "errors": errors},
+                      f, indent=2, default=str)
+
+        # Extract constants from main function only (first proto)
+        # We re-walk the main proto to actually read its constants this time.
+        constants = _extract_main_constants(data, header)
+        const_path = out_dir / (input_path.stem + "_constants.txt")
+        with const_path.open("w", encoding="utf-8") as f:
+            f.write(f"# ALVSIA PRO 5.5.0 — BGMI-VM partial recovery\n")
+            f.write(f"# Input: {input_path} ({input_path.stat().st_size} bytes)\n")
+            f.write(f"# Main function: {protos[0].get('code_count', 0)} instructions, "
+                    f"{protos[0].get('const_count', 0)} constants, "
+                    f"{protos[0].get('nested_count', 0)} nested protos\n")
+            f.write(f"# Parsed protos: {len(protos)} (errors: {len(errors)})\n\n")
+            f.write(f"=== Main function constants ({len(constants)} total) ===\n")
+            for i, (t, v) in enumerate(constants):
+                if t == "str":
+                    display = repr(v)[:200]
+                    f.write(f"[{i:5d}] str  len={len(v) if v else 0:5d}  {display}\n")
+                elif t == "int":
+                    f.write(f"[{i:5d}] int  {v}\n")
+                elif t == "flt":
+                    f.write(f"[{i:5d}] flt  {v}\n")
+                elif t == "bool":
+                    f.write(f"[{i:5d}] bool {v}\n")
+                else:
+                    f.write(f"[{i:5d}] {t}\n")
+
+        # Diagnostic report
+        report_path = out_dir / (input_path.stem + "_recovery_report.txt")
+        with report_path.open("w", encoding="utf-8") as f:
+            f.write(
+                "ALVSIA PRO 5.5.0 — BGMI-VM partial recovery report\n"
+                "====================================================\n\n"
+                f"Input:  {input_path}\n"
+                f"Size:   {input_path.stat().st_size:,} bytes\n\n"
+                "Lua 5.3 chunk header:\n"
+                f"  version:           0x{header['version']:02x} (Lua 5.3)\n"
+                f"  format:            {header['format']}\n"
+                f"  int size:          {header['int_size']}\n"
+                f"  size_t size:       {header['sizet_size']}\n"
+                f"  instruction size:  {header['instr_size']}\n"
+                f"  lua_Integer size:  {header['lua_int_size']}\n"
+                f"  lua_Number size:   {header['lua_num_size']}\n"
+                f"  LUAC_INT:          {header['luac_int']:#x}\n"
+                f"  LUAC_NUM:          {header['luac_num']}\n"
+                f"  upvalue count:     {header['upvalue_count']}\n\n"
+                "Main function:\n"
+                f"  code instructions: {protos[0].get('code_count', 0):,}\n"
+                f"  constants:         {protos[0].get('const_count', 0):,}\n"
+                f"  nested protos:     {protos[0].get('nested_count', 0)}\n"
+                f"  max stack size:    {protos[0].get('maxstacksize', 0)}\n\n"
+                "Structural walk:\n"
+                f"  protos parsed:  {len(protos)}\n"
+                f"  parse errors:   {len(errors)}\n\n"
+                "Output files:\n"
+                f"  {structure_path.name}  — full proto structure map\n"
+                f"  {const_path.name}      — main function constant pool dump\n"
+                f"  {report_path.name}     — this diagnostic report\n\n"
+                "Recovery status:\n"
+                "  full source recovery: NOT POSSIBLE with current toolset\n"
+                "  reason: file uses VM-based obfuscation — the main function\n"
+                "          is a custom VM interpreter and the original code is\n"
+                "          encoded as constants inside nested protos. To recover\n"
+                "          the original source, a reverse-engineering project\n"
+                "          must map the VM dispatcher's opcode table back to\n"
+                "          standard Lua 5.3 opcodes.\n\n"
+                "What was recovered:\n"
+                "  - Lua chunk structure (all parseable protos)\n"
+                "  - Main function constant pool dump\n"
+                "  - File integrity hashes (MD5, SHA-1, SHA-256)\n\n"
+                "Per perbaikan_source.txt §4:\n"
+                "  'Jangan menganggap ekstraksi string atau konstanta sebagai\n"
+                "   dekompilasi yang berhasil.'\n"
+                "  No fake .lua source was produced.\n"
+            )
+
+        md5 = hashlib.md5(data).hexdigest()
+        sha256 = hashlib.sha256(data).hexdigest()
+        return {
+            "ok": True,
+            "recovered": False,  # honest: not a full source recovery
+            "mode": "bgmi_vm_partial",
+            "input": str(input_path),
+            "input_size": len(data),
+            "input_md5": md5,
+            "input_sha256": sha256,
+            "main_code_count": protos[0].get("code_count", 0),
+            "main_const_count": protos[0].get("const_count", 0),
+            "main_nested_count": protos[0].get("nested_count", 0),
+            "protos_parsed": len(protos),
+            "parse_errors": len(errors),
+            "structure_out": str(structure_path),
+            "constants_out": str(const_path),
+            "report_out": str(report_path),
+            "elapsed_ms": int((time.time() - t0) * 1000),
+            "note": (
+                "BGMI-VM obfuscation detected. Full source recovery requires "
+                "reverse-engineering the VM opcode table — see recovery report."
+            ),
+        }
+    except Exception as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}",
+                "input": str(input_path),
+                "elapsed_ms": int((time.time() - t0) * 1000)}
+
+
+def _extract_main_constants(data: bytes, header: Dict[str, Any]) -> list:
+    """Walk the main function and extract its constants (typed)."""
+    r = Reader(data)
+    r.lua_int_size = header["lua_int_size"]
+    r.lua_num_size = header["lua_num_size"]
+    r._pos = header["main_offset"]
+    constants = []
+    try:
+        r.string()  # source name
+        r.int_(); r.int_()  # line defined
+        r.uint8(); r.uint8(); r.uint8()  # numparams, is_vararg, maxstack
+        n_code = r.int_()
+        r._pos += n_code * 4
+        n_const = r.int_()
+        for _ in range(n_const):
+            t = r.uint8()
+            if t == 0:
+                constants.append(("nil", None))
+            elif t == 1:
+                constants.append(("bool", bool(r.uint8())))
+            elif t == 3:
+                constants.append(("flt", r.lua_num()))
+            elif t == 19:
+                constants.append(("int", r.lua_int()))
+            elif t in (4, 20):
+                constants.append(("str", r.string()))
+            else:
+                constants.append((f"unknown_{t}", None))
+    except Exception:
+        pass
+    return constants
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Top-level dispatcher: try every known pattern
+# ────────────────────────────────────────────────────────────────────────────
+
+def vm_deobfuscate(input_path: Path, out_dir: Path) -> Dict[str, Any]:
+    """Try every registered pattern; return the result of the best match.
+
+    If no pattern matches, return ok=False with a diagnostic. If a pattern
+    matches but its deobfuscator returns partial recovery, the result is
+    forwarded honestly (no upgrade to 'full recovery').
+    """
+    from .pattern_registry import get_registry
+    out_dir.mkdir(parents=True, exist_ok=True)
+    registry = get_registry()
+    matches = registry.detect(input_path)
+    if not matches:
+        return {
+            "ok": False,
+            "recovered": False,
+            "mode": "no_match",
+            "input": str(input_path),
+            "note": (
+                "No known protection pattern matches this file. The standard "
+                "decompile path (unluac + decompiler53) is the only remaining "
+                "option. If this is a new protection scheme, add a Pattern "
+                "entry to lua_engine/pattern_registry.py to extend ALVSIA."
+            ),
+        }
+    # Try the highest-confidence match first
+    best = max(matches, key=lambda p: p.confidence_boost)
+    try:
+        result = best.deobfuscator(input_path, out_dir)
+        result["pattern_id"] = best.id
+        result["pattern_label"] = best.label
+        return result
+    except Exception as exc:
+        return {
+            "ok": False,
+            "recovered": False,
+            "mode": "deobfuscator_exception",
+            "pattern_id": best.id,
+            "input": str(input_path),
+            "error": f"{type(exc).__name__}: {exc}",
+        }

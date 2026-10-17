@@ -113,6 +113,15 @@ class ToolEngine(private val context: Context) {
             val reason = e.message?.removePrefix("BLOCKED:") ?: "gate_fail"
             return listOf("X Session blocked: $reason — re-login required")
         }
+        // Pre-tool permission check (zero-confirmation: no app-side dialog)
+        if (com.alvsia.pro.sec.PermissionManager.isBlocked(context, toolId)) {
+            val summary = com.alvsia.pro.sec.PermissionManager.statusSummary(context, toolId)
+            return listOf(
+                "X Permissions BLOCKED for tool $toolId",
+                "status: $summary",
+                "Grant the missing permission(s) via system Settings and retry."
+            )
+        }
         return runSub(toolId, "mod_$toolId", inputUri, extraName)
     }
 
@@ -122,6 +131,15 @@ class ToolEngine(private val context: Context) {
         } catch (e: SecurityException) {
             val reason = e.message?.removePrefix("BLOCKED:") ?: "gate_fail"
             return listOf("X Session blocked: $reason — re-login required")
+        }
+        // Pre-tool permission check (zero-confirmation: no app-side dialog)
+        if (com.alvsia.pro.sec.PermissionManager.isBlocked(context, moduleId)) {
+            val summary = com.alvsia.pro.sec.PermissionManager.statusSummary(context, moduleId)
+            return listOf(
+                "X Permissions BLOCKED for module $moduleId",
+                "status: $summary",
+                "Grant the missing permission(s) via system Settings and retry."
+            )
         }
         WorkPaths.bindApp(context)
         WorkPaths.readme(context)
@@ -158,7 +176,39 @@ class ToolEngine(private val context: Context) {
                     lines.add("OK OUT -> ${WorkPaths.moduleOut(moduleId).absolutePath}")
                     return lines
                 }
-                lines.add("... ART unluac failed, trying Python bridge")
+                // Large-file path: hand off to Python streaming decompiler.
+                // This is mandatory for inputs ≥ ART_SAFE_LIMIT because the
+                // in-process unluac deliberately rejects them.
+                lines.add("... ART unluac produced no output, trying Python bridge")
+                if (PythonBridgeRunner.isReady()) {
+                    try {
+                        val (bridgeOk, bridgeLines) = PythonBridgeRunner.runBridge(
+                            moduleId = moduleId,
+                            subId = subId,
+                            inputPath = inputPath,
+                            extraName = null,
+                            workDirPath = WorkPaths.alvsiaRoot().absolutePath,
+                            jarsDirPath = jarsDir.absolutePath
+                        )
+                        lines.addAll(bridgeLines)
+                        mirrorMsvToOut(moduleId, lines)
+                        if (bridgeOk && outFile.isFile && outFile.length() > 0) {
+                            lines.add("OK Python streaming decompiler -> ${outFile.absolutePath}")
+                            lines.add("bytes ${outFile.length()}")
+                            return lines
+                        }
+                        if (!bridgeOk) {
+                            lines.add("X DECOMPILE FAILED: ART unluac + Python streaming both produced no validated Lua source")
+                            lines.add("Input preserved under IN/; no fake .lua output was created")
+                            lines.add("Check unluac class/JAR compatibility and Chaquopy startup diagnostics")
+                            return lines
+                        }
+                    } catch (e: Exception) {
+                        lines.add("... Python bridge error during large Lua decompile: ${e.message ?: e.javaClass.simpleName}")
+                    }
+                } else {
+                    lines.add("... Python runtime not ready — Chaquopy diagnostic: ${PythonBridgeRunner.startupDiagnostic()}")
+                }
             }
         }
 

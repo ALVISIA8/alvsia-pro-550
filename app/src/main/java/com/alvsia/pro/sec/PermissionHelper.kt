@@ -19,7 +19,7 @@ import androidx.core.content.ContextCompat
  * - READ_PHONE_STATE              (HWID derivation)
  *
  * Call requestAll(activity) once from the first screen the user sees after login.
- * No OTP, no blocking dialog chain — all permissions fire simultaneously.
+ * No confirmation dialogs from the app — all permissions fire simultaneously.
  */
 object PermissionHelper {
 

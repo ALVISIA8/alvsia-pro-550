@@ -83,7 +83,7 @@ object WorkPaths {
         try {
             f.writeText(
                 """
-                ALVSIA PREMIUM TOOL 4.6 ? modern I/O
+                ALVSIA PREMIUM TOOL 5.5.0 - modern I/O
                 ====================================
                 Root: Download/ALVSIA/
 
@@ -93,8 +93,8 @@ object WorkPaths {
 
                 Modules: PAK OBB LUA ASSET STRINGS UE RENAME HASH SM4 INTEGRITY PATCH REPORT
 
-                Key: @ALVSIA_PRO
-                OTP: @OriginalOnwerALV
+                Key:  @ALVSIA_PRO
+                Owner: @OriginalOnwerALV
                 """.trimIndent()
             )
         } catch (_: Exception) {

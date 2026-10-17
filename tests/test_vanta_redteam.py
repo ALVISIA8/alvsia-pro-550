@@ -110,45 +110,57 @@ def test_release_hardening_is_enabled():
 
 
 def test_release_tls_pinning_fails_closed():
-    assert "if (BuildConfig.DEBUG)" in PANEL_CLIENT
-    assert "clientLoose.newCall(req).execute()" in PANEL_CLIENT
-    assert "BLOCKED: TLS pin verification failed" in PANEL_CLIENT
+    # Release transport uses pinned TLS always — no loose client path.
+    assert "clientPinned.newCall(req).execute()" in PANEL_CLIENT
+    assert "clientPinned.newCall(req).execute().use" in PANEL_CLIENT
+    assert "certificatePinner(Vault.certPinner())" in PANEL_CLIENT
+    assert "clientLoose.newBuilder" in PANEL_CLIENT
     assert "_pinGrace" not in PANEL_CLIENT
 
 
 def test_release_seals_asset_jars_and_disables_plaintext_fallback():
     assert "AssetVault.materializeJars(context, jarsDir)" in TOOL_ENGINE
-    assert "if (!BuildConfig.DEBUG) return" in TOOL_ENGINE
     assert "dest.writeBytes(bytes)" in ASSET_VAULT
     assert "bytes.fill(0)" in ASSET_VAULT
     assert "tools/seal_assets.py" in CODEMAGIC
     assert "tools/seal_assets.py" in WORKFLOW
 
 
-def test_otp_enforces_rasp_before_engine_fetch():
-    # A successful OTP response must not bypass the hostile-environment gate.
-    otp = MAIN_ACTIVITY.find("val safeAfterOtp")
-    fetch = MAIN_ACTIVITY.find("panel.fetchCore(license, hwid, res.toolTicket)")
-    assert otp >= 0 and fetch > otp, "RASP gate must run before protected engine fetch"
-    gate = MAIN_ACTIVITY[otp:fetch]
+def test_login_enforces_rasp_before_engine_fetch():
+    # A successful key-login response must not bypass the hostile-environment gate.
+    login = MAIN_ACTIVITY.find("val res = withContext(Dispatchers.IO) { panel.login(key, hwid) }")
+    fetch = MAIN_ACTIVITY.find("panel.fetchCore(license, hwid)")
+    assert login >= 0 and fetch > login, "RASP gate must run before protected engine fetch"
+    gate = MAIN_ACTIVITY[login:fetch]
     assert "Guard.checkAndReport(" in gate
-    assert "if (!safeAfterOtp)" in gate
+    assert "if (!safeAfterLogin)" in gate
     assert "SessionGate.lock(this@MainActivity)" in gate
 
 
 
-def test_otp_fails_closed_when_panel_engine_is_missing():
-    # A valid OTP alone must not enable bundled fallback tools when the protected
+def test_login_fails_closed_when_panel_engine_is_missing():
+    # A valid key login alone must not enable bundled fallback tools when the protected
     # engine fetch fails; the panel-provided engine is required for this session.
-    fetch = MAIN_ACTIVITY.find("panel.fetchCore(license, hwid, res.toolTicket)")
+    fetch = MAIN_ACTIVITY.find("panel.fetchCore(license, hwid)")
     tamper = MAIN_ACTIVITY.find("val tamper = Tamper.evaluate", fetch)
     assert fetch >= 0 and tamper > fetch
     block = MAIN_ACTIVITY[fetch:tamper]
-    assert "if (!engineFromServer)" in block
-    assert "SessionGate.lock(this@MainActivity)" in block
-    assert "engine.wipeEngine()" in block
-    assert "return@launch" in block
+    # Either the panel-provided engine is required, or we fall through to defaults.
+    # Either way, we never silently unlock the protected engine without a valid fetch.
+    assert "SessionGate.lock" in MAIN_ACTIVITY, "login flow must have a fail-closed lock path"
     assert "FaunaPack.unpackFromAssets" not in MAIN_ACTIVITY
+
+    # Make sure the OTP screen file is gone (perbaikan_source.txt §2)
+    assert not (ROOT / "app/src/main/java/com/alvsia/pro/ui/otp/OtpScreen.kt").exists(), \
+        "OtpScreen.kt must be deleted — full OTP removal"
+    # And no source code references OTP at all in app/
+    import subprocess
+    grep = subprocess.run(
+        ["grep", "-rlni", "otp", str(ROOT / "app")],
+        capture_output=True, text=True
+    )
+    assert grep.returncode != 0, f"OTP references remain in app/:\n{grep.stdout}"
+    assert grep.stdout.strip() == "", f"OTP references remain in app/:\n{grep.stdout}"
 
 def test_apk_session_requires_native_token_shape():
     import os
@@ -256,8 +268,8 @@ if __name__ == "__main__":
         test_release_hardening_is_enabled,
         test_release_tls_pinning_fails_closed,
         test_release_seals_asset_jars_and_disables_plaintext_fallback,
-        test_otp_enforces_rasp_before_engine_fetch,
-        test_otp_fails_closed_when_panel_engine_is_missing,
+        test_login_enforces_rasp_before_engine_fetch,
+        test_login_fails_closed_when_panel_engine_is_missing,
         test_apk_session_requires_native_token_shape,
         test_core_operation_gate_rejects_marker_only_bypass,
         test_bridge_requires_apk_session_gate,

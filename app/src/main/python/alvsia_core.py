@@ -1,7 +1,7 @@
 """ALVSIA PRO 5.5 — pure PAK core (non-interactive).
 
 Source: cleaned PakCore engine. Branding ALVSIA.
-Auth: ALVSIA_APK_SESSION=1 bypasses RSA operation proof (panel OTP already verified).
+Auth: ALVSIA_APK_SESSION=1 bypasses RSA operation proof (panel key login already verified).
 """
 from __future__ import annotations
 from __future__ import annotations
@@ -184,7 +184,7 @@ def _alvsia_clear_operation_proof():
 
 def _alvsia_require_operation(allowed_operations):
     import os as _os
-    # Panel login+OTP already done in native APK / Termux gate
+    # Panel key login already done in native APK / Termux gate
     if _os.environ.get('ALVSIA_APK_SESSION') == '1':
         return True
     p = _ALVSIA_CORE_ACTIVE_PROOF

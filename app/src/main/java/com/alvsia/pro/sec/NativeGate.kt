@@ -9,11 +9,11 @@ import java.io.File
  */
 object NativeGate {
 
-    /** Set true after successful OTP unlock — skips timing loop for tool calls */
+    /** Set true after successful key-login session unlock — skips timing loop for tool calls */
     @Volatile var sessionUnlocked: Boolean = false
 
     fun preCheck(): Boolean {
-        // After a successful OTP session, skip the heavy timing check.
+        // After a successful key-login session, skip the heavy timing check.
         // The timing check is still enforced on first unlock path.
         if (sessionUnlocked) {
             if (tracerPidNonZero()) return false

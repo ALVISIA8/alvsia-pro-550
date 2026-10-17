@@ -45,7 +45,6 @@ class PanelClient {
         private set
     private var lastLicense: String = ""
     private var lastHwid: String = ""
-    private var toolTicket: String = ""  // unused after OTP removal, kept for compat
     private val cookieStore = ConcurrentHashMap<String, MutableList<Cookie>>()
 
     private val jar = object : CookieJar {
@@ -166,7 +165,6 @@ class PanelClient {
     fun fetchCore(
         license: String = lastLicense,
         hwid: String = lastHwid,
-        ticket: String = toolTicket,
     ): FetchResult {
         return try {
             ensureGate()
@@ -174,7 +172,6 @@ class PanelClient {
                 .put("license", license)
                 .put("hwid", hwid)
                 .put("session_token", sessionToken)
-                .put("tool_ticket", ticket)
                 .toString()
             var bytes = postJsonBytes(base() + Vault.pathFetch(), fetchJson)
             if (bytes == null) {
@@ -184,7 +181,6 @@ class PanelClient {
                         "license" to license,
                         "hwid" to hwid,
                         "session_token" to sessionToken,
-                        "tool_ticket" to ticket,
                     )
                 )
             }

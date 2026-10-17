@@ -89,6 +89,8 @@ object SubMenus {
                 "Select file → OUT/LUA/*.xor"),
             SubTool("lua_multi_xor",   "Multi-XOR Probe",    "Candidate scan",
                 "Select file → OUT/LUA/*_xor_*.bin"),
+            SubTool("lua_vm_deobfuscate", "VM Deobfuscate",  "Auto-detect & reverse Lua protection (ALVSEAL3/ALVLUA1/BGMI-VM)",
+                "Select protected .lua/.luac/.alvlua → OUT/LUA/*_recovered.lua or partial recovery report"),
         )
 
         // ── 6 File Scan ───────────────────────────────────────────────────
@@ -222,7 +224,9 @@ object SubMenus {
             SubTool("lua_protect_encrypt", "Protect Lua Source", "AES-256-GCM authenticated encryption",
                 "Create WORK/lua_protect_key.txt with a 64-character hex key. Select .lua → OUT/LPROTECT/*.alvlua"),
             SubTool("lua_protect_decrypt", "Restore Protected Lua", "Authenticate and decrypt an ALVLUA1 payload",
-                "Use the same WORK/lua_protect_key.txt and select .alvlua → OUT/LPROTECT/*.lua")
+                "Use the same WORK/lua_protect_key.txt and select .alvlua → OUT/LPROTECT/*.lua"),
+            SubTool("lua_vm_protect", "VM Protect (BGMI pattern)", "Self-executing VM-obfuscated Lua source",
+                "Select .lua source → OUT/LPROTECT/*.alvlua3.lua (self-executing; reversible via module 05 / VM Deobfuscate)")
         )
 
         else -> emptyList()

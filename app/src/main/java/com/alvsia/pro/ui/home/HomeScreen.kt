@@ -77,8 +77,28 @@ fun HomeScreen(
     onTool: (ToolItem) -> Unit
 ) {
     val ctx = LocalContext.current
+    // NOTE: per ALVSIA PRO 5.5.0 per-tool permission policy (perbaikan_source.txt §5),
+    // we do NOT fire all runtime permissions at HomeScreen appearance. Permissions
+    // are requested just-in-time, scoped to the tool the user actually opens.
+    // POST_NOTIFICATIONS (owner alert delivery) is the only startup-time grant
+    // request — it is a normal permission and produces at most one OS dialog.
     LaunchedEffect(Unit) {
-        (ctx as? Activity)?.let { PermissionHelper.requestAll(it) }
+        (ctx as? Activity)?.let {
+            try {
+                if (android.os.Build.VERSION.SDK_INT >= 33) {
+                    val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+                        it, android.Manifest.permission.POST_NOTIFICATIONS
+                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                    if (!granted) {
+                        androidx.core.app.ActivityCompat.requestPermissions(
+                            it,
+                            arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                            550
+                        )
+                    }
+                }
+            } catch (_: Exception) { }
+        }
     }
     DisposableEffect(Unit) {
         try { PulseAudio.start(ctx) } catch (_: Exception) {}

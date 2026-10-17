@@ -83,12 +83,21 @@ class MainActivity : ComponentActivity() {
                 // Never copy/decrypt JAR assets on Compose's main thread.
                 val engine = remember { ToolEngine(ctx) }
                 LaunchedEffect(engine) {
-                    withContext(Dispatchers.IO) {
-                        try {
-                            engine.installJarsFromAssets()
-                        } catch (_: Exception) {
-                            // ToolEngine retries installation on the IO dispatcher when a tool runs.
+                    // Bound jar installation so a stuck asset extraction cannot
+                    // block tool dispatch indefinitely. ToolEngine still
+                    // retries lazily on first run.
+                    try {
+                        kotlinx.coroutines.withTimeout(10_000L) {
+                            withContext(Dispatchers.IO) {
+                                try {
+                                    engine.installJarsFromAssets()
+                                } catch (_: Exception) {
+                                    // ToolEngine retries installation on the IO dispatcher when a tool runs.
+                                }
+                            }
                         }
+                    } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
+                        // install will retry on first tool run; not fatal
                     }
                 }
 
@@ -122,7 +131,7 @@ class MainActivity : ComponentActivity() {
                         screen = "login"
                     }
 
-                    // ── LOGIN — key only, no OTP ──────────────────────────────────────
+                    // ── LOGIN — key-only authentication ─────────────────────────────
                     "login" -> LoginScreen(
                         hwidFull = hwid,
                         hwidShort = hwid.take(16),
@@ -178,7 +187,7 @@ class MainActivity : ComponentActivity() {
 
                                 // Fetch core bundle from panel using session_token
                                 val fetch = withContext(Dispatchers.IO) {
-                                    panel.fetchCore(license, hwid, res.sessionToken)
+                                    panel.fetchCore(license, hwid)
                                 }
                                 val data = fetch.data
                                 var engineFromServer = false
@@ -354,6 +363,29 @@ class MainActivity : ComponentActivity() {
                 } // AnimatedContent
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Invalidate permission cache so a revoke-while-backgrounded state
+        // is detected immediately.
+        try {
+            com.alvsia.pro.sec.PermissionManager.onResume(this)
+        } catch (_: Exception) { }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        // Let the per-tool PermissionManager resume a pending tool if its
+        // permission just got granted. This is the ONLY confirmation flow
+        // the user sees (the OS runtime dialog).
+        try {
+            com.alvsia.pro.sec.PermissionManager.onPermissionResult(this, requestCode, grantResults)
+        } catch (_: Exception) { }
     }
 
     override fun onDestroy() {

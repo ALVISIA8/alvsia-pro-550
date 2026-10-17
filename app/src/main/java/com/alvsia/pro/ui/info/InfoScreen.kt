@@ -226,7 +226,7 @@ fun InfoScreen(onBack: () -> Unit) {
                     "Memory Guard      ptrace · /proc/mem foreign-pid detect",
                     "Frida Probe       /proc/maps · port 27042 · pkg scan",
                     "Anti-Dump         native nativeAntiDump() call",
-                    "OTP Gate          Telegram delivery · session rotation",
+                    "Key Gate          panel key login · HMAC session rotation",
                     "Strike Counter    HMAC-SHA256 integrity tag · max 2 strikes"
                 )
                 Column(Modifier.fillMaxWidth()) {

@@ -249,6 +249,30 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
             dest_lua = out_dir("LUA")
             if sid == "lua_decompile":
                 if not need_file(): return "\n".join(lines)
+                # Use the streaming decompiler for large files (>8 MiB) so we
+                # never OOM on inputs that the in-process ART unluac rejects.
+                try:
+                    in_size = Path(ip).stat().st_size
+                except Exception:
+                    in_size = 0
+                if in_size > 8 * 1024 * 1024:
+                    try:
+                        from lua_engine.streaming_decompiler import decompile_large
+                        r = decompile_large(Path(ip), dest_lua, jars_dir=jars)
+                        r.setdefault("lines", 0)
+                        r.setdefault("mode", "streaming_fallback")
+                        if r.get("ok"):
+                            lines.append("OK mode=%s lines=%s" % (r.get("mode","?"), r.get("lines",0)))
+                            lines.append("OUT -> %s" % r.get("out","(see OUT/LUA/)"))
+                            if r.get("note"):
+                                lines.append("NOTE: %s" % r.get("note"))
+                            if r.get("container"):
+                                lines.append("OK container=%s" % r.get("container"))
+                            return "\n".join(lines)
+                        # fall through to run_lua_smart as second attempt
+                        lines.append("... streaming decompiler produced no output, trying run_lua_smart")
+                    except Exception as exc:
+                        lines.append("... streaming decompiler exception: %s" % exc)
                 r = feat.run_lua_smart(ip, dest_lua, jars_dir=jars)
                 if r.get("ok"):
                     lines.append("OK mode=%s lines=%s" % (r.get("mode","?"), r.get("lines",0)))
@@ -286,6 +310,44 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                 r = feat.run_lua_multi_xor(ip, dest_lua)
                 lines.append(str(r))
                 return "\n".join(lines)
+            if sid == "lua_vm_deobfuscate":
+                # Module 05 / VM Deobfuscate — auto-detect known protection patterns
+                # (ALVSEAL3, ALVLUA1, BGMI-VM, ...) and extract what's recoverable.
+                try:
+                    from lua_engine.vm_deobfuscator import vm_deobfuscate
+                    from lua_engine.pattern_registry import list_patterns
+                    r = vm_deobfuscate(Path(ip), dest_lua)
+                    patterns = list_patterns()
+                    lines.append("ALVSIA VM Deobfuscator — %d patterns registered" % len(patterns))
+                    for p in patterns:
+                        lines.append("  · %-18s %s" % (p["id"], p["label"]))
+                    lines.append("")
+                    if r.get("ok"):
+                        lines.append("OK pattern matched: %s" % r.get("pattern_id", "?"))
+                        lines.append("  label: %s" % r.get("pattern_label", ""))
+                        lines.append("  mode:  %s" % r.get("mode", ""))
+                        if r.get("recovered"):
+                            lines.append("OK source recovered -> %s" % r.get("out", ""))
+                            lines.append("  recovered size: %d bytes" % r.get("recovered_size", 0))
+                            lines.append("  is_lua_source:    %s" % r.get("is_lua_source", False))
+                        else:
+                            lines.append("NOTE partial recovery only — see output files")
+                            for k in ("structure_out", "constants_out", "report_out"):
+                                if r.get(k):
+                                    lines.append("  -> %s" % r[k])
+                            if r.get("note"):
+                                lines.append("NOTE %s" % r["note"])
+                    else:
+                        lines.append("X deobfuscate failed: %s" % r.get("error", "unknown"))
+                        if r.get("note"):
+                            lines.append("NOTE %s" % r["note"])
+                    lines.append("elapsed_ms=%s" % r.get("elapsed_ms", 0))
+                    return "\n".join(lines)
+                except Exception as exc:
+                    lines.append("X VM deobfuscate exception: %s" % (str(exc)[:400] or type(exc).__name__))
+                    import traceback as _tb
+                    lines.append(_tb.format_exc()[:1200])
+                    return "\n".join(lines)
 
         # ── 6  File Scan ─────────────────────────────────────────────────
         if mid == 6 or sid in ("string_scan", "hash_scan"):
@@ -296,7 +358,9 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                 lines.append(str(r))
                 return "\n".join(lines)
             if sid == "hash_scan":
-                r = feat.run_hash_file(ip, dest_sc)
+                # run_hash_file expects an output FILE path (not a directory)
+                dest_hash = dest_sc / (Path(ip).stem + "_hash.txt")
+                r = feat.run_hash_file(ip, dest_hash)
                 lines.append(str(r))
                 return "\n".join(lines)
 
@@ -550,9 +614,35 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                 return "\n".join(lines)
 
         # ── 18  Lua Protector (authenticated encrypted package) ───────────
-        if mid == 18 or sid in ("lua_protect_encrypt", "lua_protect_decrypt"):
+        if mid == 18 or sid in ("lua_protect_encrypt", "lua_protect_decrypt",
+                                 "lua_vm_protect"):
             if not need_file():
                 return "\n".join(lines)
+            dest_dir = out_dir("LPROTECT")
+
+            # ── 18 / VM-protect: BGMI-style self-executing Lua source ────
+            if sid == "lua_vm_protect":
+                try:
+                    from alvsia_vm_protect import vm_protect
+                    dest = dest_dir / (Path(ip).stem + ".alvlua3.lua")
+                    r = vm_protect(Path(ip), dest, output_format="lua",
+                                    num_decoys=1024)
+                    if r.get("ok"):
+                        lines.append("OK VM-protected Lua payload (BGMI pattern)")
+                        lines.append("mode=%s payload=%d bytes decoys=%d" % (
+                            r.get("mode"), r.get("payload_size", 0),
+                            r.get("decoys", 0)))
+                        lines.append("OUT -> %s" % r.get("out"))
+                        lines.append("NOTE: self-executing — load() runs the original code")
+                        lines.append("NOTE: reversible via module 05 / VM Deobfuscate")
+                    else:
+                        lines.append("X VM protect failed: %s" % r.get("error"))
+                    return "\n".join(lines)
+                except Exception as exc:
+                    lines.append("X VM protect exception: %s" % (str(exc)[:400] or type(exc).__name__))
+                    return "\n".join(lines)
+
+            # ── 18 / AES-GCM encrypt + decrypt (original ALVLUA1 format) ──
             try:
                 from Crypto.Cipher import AES
                 from Crypto.Random import get_random_bytes

@@ -112,22 +112,27 @@ fun SplashScreen(onFinished: () -> Unit) {
     }
 
     LaunchedEffect(Unit) {
-        logoAlpha.animateTo(1f, tween(900))
-        logoScale.animateTo(1f, tween(1100))
-        delay(400)
-        textAlpha.animateTo(1f, tween(700))
-        val steps = listOf(
-            "ESTABLISHING UPLINK...",
-            "HANDSHAKE TLS 1.3 ... OK",
-            "VERIFYING INTEGRITY ... OK",
-            "LOADING CORE MODULES ...",
-            "SYSTEM ONLINE"
-        )
-        for (s in steps) {
-            status = s
-            delay(520)
+        // Hard upper bound on splash duration so background init stalls cannot
+        // ANR the launcher. Even if the LaunchedEffect above somehow keeps
+        // running, this withTimeout will fire and advance to login.
+        kotlinx.coroutines.withTimeout(8_500L) {
+            logoAlpha.animateTo(1f, tween(900))
+            logoScale.animateTo(1f, tween(1100))
+            delay(400)
+            textAlpha.animateTo(1f, tween(700))
+            val steps = listOf(
+                "ESTABLISHING UPLINK...",
+                "HANDSHAKE TLS 1.3 ... OK",
+                "VERIFYING INTEGRITY ... OK",
+                "LOADING CORE MODULES ...",
+                "SYSTEM ONLINE"
+            )
+            for (s in steps) {
+                status = s
+                delay(520)
+            }
+            delay(600)
         }
-        delay(600)
         onFinished()
     }
 
