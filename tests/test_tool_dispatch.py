@@ -25,6 +25,11 @@ def test_python_auth_normalizes_java_string_and_lua_avoids_art_oom():
     assert "gate.isTokenCurrent(token)" in bridge
     configure = bridge.split("def configure_runtime", 1)[1].split("def run_tool", 1)[0]
     assert "gate.isSessionAuthorized()" not in configure, "split auth checks can race with RASP session locking"
+    gate = (ROOT / "app/src/main/java/com/alvsia/pro/sec/SessionGate.kt").read_text(encoding="utf-8")
+    assert "fun isTokenCurrent(candidate: String): Boolean = synchronized(this)" in gate
+    assert "fun lock(@Suppress(\"UNUSED_PARAMETER\") ctx: Context)" in gate
+    lock_body = gate.split("fun lock(@Suppress(\"UNUSED_PARAMETER\") ctx: Context)", 1)[1].split("\n    }", 1)[0]
+    assert "synchronized(this)" in lock_body, "RASP lock must serialize with Python token validation"
     assert "ART_SAFE_LIMIT = 1L * 1024L * 1024L" in unluac
     assert "if in_size > 1 * 1024 * 1024:" in impl
 
