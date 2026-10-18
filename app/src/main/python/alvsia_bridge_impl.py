@@ -501,7 +501,8 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
         # ── 12  XOR Suite ────────────────────────────────────────────────
         if mid == 12 or sid.startswith("xor_"):
             import alvsia_ultimate as ult
-            if not need_file(): return "\n".join(lines)
+            if sid != "xor_batch" and not need_file():
+                return "\n".join(lines)
             dest_xor = out_dir("XOR")
             if sid == "xor_single_byte":
                 r = ult.xor_single_byte_scan(ip, dest_xor)
