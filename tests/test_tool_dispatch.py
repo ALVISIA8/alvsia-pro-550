@@ -2,6 +2,7 @@
 from pathlib import Path
 import re
 import ast
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 MENUS = ROOT / "app/src/main/java/com/alvsia/pro/tool/SubMenus.kt"
@@ -9,6 +10,7 @@ BRIDGE = ROOT / "app/src/main/python/alvsia_bridge.py"
 BRIDGE_IMPL = ROOT / "app/src/main/python/alvsia_bridge_impl.py"
 CATALOG = ROOT / "app/src/main/java/com/alvsia/pro/tool/ToolCatalog.kt"
 ENGINE = ROOT / "app/src/main/java/com/alvsia/pro/tool/ToolEngine.kt"
+ULTIMATE = ROOT / "app/src/main/python/alvsia_ultimate.py"
 RUNNER = ROOT / "app/src/main/java/com/alvsia/pro/tool/PythonBridgeRunner.kt"
 WORKSPACE = ROOT / "app/src/main/java/com/alvsia/pro/ui/tool/ToolWorkspaceScreen.kt"
 OUTPUT_BROWSER = ROOT / "app/src/main/java/com/alvsia/pro/ui/output/OutputBrowserScreen.kt"
@@ -41,6 +43,23 @@ def test_menu_ids_are_unique_and_reachable():
         if not route or route not in bridge:
             missing.append(sid)
     assert not missing, f"Menu IDs without bridge routes: {missing}"
+
+
+def test_frida_spawn_preserves_full_package_name():
+    tree = ast.parse(ULTIMATE.read_text(encoding="utf-8"), filename=str(ULTIMATE))
+    fn = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "frida_spawn_trace"
+    )
+    isolated = ast.Module(body=[fn], type_ignores=[])
+    namespace = {}
+    exec(compile(isolated, str(ULTIMATE), "exec"), namespace)
+    with tempfile.TemporaryDirectory() as td:
+        result = namespace["frida_spawn_trace"]("com.tencent.ig", td)
+        assert result.get("ok"), result
+        output = Path(result["out"]).read_text(encoding="utf-8")
+        assert "-f com.tencent.ig " in output, output
+        assert "-f com.tencent " not in output, output
 
 
 def test_catalog_contains_all_eighteen_modules():
@@ -135,6 +154,7 @@ if __name__ == "__main__":
     tests = (
         test_menu_ids_are_unique_and_reachable,
         test_catalog_contains_all_eighteen_modules,
+        test_frida_spawn_preserves_full_package_name,
         test_engine_surfaces_bridge_failures,
         test_tool_argument_and_storage_contracts,
         test_bridge_call_signatures_match_helpers,
