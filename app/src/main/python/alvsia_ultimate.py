@@ -12713,43 +12713,146 @@ def _aes_cbc_decrypt(data, key, iv):
     except ImportError:
         return None
 
-def decrypt_auto(input_path, out_dir):
-    """Auto-detect and try common decryption methods."""
+def decrypt_auto(input_path, out_dir, work_dir=None):
+    """Try decompression, known-magic XOR, and configured AES/ZUC-like/SM4 candidates."""
     from pathlib import Path
-    p = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    import base64
+    p = Path(input_path)
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
     raw = p.read_bytes()
     results = []
-    # Try zlib decompress
+    successes = []
+
+    def looks_decoded(path):
+        try:
+            data = Path(path).read_bytes()
+            if not data:
+                return False
+            magics = (
+                b"\\x1bLua", b"\\x1bLJ\\x02", b"\\x1bLJ\\x01",
+                b"\\x7fELF", b"PK\\x03\\x04", b"ALVSEAL1", b"ALVLUA1",
+                b"ALVSEAL3", b"\\x28\\xb5\\x2f\\xfd", b"\\x04\\x22\\x4d\\x18",
+            )
+            if any(data.startswith(magic) for magic in magics):
+                return True
+            sample = data[:4096]
+            printable = sum((32 <= b <= 126) or b in (9, 10, 13) for b in sample)
+            return bool(sample) and printable / len(sample) >= 0.88
+        except Exception:
+            return False
+
+    # Try zlib decompression.
     try:
         dec = zlib.decompress(raw)
         out_file = out_dir / ("auto_zlib_%s" % p.name)
-        Path(out_file).write_bytes(dec)
-        results.append("zlib: OK => %s" % out_file.name)
-    except Exception: pass
-    # Try base64+zlib
+        out_file.write_bytes(dec)
+        results.append("zlib candidate -> %s" % out_file.name)
+        successes.append(str(out_file))
+    except Exception:
+        pass
+
+    # Try base64 + zlib.
     try:
-        import base64
-        dec = zlib.decompress(base64.b64decode(raw))
+        dec = zlib.decompress(base64.b64decode(raw, validate=True))
         out_file = out_dir / ("auto_b64zlib_%s" % p.name)
-        Path(out_file).write_bytes(dec)
-        results.append("base64+zlib: OK => %s" % out_file.name)
-    except Exception: pass
-    # Try XOR scan
+        out_file.write_bytes(dec)
+        results.append("base64+zlib candidate -> %s" % out_file.name)
+        successes.append(str(out_file))
+    except Exception:
+        pass
+
+    # Try repeating single-byte XOR, but accept only known file magic.
     for key in range(1, 256):
-        head = bytes(raw[i] ^ key for i in range(min(4,len(raw))))
-        if head[:3] == b"\x1bLu" or head[:4] == b"\x7fELF" or head[:2] == b"PK":
+        head = bytes(raw[i] ^ key for i in range(min(8, len(raw))))
+        if (head[:3] == b"\\x1bLu" or head[:4] in
+                (b"\\x7fELF", b"PK\\x03\\x04", b"\\x1bLJ\\x02", b"\\x1bLua")):
             dec = bytes(raw[i] ^ key for i in range(len(raw)))
             out_file = out_dir / ("auto_xor0x%02X_%s" % (key, p.name))
-            Path(out_file).write_bytes(dec)
-            results.append("XOR key=0x%02X => %s" % (key, out_file.name))
+            out_file.write_bytes(dec)
+            results.append("XOR key=0x%02X candidate -> %s" % (key, out_file.name))
+            successes.append(str(out_file))
             break
-    succeeded = bool(results)
-    if not succeeded:
-        results.append("no auto-decryption method succeeded — manual analysis needed")
-    out_report = out_dir / "decrypt_auto_report.txt"
-    Path(out_report).write_text("\n".join(results))
-    return {"ok": succeeded, "out": str(out_report), "methods_tried": len(results)}
 
+    # Configured cipher candidates. Keep each candidate under a unique name.
+    cfg_root = Path(work_dir) if work_dir else None
+    def read_cfg(name):
+        values = {}
+        cfg = cfg_root / name if cfg_root else None
+        if not cfg or not cfg.is_file():
+            return values
+        for line in cfg.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, value = line.split("=", 1)
+                values[key.strip().lower()] = value.strip()
+        return values
+
+    aes = read_cfg("aes_config.txt")
+    aes_key = aes.get("key", aes.get("key_hex", ""))
+    aes_iv = aes.get("iv", aes.get("iv_hex", ""))
+    if aes_key:
+        modes = [("ecb", "")] + ([("cbc", aes_iv)] if aes_iv else [])
+        for mode, iv in modes:
+            try:
+                result = decrypt_aes(p, out_dir, aes_key, iv)
+                candidate = Path(result.get("out", "")) if result.get("out") else None
+                if result.get("ok") and candidate and candidate.is_file():
+                    unique = out_dir / ("auto_aes_%s_%s" % (mode, p.name))
+                    unique.write_bytes(candidate.read_bytes())
+                    results.append("AES-%s candidate -> %s" % (mode.upper(), unique.name))
+                    if looks_decoded(unique):
+                        successes.append(str(unique))
+                        results.append("AES-%s candidate passed basic file-content validation" % mode.upper())
+            except Exception as exc:
+                results.append("AES-%s skipped: %s" % (mode.upper(), str(exc)[:160]))
+
+    zuc = read_cfg("zuc_config.txt")
+    zuc_key = zuc.get("key", zuc.get("key_hex", ""))
+    zuc_iv = zuc.get("iv", zuc.get("iv_hex", ""))
+    if zuc_key:
+        try:
+            result = decrypt_zuc(p, out_dir, zuc_key, zuc_iv)
+            candidate = Path(result.get("out", "")) if result.get("out") else None
+            if result.get("ok") and candidate and candidate.is_file():
+                unique = out_dir / ("auto_zuc_like_%s" % p.name)
+                unique.write_bytes(candidate.read_bytes())
+                results.append("ZUC-like candidate -> %s (not standards-compliant ZUC)" % unique.name)
+                if looks_decoded(unique):
+                    successes.append(str(unique))
+        except Exception as exc:
+            results.append("ZUC-like candidate skipped: %s" % (str(exc)[:160]))
+
+    sm4 = read_cfg("sm4_config.txt")
+    sm4_key = sm4.get("key", sm4.get("key_hex", ""))
+    if sm4_key:
+        mode = sm4.get("mode", "ECB").upper()
+        iv = sm4.get("iv", sm4.get("iv_hex", ""))
+        try:
+            result = decrypt_sm4(p, out_dir, sm4_key, mode, iv)
+            candidate = Path(result.get("out", "")) if result.get("out") else None
+            if result.get("ok") and candidate and candidate.is_file():
+                unique = out_dir / ("auto_sm4_%s_%s" % (mode.lower(), p.name))
+                unique.write_bytes(candidate.read_bytes())
+                results.append("SM4-%s candidate -> %s" % (mode, unique.name))
+                if looks_decoded(unique):
+                    successes.append(str(unique))
+        except Exception as exc:
+            results.append("SM4 candidate skipped: %s" % (str(exc)[:160]))
+
+    out_report = out_dir / "decrypt_auto_report.txt"
+    if not results:
+        results.append("No candidate generated; manual analysis needed.")
+    if not successes:
+        results.append("No candidate passed basic validation; inspect generated candidates cautiously.")
+    out_report.write_text("\\n".join(results), encoding="utf-8")
+    return {
+        "ok": bool(successes),
+        "out": str(out_report),
+        "methods_tried": len(results),
+        "validated_candidates": len(set(successes)),
+        "candidates": list(dict.fromkeys(successes)),
+    }
 
 def decrypt_aes(input_path, out_dir, key_hex="", iv_hex=""):
     """AES-CBC/ECB decrypt with given hex key."""
