@@ -25,7 +25,7 @@ sys.path.insert(0, str(PY))
 
 from alvsia_vm_protect import (
     vm_protect, vm_extract_payload, vm_decrypt_payload,
-    _encrypt, _decrypt, _xor_obfuscate_key, _xor_deobfuscate_key,
+    _encrypt, _decrypt, _xor_obfuscate_key, _xor_deobfuscate_key, _runtime_hash16,
 )
 from lua_engine.pattern_registry import get_registry
 from lua_engine.vm_deobfuscator import (
@@ -128,6 +128,8 @@ class TestVMProtectRoundTrip(unittest.TestCase):
         self.assertIn("_alvsia_decrypt", text)
         self.assertIn("_alvsia_payload", text)
         self.assertIn("_alvsia_key_obf", text)
+        self.assertIn("local actual = string.sub(plaintext, 33)", text)
+        self.assertIn('local _alvsia_runtime_hash = "%s"' % _runtime_hash16(SAMPLE_LUA), text)
         self.assertIn("load(actual)", text)
 
     def test_full_round_trip_byte_identical(self):
