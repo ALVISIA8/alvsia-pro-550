@@ -87,6 +87,15 @@ def _xor_deobfuscate_key(obf: bytes) -> bytes:
     return _xor_obfuscate_key(obf)
 
 
+def _runtime_hash16(data: bytes) -> str:
+    """Match the compact rolling integrity tag implemented by the Lua runtime."""
+    value = 0xDEADBEEF
+    for byte in data:
+        value = ((value << 5) + value + byte) % 0x100000000
+        value ^= value >> 17
+    return "%08x%08x" % (value, (value * 2654435761) % 0x100000000)
+
+
 # ── Pure-Lua decryption source (embedded in protected file) ─────────────────
 
 PURE_LUA_DECRYPT = '''-- alvsia VM dispatcher — generated, do not edit
@@ -234,6 +243,7 @@ def vm_protect(
         plaintext_hash = hashlib.sha256(source).digest()
         payload = plaintext_hash + ciphertext
         payload_b64 = base64.b64encode(payload).decode("ascii")
+        runtime_hash = _runtime_hash16(source)
 
         # XOR-obfuscate the key
         key_obf = _xor_obfuscate_key(key)
@@ -270,6 +280,7 @@ end
 
 local _alvsia_payload = "{payload_b64}"
 local _alvsia_key_obf = "{key_obf_b64}"
+local _alvsia_runtime_hash = "{runtime_hash}"
 
 local function _alvsia_run()
     local payload = _alvsia_b64decode(_alvsia_payload)
@@ -283,12 +294,12 @@ local function _alvsia_run()
     end
     key = table.concat(key)
     local plaintext = _alvsia_decrypt(payload, key)
-    -- Verify integrity (first 32 bytes = SHA-256 of plaintext, lightweight
-    -- version uses 16-byte rolling hash)
-    local stored_hash = string.sub(plaintext, 1, 16)
+    -- The payload starts with a 32-byte SHA-256 digest used by the Python
+    -- recovery path. The Lua runtime verifies the source using its matching
+    -- compact rolling tag because this embedded Lua helper is not SHA-256.
     local actual = string.sub(plaintext, 33)
     local actual_hash = _alvsia_sha256_first16(actual)
-    if stored_hash ~= actual_hash then
+    if actual_hash ~= _alvsia_runtime_hash then
         error("ALVSEAL3 integrity check failed")
     end
     -- Load and execute
