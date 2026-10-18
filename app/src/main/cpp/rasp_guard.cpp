@@ -254,6 +254,10 @@ static int check_late_loaded_libs() {
     return 0;
 }
 
+extern "C" {
+static jint JNICALL native_scan_flags(JNIEnv*, jobject);
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // 11. JNI function prologue integrity — check if our own JNI methods
 //     have been patched with a B (branch) instruction by inline hooks
