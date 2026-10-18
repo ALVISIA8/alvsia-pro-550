@@ -16,6 +16,17 @@ WORKSPACE = ROOT / "app/src/main/java/com/alvsia/pro/ui/tool/ToolWorkspaceScreen
 OUTPUT_BROWSER = ROOT / "app/src/main/java/com/alvsia/pro/ui/output/OutputBrowserScreen.kt"
 
 
+
+def test_python_auth_normalizes_java_string_and_lua_avoids_art_oom():
+    bridge = (ROOT / "app/src/main/python/alvsia_bridge.py").read_text(encoding="utf-8")
+    unluac = (ROOT / "app/src/main/java/com/alvsia/pro/tool/UnluacRunner.kt").read_text(encoding="utf-8")
+    impl = (ROOT / "app/src/main/python/alvsia_bridge_impl.py").read_text(encoding="utf-8")
+    assert "token_text = str(token)" in bridge
+    assert "gate.isSessionAuthorized()" in bridge
+    assert "gate.isTokenCurrent(token_text)" in bridge
+    assert "ART_SAFE_LIMIT = 1L * 1024L * 1024L" in unluac
+    assert "if in_size > 1 * 1024 * 1024:" in impl
+
 def test_menu_ids_are_unique_and_reachable():
     menus = MENUS.read_text(encoding="utf-8")
     bridge = BRIDGE.read_text(encoding="utf-8") + "\n" + BRIDGE_IMPL.read_text(encoding="utf-8")
@@ -201,6 +212,7 @@ def test_large_file_helpers_stream_and_report_hashes():
 
 if __name__ == "__main__":
     tests = (
+        test_python_auth_normalizes_java_string_and_lua_avoids_art_oom,
         test_menu_ids_are_unique_and_reachable,
         test_catalog_contains_all_eighteen_modules,
         test_frida_spawn_preserves_full_package_name,
