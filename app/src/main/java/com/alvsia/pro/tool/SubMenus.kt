@@ -133,8 +133,8 @@ object SubMenus {
                 "Select .so → OUT/SO/urls.txt + strings.txt"),
             SubTool("so_aes_probe",   "AES Key Probe",    "Detect AES-CBC/ECB key candidates",
                 "Select .so → OUT/SO/aes_keys.txt  (entropy + pattern scan)"),
-            SubTool("so_patch_url",   "Patch Binary URL", "XOR-encode replacement URL at offset",
-                "Prepare WORK/patch_config.txt: offset=0x1234 key=0xAB new_url=https://... → patched .so"),
+            SubTool("so_patch_url",   "Patch Plaintext URL", "Replace an existing URL in a .so binary",
+                "CONFIG: old_url=<existing URL> and new_url=<same-length or shorter URL>; output is written under OUT/SO/"),
         )
 
         // ── 11 Frida Tracer ───────────────────────────────────────────────
@@ -178,7 +178,7 @@ object SubMenus {
         // ── 14 PAK Deep ───────────────────────────────────────────────────
         14 -> listOf(
             SubTool("pak_deep_aes",    "AES-SHA1 PAK",      "Decrypt AES-CBC PAK with SHA1-derived key",
-                "Key passphrase in WORK/pak_pass.txt. Select .pak → OUT/PAKD/"),
+                "CONFIG: passphrase=<text> plus iv=<32 hex chars>, or key=<32 hex chars> plus iv=<32 hex chars>. Select .pak → OUT/PAKD/"),
             SubTool("pak_deep_zstd",   "Zstd Decompress",   "Decompress Zstd-compressed entries",
                 "Select .pak or raw Zstd blob → OUT/PAKD/*_zstd/"),
             SubTool("pak_deep_zuc",    "ZUC-like PAK",      "Approximate stream transform then ZIP extraction; not standard ZUC",
@@ -193,7 +193,7 @@ object SubMenus {
         15 -> listOf(
             SubTool("str_recover",     "String Restore",    "Reconstruct obfuscated strings from bytecode",
                 "Select .luac → OUT/STR/*_strings_recovered.txt"),
-            SubTool("str_constant_pool","Constant Pool",    "Full constant pool dump with types",
+            SubTool("str_constant_pool","Constant Pool",    "Extract embedded Lua bytecode strings (not a full typed parser)",
                 "Select .luac → OUT/STR/*_constants_typed.txt"),
             SubTool("str_xref",        "String XRef",       "Cross-reference strings to function names",
                 "Select .luac → OUT/STR/*_xref.txt"),
@@ -202,11 +202,11 @@ object SubMenus {
         // ── 16 Lua Inject ─────────────────────────────────────────────────
         16 -> listOf(
             SubTool("lua_patch_byte",  "Patch Bytecode",    "Inject opcode/constant into .luac",
-                "Patch spec in WORK/lua_patch.json: {offset, opcode, value}. Select .luac → OUT/LINJ/*_patched.luac"),
+                "CONFIG: offset=0x1234 and patch_hex=DEADBEEF. Select .luac → OUT/LINJ/*_patched.luac"),
             SubTool("lua_inject_hook", "Inject Hook Func",  "Prepend custom hook source to a selected Lua source file",
                 "Enter hook source in CONFIG and select a Lua source → OUT/LINJ/*_hooked.lua (source only; no bytecode compile)"),
             SubTool("lua_mod_repack",  "Mod + Repack PAK",  "Full workflow: decompile → patch → repack",
-                "WORK/lua_hook.lua + WORK/pak_pass.txt optional. Select .pak → OUT/LINJ/*_modded.pak"),
+                "Place the edited tree in WORK/MOD or OUT/PAK/<pak-name>, then select the original .pak → OUT/LINJ/*_modded.pak"),
         )
 
         // ── 17 Anti-RE Audit ──────────────────────────────────────────────
