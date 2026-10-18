@@ -934,7 +934,7 @@ def run_obb_extract(input_path, out_dir):
             # Validate every member before writing anything, preventing ZIP-slip
             # archives from partially extracting outside the destination.
             for info in entries:
-                member = info.filename.replace("\\\\", "/")
+                member = info.filename.replace(chr(92), "/")
                 if member.startswith("/") or (len(member) >= 2 and member[1] == ":"):
                     return {"ok": False, "error": "unsafe absolute archive path rejected"}
                 target = (root / member).resolve()
