@@ -328,7 +328,7 @@ fun ToolWorkspaceScreen(
                     try {
                         val outDir = java.io.File(
                             android.os.Environment.getExternalStoragePublicDirectory(
-                                android.os.Environment.DIRECTORY_DOWNLOAD),
+                                android.os.Environment.DIRECTORY_DOWNLOADS),
                             "ALVSIA/OUT"
                         )
                         val uri = androidx.core.content.FileProvider.getUriForFile(
