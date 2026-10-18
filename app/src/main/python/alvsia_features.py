@@ -976,61 +976,97 @@ def run_obb_rezip(input_path, out_file):
 
 
 def run_strings_scan(input_path, out_dir):
-    """Extract printable ASCII strings from any binary."""
+    """Extract printable ASCII strings using bounded-memory streaming."""
     from pathlib import Path
-    p = Path(input_path); out_dir = Path(out_dir)
+
+    p = Path(input_path)
+    out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    raw = p.read_bytes()
-    strings = []
-    cur = bytearray()
-    for b in raw:
-        if 32 <= b <= 126:
-            cur.append(b)
-        else:
-            if len(cur) >= 4:
-                strings.append(cur.decode("ascii", errors="replace"))
-            cur = bytearray()
-    if len(cur) >= 4:
-        strings.append(cur.decode("ascii", errors="replace"))
-    strings = list(dict.fromkeys(strings))
+    if not p.is_file():
+        return {"ok": False, "error": "input file not found"}
+
     out_file = out_dir / ("strings_%s.txt" % p.stem)
-    out_file.write_text("\n".join(strings), encoding="utf-8")
-    return {"ok": True, "count": len(strings), "out": str(out_file)}
+    seen = set()
+    count = 0
+    cur = bytearray()
+    max_run = 1024 * 1024
+
+    def emit_run(handle, run):
+        nonlocal count
+        if len(run) < 4:
+            return
+        value = run.decode("ascii", errors="replace")
+        if value not in seen:
+            seen.add(value)
+            handle.write(value + "\n")
+            count += 1
+
+    with p.open("rb") as source, out_file.open("w", encoding="utf-8") as target:
+        while True:
+            chunk = source.read(1024 * 1024)
+            if not chunk:
+                break
+            for b in chunk:
+                if 32 <= b <= 126:
+                    cur.append(b)
+                    if len(cur) >= max_run:
+                        emit_run(target, cur)
+                        cur.clear()
+                else:
+                    emit_run(target, cur)
+                    cur.clear()
+        emit_run(target, cur)
+
+    return {"ok": True, "count": count, "out": str(out_file)}
 
 
 def run_export_report(input_path, out_dir):
-    """Generate file info summary report."""
+    """Generate a file report without loading the complete input into memory."""
     import hashlib
     from pathlib import Path
-    p = Path(input_path); out_dir = Path(out_dir)
+    import zipfile
+
+    p = Path(input_path)
+    out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    raw = p.read_bytes()
-    md5 = hashlib.md5(raw).hexdigest()
-    sha1 = hashlib.sha1(raw).hexdigest()
-    sha256 = hashlib.sha256(raw).hexdigest()
+    if not p.is_file():
+        return {"ok": False, "error": "input file not found"}
+
+    digest = {"md5": hashlib.md5(), "sha1": hashlib.sha1(), "sha256": hashlib.sha256()}
+    with p.open("rb") as source:
+        head = source.read(16)
+        for h in digest.values():
+            h.update(head)
+        while True:
+            chunk = source.read(1024 * 1024)
+            if not chunk:
+                break
+            for h in digest.values():
+                h.update(chunk)
+
+    size = p.stat().st_size
     lines = [
         "ALVSIA FILE REPORT",
         "name=%s" % p.name,
-        "size=%s bytes" % len(raw),
-        "MD5=%s" % md5,
-        "SHA1=%s" % sha1,
-        "SHA256=%s" % sha256,
-        "head_hex=%s" % raw[:16].hex(),
+        "size=%s bytes" % size,
+        "MD5=%s" % digest["md5"].hexdigest(),
+        "SHA1=%s" % digest["sha1"].hexdigest(),
+        "SHA256=%s" % digest["sha256"].hexdigest(),
+        "head_hex=%s" % head.hex(),
     ]
-    # ZIP/OBB detection
-    import zipfile
-    if raw[:2] == b"PK":
+    if head[:2] == b"PK":
         try:
             with zipfile.ZipFile(p) as zf:
-                lines.append("type=ZIP/OBB entries=%s" % len(zf.namelist()))
+                lines.append("type=ZIP/OBB entries=%s" % len(zf.infolist()))
         except Exception:
             lines.append("type=ZIP(corrupt)")
-    elif raw[:4] == b"\x1bLua":
+    elif head[:4] == b"\x1bLua":
         lines.append("type=Lua bytecode")
-    elif raw[:7] == b"\x04\x22\x4d\x18" or raw[:4] == b"\x28\xb5\x2f\xfd":
+    elif head[:4] == b"\x04\x22\x4d\x18" or head[:4] == b"\x28\xb5\x2f\xfd":
         lines.append("type=Zstd compressed")
     else:
         lines.append("type=binary/unknown")
+
     out_file = out_dir / ("report_%s.txt" % p.stem)
     out_file.write_text("\n".join(lines), encoding="utf-8")
-    return {"ok": True, "out": str(out_file), "sha256": sha256}
+    return {"ok": True, "out": str(out_file), "sha256": digest["sha256"].hexdigest()}
