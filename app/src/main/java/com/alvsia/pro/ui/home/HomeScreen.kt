@@ -8,6 +8,7 @@ import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,12 +19,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -171,7 +172,54 @@ fun HomeScreen(
                     Text("Profil", color = AlvisiaCyan, fontWeight = FontWeight.Bold) }
             }
             Spacer(Modifier.height(4.dp))
-            Text("MODULES", color = AlvisiaSilver.copy(alpha = 0.4f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+
+            // ── UX Sprint 1: Quick Actions bar ───────────────────────────
+            // 8 most-used operations — 1 tap from Home to file picker → RUN
+            Text("QUICK ACTIONS", color = AlvisiaSilver.copy(alpha = 0.4f),
+                fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(4.dp))
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                // Quick actions that jump straight to a module
+                QuickAction("Hash", AlvisiaBlue) { onTool(ToolItem(6, "File Scan", "Strings · hash")) }
+                QuickAction("Decompile", AlvisiaBlue) { onTool(ToolItem(5, "LUA Tools", "Decompile")) }
+                QuickAction("Extract", AlvisiaBlue) { onTool(ToolItem(4, "OBB Tools", "Unzip")) }
+                QuickAction("VM Deobf", AlvisiaBlue) { onTool(ToolItem(5, "LUA Tools", "VM Deobfuscate")) }
+                QuickAction("Strings", AlvisiaBlue) { onTool(ToolItem(6, "File Scan", "String scan")) }
+                QuickAction("Rebrand", AlvisiaBlue) { onTool(ToolItem(9, "Rebrand", "Auto")) }
+                QuickAction("Workspace", AlvisiaBlue) { onTool(ToolItem(7, "Workspace", "Clear")) }
+                QuickAction("Protect", AlvisiaBlue) { onTool(ToolItem(18, "Lua Protector", "VM Protect")) }
+            }
+            Spacer(Modifier.height(6.dp))
+
+            // ── UX Sprint 2: Search bar ───────────────────────────────────
+            var searchQuery by remember { mutableStateOf("") }
+            val filteredTools = if (searchQuery.isBlank()) tools
+                else tools.filter {
+                    it.title.contains(searchQuery, ignoreCase = true) ||
+                    it.desc.contains(searchQuery, ignoreCase = true)
+                }
+            androidx.compose.material3.OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("🔍 Search tools...", color = AlvisiaSilver.copy(alpha = 0.3f), fontSize = 12.sp) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = AlvisiaCyan,
+                    unfocusedBorderColor = AlvisiaBlue.copy(alpha = 0.3f),
+                    cursorColor = AlvisiaCyan,
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = AlvisiaSilver
+                ),
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp)
+            )
+
+            Text("MODULES (${filteredTools.size})", color = AlvisiaSilver.copy(alpha = 0.4f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
             LazyVerticalGrid(
                 columns = GridCells.Fixed(3),
@@ -180,7 +228,7 @@ fun HomeScreen(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                items(tools, key = { it.id }) { tool ->
+                items(filteredTools, key = { it.id }) { tool ->
                     val colors = chipColors[(tool.id - 1) % chipColors.size]
                     NeonModuleChip(
                         id = tool.id,
@@ -253,5 +301,31 @@ private fun NeonModuleChip(
                 lineHeight = 12.sp
             )
         }
+    }
+}
+
+/**
+ * UX Sprint 1: Quick Action chip — compact 1-tap shortcut button.
+ * Renders as a small rounded chip with text label.
+ */
+@Composable
+private fun QuickAction(
+    label: String,
+    bgColor: Color,
+    onClick: () -> Unit
+) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(bgColor.copy(alpha = 0.8f))
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        Text(
+            label,
+            color = Color.White,
+            fontWeight = FontWeight.Bold,
+            fontSize = 11.sp
+        )
     }
 }

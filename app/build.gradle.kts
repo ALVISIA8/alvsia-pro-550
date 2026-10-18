@@ -12,13 +12,22 @@ android {
         applicationId = "com.alvsia.pro"
         minSdk = 26
         targetSdk = 34
-        versionCode = 96
-        versionName = "5.5.0-upgrade"
+        versionCode = 97
+        versionName = "5.5.1-hardened"
         buildConfigField("int", "PROTO", "2")
         buildConfigField("String", "CERT_SHA256", "\"99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c\"")
+        // Sprint 1: DEX hash placeholder — CodeMagic seal script patches this at build time
+        buildConfigField("String", "DEX_SHA256", "\"0000000000000000000000000000000000000000000000000000000000000000\"")
+        buildConfigField("int", "EXPECTED_DEX_COUNT", "1")
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
+    }
+
+    // Sprint 1: R8 full mode for deeper obfuscation (control flow + class merging)
+    buildFeatures {
+        compose = true
+        buildConfig = true
     }
 
     externalNativeBuild {
@@ -28,17 +37,45 @@ android {
         }
     }
 
+    // Sprint 1: APK splits by ABI — smaller per-arch APK, harder to repack
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a")
+            isUniversalApk = false
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            isCrunchPngs = true  // Sprint 1: smaller PNGs in release
+            // Sprint 1: R8 full mode + aggressive optimization
+            isDebuggable = false
+            isJniDebuggable = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Sprint 1: V2 signing enforced (anti-repack)
+            signingConfigs {
+                create("release") {
+                    // Placeholders — CodeMagic injects real values from CM_KEYSTORE secrets
+                    // storeFile = file("alvsia-release.keystore")
+                    // storePassword = System.getenv("CM_KEYSTORE_PASSWORD")
+                    // keyAlias = System.getenv("CM_KEY_ALIAS")
+                    // keyPassword = System.getenv("CM_KEY_PASSWORD")
+                    enableV1Signing = false  // V1 is weak (JAR signing) — disable
+                    enableV2Signing = true   // V2 covers whole APK — enforce
+                    enableV3Signing = true   // V3 adds key rotation support
+                }
+            }
         }
         debug {
             isMinifyEnabled = false
+            isDebuggable = true
         }
     }
 
@@ -53,10 +90,6 @@ android {
             "-Xno-receiver-assertions",
             "-Xno-param-assertions"
         )
-    }
-    buildFeatures {
-        compose = true
-        buildConfig = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.14"

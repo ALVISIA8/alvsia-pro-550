@@ -30,6 +30,11 @@ object IntegrityBomb {
 
         if (!certOk(ctx)) reasons += "cert_mismatch"
         if (!dexSizeOk(ctx)) reasons += "dex_size_bad"
+        // Sprint 1 — Layer 5: DEX hash + count verification via DexGuardian
+        val dexReport = DexGuardian.evaluate(ctx)
+        if (!dexReport.clean) {
+            reasons += dexReport.reasons.map { "dex_$it" }
+        }
         // Work profiles / secondary Android users are legitimate environments.
         // Do not treat userId > 0 alone as APK compromise or hard-block the session.
 

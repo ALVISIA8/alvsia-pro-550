@@ -175,6 +175,48 @@ object EnvProbe {
             if ("uid=0" in out) r += "adb_root_shell"
         } catch (_: Exception) {}
 
+        // Sprint 1 — Layer 4 strengthening: KernelSU + busybox + more VirtualApp paths
+
+        // 14. KernelSU detection — modern Magisk alternative
+        //     File-based detection (KsuManager daemon dirs)
+        val ksuPaths = listOf(
+            "/data/adb/ksu", "/data/adb/ksud",
+            "/data/adb/ksu/modules", "/data/adb/ap/modules",
+            "/sbin/ksu", "/system/bin/ksu"
+        )
+        if (ksuPaths.any { File(it).exists() }) r += "kernelsu_path"
+
+        // 15. KernelSU env var (KernelSU injects KSU env to shell)
+        try {
+            if (System.getenv("KSU") != null) r += "kernelsu_env"
+            if (System.getenv("MAGISK_INBOOT") != null) r += "magisk_env"
+        } catch (_: Exception) {}
+
+        // 16. busybox binary — common root helper
+        val busyboxPaths = listOf(
+            "/system/bin/busybox", "/system/xbin/busybox",
+            "/sbin/busybox", "/data/local/busybox",
+            "/data/adb/magisk/busybox",
+            "/data/adb/ksu/bin/busybox"
+        )
+        if (busyboxPaths.any { File(it).exists() }) r += "busybox_path"
+
+        // 17. Additional VirtualApp / clone environment paths
+        val extendedVaPaths = listOf(
+            "/data/data/com.lody.virtual",
+            "/data/data/io.virtualapp",
+            "/data/data/io.va.exposed",
+            "/data/data/io.github.lsposed",
+            "/data/data/org.lsposed.manager",
+            "/data/data/com.taichi.app",
+            "/data/data/me.weishu.exp",
+            "/data/data/me.weishu.kernelsu"
+        )
+        if (extendedVaPaths.any { File(it).exists() }) r += "virtual_app_pkg"
+
+        // 18. Magisk modules dir (high confidence Magisk install)
+        if (File("/data/adb/modules").isDirectory) r += "magisk_modules_dir"
+
         return r.distinct()
     }
 

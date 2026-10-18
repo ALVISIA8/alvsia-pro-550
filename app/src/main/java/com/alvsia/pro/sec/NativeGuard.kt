@@ -141,6 +141,11 @@ object NativeGuard {
         if (f and 0x01 != 0) r += "n_tracer_pid"
         if (f and 0x02 != 0) r += "n_maps_frida"
         if (f and 0x40 != 0) r += "n_self_hash_mismatch"
+        // Sprint 1: 4 new detectors — added to native lib
+        if (f and 0x100 != 0) r += "n_wchan_ptrace"          // /proc/self/wchan = ptrace_stop
+        if (f and 0x200 != 0) r += "n_late_lib"              // late-loaded hook library in /proc/self/maps
+        if (f and 0x400 != 0) r += "n_jni_prologue"          // JNI function prologue patched
+        if (f and 0x800 != 0) r += "n_dev_files"            // suspicious dev files in /data/local/tmp
         return r
     }
 

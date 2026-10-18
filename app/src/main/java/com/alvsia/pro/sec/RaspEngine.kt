@@ -45,8 +45,10 @@ object RaspEngine {
         val app = ctx.applicationContext
         // Kick first tick immediately, then schedule repeating
         thread(name = "rasp-init", isDaemon = true) { tick(app, license) }
-        scheduleRepeat(app, license, intervalMs = 8_000L)
-        scheduleDeepScan(app, license, intervalMs = 60_000L)
+        // Sprint 1: 4-second tick (down from 8s) — faster threat detection.
+        // Deep scan runs every 30s (down from 60s) to refresh DEX + cgroup checks.
+        scheduleRepeat(app, license, intervalMs = 4_000L)
+        scheduleDeepScan(app, license, intervalMs = 30_000L)
     }
 
     fun tick(ctx: Context, license: String = "") {
@@ -62,7 +64,7 @@ object RaspEngine {
         // ③ Memory dump
         MemoryGuard.detectPtrace()?.let { hard += it }
 
-        // ⑦ Integrity
+        // ⑦ Integrity (Sprint 1: includes DEX hash + count via DexGuardian)
         val integrity = IntegrityBomb.evaluate(ctx)
         if (!integrity.clean) integrity.reasons.forEach { hard += it }
 
@@ -72,8 +74,16 @@ object RaspEngine {
         // ⑧ Network MITM
         NetworkGuard.signals(ctx).forEach { soft += it }
 
-        // ⑩ Hook packages
+        // ⑩ Hook packages (legacy — kept for back-compat with FridaProbe)
         FridaProbe.hasHookPackage(ctx.packageManager).forEach { soft += it }
+
+        // Sprint 1: AntiHook (Layer 2) — STRONG signal (active injection via maps)
+        // Hard if any map markers detected; soft for cgroup virtualization + cpuinfo emulator
+        val hookSignals = AntiHook.signals()
+        hookSignals.filter { it.startsWith("maps:") }.forEach { hard += "antihook_$it" }
+        hookSignals.filterNot { it.startsWith("maps:") }.forEach { soft += "antihook_$it" }
+        // Hook framework installer packages — soft signal (not proof of injection)
+        AntiHook.hasHookFrameworkPackages(ctx.packageManager).forEach { soft += "antihook_$it" }
 
         // Native RASP layer — consume results via flagsToReasons
         val nf = NativeGuard.scanFlags()

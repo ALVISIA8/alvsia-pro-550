@@ -33,6 +33,11 @@ static constexpr int FLAG_INLINE_HOOK     = 0x10;
 static constexpr int FLAG_CAP_OVERGRANTED = 0x20;
 static constexpr int FLAG_SELF_HASH_BAD   = 0x40;
 static constexpr int FLAG_TIMING_PTRACE   = 0x80;
+// Sprint 1 additions — 4 new detectors for hardened 7-layer security
+static constexpr int FLAG_WCHAN_PTRACE    = 0x100;
+static constexpr int FLAG_LATE_LIB       = 0x200;
+static constexpr int FLAG_JNI_PROLOGUE   = 0x400;
+static constexpr int FLAG_DEV_FILES       = 0x800;
 
 // ─────────────────────────────────────────────────────────────────────
 // 1. TracerPid check
@@ -206,6 +211,105 @@ static int check_timing_ptrace() {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// 9. /proc/self/wchan — process is in ptrace_stop state
+//    Sprint 1: Detect ptrace_stop via wchan string
+// ─────────────────────────────────────────────────────────────────────
+static int check_wchan_ptrace() {
+    int fd = open("/proc/self/wchan", O_RDONLY);
+    if (fd < 0) return 0;
+    char buf[64] = {};
+    ssize_t n = read(fd, buf, sizeof(buf) - 1);
+    close(fd);
+    if (n <= 0) return 0;
+    // If process is in ptrace_stop, wchan contains "ptrace_stop"
+    if (strstr(buf, "ptrace_stop") != nullptr) return FLAG_WCHAN_PTRACE;
+    return 0;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// 10. Late-loaded suspicious libraries (post-startup dlopen of hook libs)
+//     Sprint 1: Scan /proc/self/maps for libs loaded after JNI_OnLoad
+// ─────────────────────────────────────────────────────────────────────
+static const char* LATE_LIB_NEEDLES[] = {
+    "libfrida", "libgadget", "libsubstrate", "liblsposed",
+    "libxposed", "libsubstrate-dvm", "libsubstrate-art",
+    "libdobby", "libshadowhook", "libbhook", "libbytehook",
+    "libnative_hook", "libwhale", "libepic",
+    nullptr
+};
+
+static int check_late_loaded_libs() {
+    int fd = open("/proc/self/maps", O_RDONLY);
+    if (fd < 0) return 0;
+    char buf[262144] = {};  // 256 KiB — larger window for late libs
+    ssize_t n = read(fd, buf, sizeof(buf) - 1);
+    close(fd);
+    if (n <= 0) return 0;
+    for (ssize_t i = 0; i < n; i++) {
+        if (buf[i] >= 'A' && buf[i] <= 'Z') buf[i] += 32;
+    }
+    for (int i = 0; LATE_LIB_NEEDLES[i]; i++) {
+        if (strstr(buf, LATE_LIB_NEEDLES[i])) return FLAG_LATE_LIB;
+    }
+    return 0;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// 11. JNI function prologue integrity — check if our own JNI methods
+//     have been patched with a B (branch) instruction by inline hooks
+//     Sprint 1: Verify critical native functions haven't been replaced
+// ─────────────────────────────────────────────────────────────────────
+static int check_jni_prologue() {
+    // Check the prologue of native_scan_flags itself — if hooked, the
+    // first instruction will typically be a B/BL branch to a trampoline.
+    uintptr_t fn_addr = reinterpret_cast<uintptr_t>(
+        reinterpret_cast<void*>(&native_scan_flags));
+    if (fn_addr == 0) return 0;
+    const uint8_t* bytes = reinterpret_cast<const uint8_t*>(fn_addr);
+    uint32_t instr = 0;
+    memcpy(&instr, bytes, 4);
+    uint32_t op = instr >> 26;
+    // arm64 unconditional branch opcodes: B=0x05, BL=0x25
+    if (op == 0x05 || op == 0x25) return FLAG_JNI_PROLOGUE;
+    return 0;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// 12. Suspicious dev files — check for files that indicate a rooted/
+//     debugging setup exists in /data/local/tmp or /dev/
+//     Sprint 1: Detect frida-server, gadget, hluda-server artifacts
+// ─────────────────────────────────────────────────────────────────────
+static const char* DEV_FILE_PATHS[] = {
+    "/data/local/tmp/frida-server",
+    "/data/local/tmp/frida-gadget",
+    "/data/local/tmp/hluda-server",
+    "/data/local/tmp/frida-helper",
+    "/data/local/tmp/frida-helper-32",
+    "/data/local/tmp/frida-helper-64",
+    "/data/local/tmp/linjector",
+    "/data/local/tmp/objection",
+    "/data/local/tmp/agent",
+    "/data/local/tmp/fs-main",
+    "/system/bin/frida-server",
+    "/system/xbin/frida-server",
+    "/sbin/.magisk",
+    "/data/adb/magisk",
+    "/data/adb/ksu",
+    "/data/adb/modules",
+    nullptr
+};
+
+static int check_dev_files() {
+    struct stat st;
+    for (int i = 0; DEV_FILE_PATHS[i]; i++) {
+        if (stat(DEV_FILE_PATHS[i], &st) == 0) {
+            return FLAG_DEV_FILES;
+        }
+    }
+    return 0;
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // JNI exports
 // ─────────────────────────────────────────────────────────────────────
 extern "C" {
@@ -219,6 +323,11 @@ native_scan_flags(JNIEnv*, jobject) {
     flags |= check_tracer_pid();
     flags |= check_maps_frida();
     flags |= check_self_hash();
+    // Sprint 1: 4 new detectors active
+    flags |= check_wchan_ptrace();
+    flags |= check_late_loaded_libs();
+    flags |= check_jni_prologue();
+    flags |= check_dev_files();
     return (jint)flags;
 }
 

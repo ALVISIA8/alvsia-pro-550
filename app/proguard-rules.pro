@@ -16,10 +16,35 @@
 # ── ALVISIA security layer — hard keep ───────────────────────────────
 -keep class com.alvsia.pro.sec.NativeGuard { *; }
 
+# Sprint 1: Keep DexGuardian + AntiHook (referenced by RaspEngine)
+-keep class com.alvsia.pro.sec.DexGuardian { *; }
+-keep class com.alvsia.pro.sec.DexGuardian$DexReport { *; }
+-keep class com.alvsia.pro.sec.AntiHook { *; }
+-keep class com.alvsia.pro.sec.AntiHook$HookReport { *; }
+
+# UX Sprint 1: Keep SubToolConfig + UXStore + FileMagic (referenced by UI)
+-keep class com.alvsia.pro.tool.SubToolConfig { *; }
+-keep class com.alvsia.pro.tool.SubToolConfigKt { *; }
+-keep class com.alvsia.pro.tool.ConfigType { *; }
+-keep class com.alvsia.pro.tool.UXStore { *; }
+-keep class com.alvsia.pro.tool.FileMagic { *; }
+-keep class com.alvsia.pro.tool.FileMagic$FileType { *; }
+-keep class com.alvsia.pro.tool.FileMagic$DetectionResult { *; }
+
+# UX Sprint 2: Keep OutputBrowserScreen + PipelineBuilderScreen + templates
+-keep class com.alvsia.pro.ui.output.OutputBrowserScreenKt { *; }
+-keep class com.alvsia.pro.ui.pipeline.PipelineBuilderScreenKt { *; }
+-keep class com.alvsia.pro.ui.pipeline.PipelineStep { *; }
+-keep class com.alvsia.pro.ui.pipeline.PipelineTemplate { *; }
+-keep class com.alvsia.pro.ui.pipeline.PipelineTemplates { *; }
+
 # Keep JNI methods (native bridge to librasp_guard.so)
 -keepclasseswithmembernames class * {
     native <methods>;
 }
+
+# Sprint 1: Keep BuildConfig — referenced for CERT_SHA256 + DEX_SHA256 + EXPECTED_DEX_COUNT
+-keep class com.alvsia.pro.BuildConfig { *; }
 
 # ── ALVISIA licensing / panel ─────────────────────────────────────────
 -keep class com.alvsia.pro.panel.PanelClient { *; }

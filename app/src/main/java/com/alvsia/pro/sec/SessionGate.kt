@@ -18,7 +18,7 @@ import java.security.MessageDigest
  *  - native_rasp_unavailable fail-closed when JNI not loaded in release
  */
 object SessionGate {
-    private const val SESSION_TTL = 30 * 60 * 1000L       // 30 min
+    private const val SESSION_TTL = 8L * 60L * 60L * 1000L       // 8 hours — UX Sprint 1: was 30 min, caused auth rejection mid-operation
     private const val MAX_STRIKES = 3
     private const val KEY_ALGORITHM_HMAC_SHA256 = "HmacSHA256"
     // Pepper: hardcoded — not a secret key, just prevents trivial token replay
