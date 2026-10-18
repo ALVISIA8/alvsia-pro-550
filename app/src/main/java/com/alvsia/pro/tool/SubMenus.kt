@@ -203,8 +203,8 @@ object SubMenus {
         16 -> listOf(
             SubTool("lua_patch_byte",  "Patch Bytecode",    "Inject opcode/constant into .luac",
                 "Patch spec in WORK/lua_patch.json: {offset, opcode, value}. Select .luac → OUT/LINJ/*_patched.luac"),
-            SubTool("lua_inject_hook", "Inject Hook Func",  "Insert hook function into decompiled lua then recompile",
-                "Hook code in WORK/lua_hook.lua. Select target .lua → OUT/LINJ/*_hooked.lua"),
+            SubTool("lua_inject_hook", "Inject Hook Func",  "Prepend custom hook source to a selected Lua source file",
+                "Enter hook source in CONFIG and select a Lua source → OUT/LINJ/*_hooked.lua (source only; no bytecode compile)"),
             SubTool("lua_mod_repack",  "Mod + Repack PAK",  "Full workflow: decompile → patch → repack",
                 "WORK/lua_hook.lua + WORK/pak_pass.txt optional. Select .pak → OUT/LINJ/*_modded.pak"),
         )
