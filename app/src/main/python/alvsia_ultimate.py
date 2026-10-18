@@ -12669,7 +12669,7 @@ def xor_batch(input_path, out_dir, key_hex=""):
         return {"ok": False, "error": "invalid key_hex"}
     processed = 0
     for fp in sorted(base.rglob("*")):
-        if fp.is_file() and fp.suffix in (".lua",".so",".bin",""):
+        if fp.is_file():
             raw = fp.read_bytes()
             dec = bytes(raw[i] ^ key[i % len(key)] for i in range(len(raw)))
             dest = out_dir / fp.relative_to(base)
