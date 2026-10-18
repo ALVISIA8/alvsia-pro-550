@@ -243,8 +243,11 @@ fun ToolWorkspaceScreen(
                 if (!running) {
                     // Write inline config values to WORK/ files transparently
                     if (configSchema.isNotEmpty()) {
-                        val workDir = File(ctx.getExternalFilesDir(null) ?: ctx.filesDir, "ALVSIA/WORK")
-                        workDir.mkdirs()
+                        // Use the same root as ToolEngine/PythonBridgeRunner.
+                        // Writing under getExternalFilesDir() can silently split configs
+                        // from the public Download/ALVSIA/WORK directory consumed by Python.
+                        WorkPaths.bindApp(ctx)
+                        val workDir = WorkPaths.dirWork()
                         configSchema.forEach { cfg ->
                             val value = configValues.value[cfg.field] ?: ""
                             if (value.isNotBlank() && cfg.workFileName != null) {
@@ -283,8 +286,9 @@ fun ToolWorkspaceScreen(
             }
             TextButton(
                 onClick = {
-                    val outFile = File(ctx.getExternalFilesDir(null) ?: ctx.filesDir,
-                        "ALVSIA/OUT/LOG_${sub.id}_${System.currentTimeMillis()}.txt")
+                    WorkPaths.bindApp(ctx)
+                    val outFile = File(WorkPaths.dirOut(),
+                        "LOG_${sub.id}_${System.currentTimeMillis()}.txt")
                     outFile.parentFile?.mkdirs()
                     outFile.writeText(logs.joinToString("\n"))
                 },
