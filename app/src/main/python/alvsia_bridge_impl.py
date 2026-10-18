@@ -264,7 +264,11 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                 return "\n".join(lines)
             if sid == "obb_rezip":
                 dest = out_dir("OBB") / (p.stem + "_rezip.obb")
-                r = feat.run_obb_rezip(ip, dest)
+                extracted = out_dir("OBB") / p.stem
+                if not extracted.is_dir():
+                    lines.append("X Extract this OBB first; expected edited tree at OUT/OBB/%s" % p.stem)
+                    return "\n".join(lines)
+                r = feat.run_obb_rezip(str(extracted), dest)
                 lines.append(str(r))
                 return "\n".join(lines)
 
@@ -578,13 +582,18 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                 cfg = read_config("pak_pass.txt")
                 key_hex = cfg.get("key", cfg.get("key_hex", ""))
                 iv_hex = cfg.get("iv", cfg.get("iv_hex", ""))
-                if not key_hex:
-                    passphrase = Path(work_dir() / "pak_pass.txt").read_text(encoding="utf-8").strip() if (work_dir() / "pak_pass.txt").is_file() else ""
-                    if passphrase and "=" not in passphrase:
-                        key_hex = hashlib.sha1(passphrase.encode("utf-8")).hexdigest()[:32]
-                    else:
-                        lines.append("X WORK/pak_pass.txt requires key=<hex> and optional iv=<hex>, or a passphrase")
-                        return "\n".join(lines)
+                passphrase = cfg.get("passphrase", "")
+                if not passphrase and not key_hex:
+                    raw_cfg = (work_dir() / "pak_pass.txt")
+                    if raw_cfg.is_file():
+                        raw_text = raw_cfg.read_text(encoding="utf-8").strip()
+                        if raw_text and "=" not in raw_text:
+                            passphrase = raw_text
+                if not key_hex and passphrase:
+                    key_hex = hashlib.sha1(passphrase.encode("utf-8")).hexdigest()[:32]
+                if not key_hex or not iv_hex:
+                    lines.append("X WORK/pak_pass.txt requires passphrase=<text> plus iv=<32 hex chars>, or key=<32 hex chars> plus iv=<32 hex chars>")
+                    return "\n".join(lines)
                 r = ult.pak_deep_aes(ip, dest_pakd, key_hex, iv_hex)
                 lines.append(str(r))
                 return "\n".join(lines)
@@ -663,15 +672,19 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                 lines.append(str(r))
                 return "\n".join(lines)
             if sid == "lua_mod_repack":
+                pak_file = Path(ip)
                 mod_dir = next((candidate for candidate in (
-                    work_dir() / "MOD", out / "OUT" / "PAK" / Path(ip).stem,
-                    Path(ip).parent / "Modified_files"
+                    work_dir() / "MOD", out / "OUT" / "PAK" / pak_file.stem,
+                    pak_file.parent / "Modified_files"
                 ) if candidate.is_dir()), None)
                 if mod_dir is None:
                     lines.append("X Add the modified tree to WORK/MOD or OUT/PAK/<pak-name> before repacking")
                     return "\n".join(lines)
-                r = ult.lua_mod_repack(mod_dir, dest_inj)
-                lines.append(str(r))
+                dest = dest_inj / (pak_file.stem + "_modded.pak")
+                result = core.run_pak_smart_repack(pak_file, mod_dir, dest)
+                if not result.get("ok"):
+                    result = core.run_pak_repack(pak_file, mod_dir, dest)
+                lines.append(str(result))
                 return "\n".join(lines)
 
         # ── 17  Anti-RE Audit ────────────────────────────────────────────
