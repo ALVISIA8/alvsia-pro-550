@@ -54,7 +54,7 @@ def test_engine_surfaces_bridge_failures():
     assert "X OUT -> operation failed" in engine
     runner = RUNNER.read_text(encoding="utf-8")
     assert "explicitFalse" in runner
-    assert 'startsWith("X ")' in engine
+    assert 'startsWith("X ")' in runner
     assert "target filename(s) are not present in this PAK index" in bridge
     assert "Lua filenames sample ->" in bridge
 
