@@ -8,6 +8,8 @@ import os
 import re
 import shutil
 import traceback
+import json
+import hashlib
 from pathlib import Path
 
 # SECURITY: require native session marker plus 256-bit token shape (key login only).
@@ -50,6 +52,30 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
             d = out / "WORK"
             d.mkdir(parents=True, exist_ok=True)
             return d
+
+        def read_config(name: str):
+            """Read a simple key=value config, also accepting JSON objects."""
+            path = work_dir() / name
+            if not path.is_file():
+                return {}
+            raw = path.read_text(encoding="utf-8", errors="replace").strip()
+            if not raw:
+                return {}
+            if raw.startswith("{"):
+                try:
+                    value = json.loads(raw)
+                    if isinstance(value, dict):
+                        return {str(k).strip(): str(v).strip() for k, v in value.items()}
+                except Exception:
+                    pass
+            values = {}
+            for line in raw.splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                values[key.strip().lower()] = value.strip()
+            return values
 
         def out_dir(name: str):
             d = out / "OUT" / name
@@ -406,17 +432,25 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                 return "\n".join(lines)
             if sid == "so_multi_xor":
                 key_file = work_dir() / "xor_keys.txt"
-                keys = []
-                if key_file.exists():
-                    for ln in key_file.read_text().splitlines():
-                        ln = ln.strip()
-                        if ln:
-                            try:
-                                keys.append(bytes.fromhex(ln))
-                            except Exception:
-                                keys.append(ln.encode("utf-8"))
-                r = ult.so_multi_xor(ip, dest_so, custom_keys=keys)
-                lines.append(str(r))
+                keys = [ln.strip().replace(" ", "") for ln in key_file.read_text().splitlines()
+                        if ln.strip()] if key_file.is_file() else []
+                if not keys:
+                    lines.append("X Add one hexadecimal XOR key per line to WORK/xor_keys.txt")
+                    return "\n".join(lines)
+                results = []
+                for index, key_hex in enumerate(keys, 1):
+                    result = ult.so_multi_xor(ip, dest_so, key_hex)
+                    if result.get("ok") and result.get("out"):
+                        generated = Path(result["out"])
+                        unique = dest_so / ("so_xored_key%02d_%s" % (index, Path(ip).name))
+                        try:
+                            generated.replace(unique)
+                            result["out"] = str(unique)
+                        except Exception:
+                            pass
+                    results.append(result)
+                lines.append(str({"ok": any(x.get("ok") for x in results),
+                                  "keys_tried": len(keys), "results": results}))
                 return "\n".join(lines)
             if sid == "so_url_dump":
                 r = ult.so_url_dump(ip, dest_so)
@@ -427,11 +461,12 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                 lines.append(str(r))
                 return "\n".join(lines)
             if sid == "so_patch_url":
-                cfg = work_dir() / "patch_config.txt"
-                if not cfg.exists():
-                    lines.append("X Create WORK/patch_config.txt: offset=0x... key=0x.. new_url=https://...")
+                cfg = read_config("patch_config.txt")
+                old_url, new_url = cfg.get("old_url", ""), cfg.get("new_url", "")
+                if not old_url or not new_url:
+                    lines.append("X WORK/patch_config.txt must contain old_url=<existing URL> and new_url=<replacement URL>")
                     return "\n".join(lines)
-                r = ult.so_patch_url(ip, dest_so, str(cfg))
+                r = ult.so_patch_url(ip, dest_so, old_url, new_url)
                 lines.append(str(r))
                 return "\n".join(lines)
 
@@ -446,10 +481,9 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                 lines.append(str(r))
                 return "\n".join(lines)
             if sid == "frida_jni_hook":
-                if not pkg:
-                    lines.append("X Write target package to WORK/frida_target.txt")
+                if not need_file():
                     return "\n".join(lines)
-                r = ult.frida_jni_hook(pkg, dest_fr)
+                r = ult.frida_jni_hook(ip, dest_fr)
                 lines.append(str(r))
                 return "\n".join(lines)
             if sid == "frida_spawn":
@@ -474,8 +508,8 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                 if not kf.exists():
                     lines.append("X Put key in WORK/xor_key.txt (hex bytes, e.g. DEADBEEF)")
                     return "\n".join(lines)
-                key = bytes.fromhex(kf.read_text().strip())
-                r = ult.xor_apply_key(ip, dest_xor, key)
+                key_hex = kf.read_text(encoding="utf-8").strip()
+                r = ult.xor_apply_key(ip, dest_xor, key_hex)
                 lines.append(str(r))
                 return "\n".join(lines)
             if sid == "xor_luas_strip":
@@ -488,8 +522,8 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                 if not kf.exists() or not batch_dir.exists():
                     lines.append("X Need WORK/BATCH/ dir and WORK/xor_key.txt")
                     return "\n".join(lines)
-                key = bytes.fromhex(kf.read_text().strip())
-                r = ult.xor_batch(str(batch_dir), dest_xor, key)
+                key_hex = kf.read_text(encoding="utf-8").strip()
+                r = ult.xor_batch(str(batch_dir), dest_xor, key_hex)
                 lines.append(str(r))
                 return "\n".join(lines)
 
@@ -499,23 +533,35 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
             if not need_file(): return "\n".join(lines)
             dest_dec = out_dir("DEC")
             if sid == "dec_auto":
-                r = ult.decrypt_auto(ip, dest_dec, str(work_dir()))
+                r = ult.decrypt_auto(ip, dest_dec)
                 lines.append(str(r))
                 return "\n".join(lines)
-            if sid == "dec_aes_cbc":
-                r = ult.decrypt_aes(ip, dest_dec, str(work_dir()), mode="CBC")
-                lines.append(str(r))
-                return "\n".join(lines)
-            if sid == "dec_aes_ecb":
-                r = ult.decrypt_aes(ip, dest_dec, str(work_dir()), mode="ECB")
+            if sid in ("dec_aes_cbc", "dec_aes_ecb"):
+                cfg = read_config("aes_config.txt")
+                key_hex = cfg.get("key", cfg.get("key_hex", ""))
+                iv_hex = cfg.get("iv", cfg.get("iv_hex", "")) if sid == "dec_aes_cbc" else ""
+                if not key_hex or (sid == "dec_aes_cbc" and not iv_hex):
+                    lines.append("X WORK/aes_config.txt requires key=<hex>; AES-CBC also requires iv=<hex>")
+                    return "\n".join(lines)
+                r = ult.decrypt_aes(ip, dest_dec, key_hex, iv_hex)
                 lines.append(str(r))
                 return "\n".join(lines)
             if sid == "dec_zuc":
-                r = ult.decrypt_zuc(ip, dest_dec, str(work_dir()))
+                cfg = read_config("zuc_config.txt")
+                key_hex, iv_hex = cfg.get("key", cfg.get("key_hex", "")), cfg.get("iv", cfg.get("iv_hex", ""))
+                if not key_hex:
+                    lines.append("X WORK/zuc_config.txt requires key=<hex> (optional iv=<hex>)")
+                    return "\n".join(lines)
+                r = ult.decrypt_zuc(ip, dest_dec, key_hex, iv_hex)
                 lines.append(str(r))
                 return "\n".join(lines)
             if sid == "dec_sm4":
-                r = ult.decrypt_sm4(ip, dest_dec, str(work_dir()))
+                cfg = read_config("sm4_config.txt")
+                key_hex = cfg.get("key", cfg.get("key_hex", ""))
+                if not key_hex:
+                    lines.append("X WORK/sm4_config.txt requires key=<32 hex characters>")
+                    return "\n".join(lines)
+                r = ult.decrypt_sm4(ip, dest_dec, key_hex)
                 lines.append(str(r))
                 return "\n".join(lines)
             if sid == "dec_simple1":
@@ -528,9 +574,18 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
             import alvsia_ultimate as ult
             if not need_file(): return "\n".join(lines)
             dest_pakd = out_dir("PAKD")
-            wdir = str(work_dir())
             if sid == "pak_deep_aes":
-                r = ult.pak_deep_aes(ip, dest_pakd, wdir)
+                cfg = read_config("pak_pass.txt")
+                key_hex = cfg.get("key", cfg.get("key_hex", ""))
+                iv_hex = cfg.get("iv", cfg.get("iv_hex", ""))
+                if not key_hex:
+                    passphrase = Path(work_dir() / "pak_pass.txt").read_text(encoding="utf-8").strip() if (work_dir() / "pak_pass.txt").is_file() else ""
+                    if passphrase and "=" not in passphrase:
+                        key_hex = hashlib.sha1(passphrase.encode("utf-8")).hexdigest()[:32]
+                    else:
+                        lines.append("X WORK/pak_pass.txt requires key=<hex> and optional iv=<hex>, or a passphrase")
+                        return "\n".join(lines)
+                r = ult.pak_deep_aes(ip, dest_pakd, key_hex, iv_hex)
                 lines.append(str(r))
                 return "\n".join(lines)
             if sid == "pak_deep_zstd":
@@ -538,15 +593,25 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                 lines.append(str(r))
                 return "\n".join(lines)
             if sid == "pak_deep_zuc":
-                r = ult.pak_deep_zuc(ip, dest_pakd, wdir)
+                cfg = read_config("zuc_config.txt")
+                key_hex, iv_hex = cfg.get("key", cfg.get("key_hex", "")), cfg.get("iv", cfg.get("iv_hex", ""))
+                if not key_hex:
+                    lines.append("X WORK/zuc_config.txt requires key=<hex>")
+                    return "\n".join(lines)
+                r = ult.pak_deep_zuc(ip, dest_pakd, key_hex, iv_hex)
                 lines.append(str(r))
                 return "\n".join(lines)
             if sid == "pak_deep_sm4":
-                r = ult.pak_deep_sm4(ip, dest_pakd, wdir)
+                cfg = read_config("sm4_config.txt")
+                key_hex = cfg.get("key", cfg.get("key_hex", ""))
+                if not key_hex:
+                    lines.append("X WORK/sm4_config.txt requires key=<32 hex characters>")
+                    return "\n".join(lines)
+                r = ult.pak_deep_sm4(ip, dest_pakd, key_hex)
                 lines.append(str(r))
                 return "\n".join(lines)
             if sid == "pak_deep_auto":
-                r = ult.pak_deep_auto(ip, dest_pakd, wdir)
+                r = ult.pak_deep_auto(ip, dest_pakd)
                 lines.append(str(r))
                 return "\n".join(lines)
 
@@ -564,7 +629,12 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                 lines.append(str(r))
                 return "\n".join(lines)
             if sid == "str_xref":
-                r = ult.string_xref(ip, dest_str)
+                cfg = read_config("xref_query.txt")
+                query = cfg.get("search", cfg.get("query", ""))
+                if not query:
+                    lines.append("X Enter search=<text> in WORK/xref_query.txt")
+                    return "\n".join(lines)
+                r = ult.string_xref(ip, dest_str, query)
                 lines.append(str(r))
                 return "\n".join(lines)
 
@@ -575,23 +645,32 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
             dest_inj = out_dir("LINJ")
             wdir = str(work_dir())
             if sid == "lua_patch_byte":
-                pf = work_dir() / "lua_patch.json"
-                if not pf.exists():
-                    lines.append("X Create WORK/lua_patch.json: {\"offset\":N, \"opcode\":N, \"value\":N}")
+                cfg = read_config("lua_patch.json")
+                patch_offset = cfg.get("offset", "")
+                patch_hex = cfg.get("patch_hex", cfg.get("bytes", ""))
+                if not patch_offset or not patch_hex:
+                    lines.append("X WORK/lua_patch.json must contain offset=0x1234 and patch_hex=DEADBEEF")
                     return "\n".join(lines)
-                r = ult.lua_patch_bytecode(ip, dest_inj, str(pf))
+                r = ult.lua_patch_bytecode(ip, dest_inj, patch_offset, patch_hex)
                 lines.append(str(r))
                 return "\n".join(lines)
             if sid == "lua_inject_hook":
                 hf = work_dir() / "lua_hook.lua"
-                if not hf.exists():
-                    lines.append("X Create WORK/lua_hook.lua with your hook code")
+                if not hf.is_file():
+                    lines.append("X Enter hook Lua source in the CONFIG field (saved as WORK/lua_hook.lua)")
                     return "\n".join(lines)
-                r = ult.lua_inject_hook(ip, dest_inj, str(hf), jars_dir=jars)
+                r = ult.lua_inject_hook(ip, dest_inj, str(hf))
                 lines.append(str(r))
                 return "\n".join(lines)
             if sid == "lua_mod_repack":
-                r = ult.lua_mod_repack(ip, dest_inj, wdir, jars_dir=jars)
+                mod_dir = next((candidate for candidate in (
+                    work_dir() / "MOD", out / "OUT" / "PAK" / Path(ip).stem,
+                    Path(ip).parent / "Modified_files"
+                ) if candidate.is_dir()), None)
+                if mod_dir is None:
+                    lines.append("X Add the modified tree to WORK/MOD or OUT/PAK/<pak-name> before repacking")
+                    return "\n".join(lines)
+                r = ult.lua_mod_repack(mod_dir, dest_inj)
                 lines.append(str(r))
                 return "\n".join(lines)
 
