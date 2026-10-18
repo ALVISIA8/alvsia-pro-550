@@ -157,7 +157,7 @@ object PythonBridgeRunner {
             val osMod = getModule.invoke(py, "os") ?: return
             val pyObjectCls = Class.forName("com.chaquo.python.PyObject")
             val callAttr = pyObjectCls.getMethod("callAttr", String::class.java, Array<Any?>::class.java)
-            val getObj = pyObjectCls.getMethod("get", String::class.java)
+            val getObj = pyObjectCls.getMethod("get", Any::class.java)
             val environ = getObj.invoke(osMod, "environ") ?: return
             callAttr.invoke(environ, "__setitem__", arrayOf<Any?>(key, value))
         } catch (_: Throwable) { }
@@ -173,7 +173,7 @@ object PythonBridgeRunner {
             val osMod = getModule.invoke(py, "os") ?: return
             val pyObjectCls = Class.forName("com.chaquo.python.PyObject")
             val callAttr = pyObjectCls.getMethod("callAttr", String::class.java, Array<Any?>::class.java)
-            val getObj = pyObjectCls.getMethod("get", String::class.java)
+            val getObj = pyObjectCls.getMethod("get", Any::class.java)
             val environ = getObj.invoke(osMod, "environ") ?: return
             callAttr.invoke(environ, "pop", arrayOf<Any?>(key, null))
         } catch (_: Throwable) { }
