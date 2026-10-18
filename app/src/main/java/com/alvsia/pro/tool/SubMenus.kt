@@ -139,12 +139,12 @@ object SubMenus {
 
         // ── 11 Frida Tracer ───────────────────────────────────────────────
         11 -> listOf(
-            SubTool("frida_jni_hook",  "JNI URL Tracer",  "Hook JNI_NewStringUTF / strstr / sprintf",
-                "Requires device with Frida server. Enter package name in WORK/frida_target.txt → OUT/FRIDA/hooked_urls.txt"),
+            SubTool("frida_jni_hook",  "JNI URL Tracer",  "Generate JNI hook script for a selected .so",
+                "Select the target .so → OUT/FRIDA/jni_hook_<name>.js"),
             SubTool("frida_js_dump",   "JS Script Dump",  "Export generated Frida script for manual use",
-                "No device needed. Select APK or enter pkg in WORK/frida_target.txt → OUT/FRIDA/hook_script.js"),
-            SubTool("frida_spawn",     "Spawn + Trace",   "Launch app under Frida then capture output",
-                "Frida server must run on device. WORK/frida_target.txt → OUT/FRIDA/trace.txt"),
+                "Enter target package in CONFIG; script is saved under OUT/FRIDA/", needsFile = false),
+            SubTool("frida_spawn",     "Spawn + Trace",   "Generate Frida spawn/trace commands",
+                "Enter target package in CONFIG; command file is saved under OUT/FRIDA/", needsFile = false),
         )
 
         // ── 12 XOR Suite ──────────────────────────────────────────────────
