@@ -305,9 +305,10 @@ class ToolEngine(private val context: Context) {
     }
 
     private fun needsInput(moduleId: Int, subId: String): Boolean {
-        if (subId in listOf("frida_js_dump", "frida_spawn", "xor_batch", "clear_work")) return false
-        if (subId.contains("session") || subId.contains("local") || subId.contains("report") || subId.contains("clear")) return false
-        return moduleId !in listOf(7, 13, 15) && !subId.contains("clear")
+        // Only these actions are designed to run without a selected input file.
+        // Decrypt (13), String Recover (15), and Export Report (8) all require input.
+        if (moduleId == 7 && subId == "clear_work") return false
+        return subId !in setOf("frida_js_dump", "frida_spawn", "xor_batch")
     }
 
     private fun mirrorMsvToOut(moduleId: Int, lines: MutableList<String>) {
