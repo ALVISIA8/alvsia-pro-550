@@ -12582,7 +12582,9 @@ def frida_spawn_trace(input_path, out_dir):
     """Generate Frida spawn-trace shell command for a package."""
     from pathlib import Path
     p = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
-    pkg = p.stem.replace("-",".")
+    # The caller passes a package identifier (e.g. com.tencent.ig), not a filename.
+    # Path.stem would incorrectly truncate the final segment after the last dot.
+    pkg = str(input_path).strip()
     lines = [
         "# ALVSIA Frida Spawn Trace",
         "# Install frida-server on device, then run:",
