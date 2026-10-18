@@ -91,6 +91,9 @@ def test_tool_argument_and_storage_contracts():
     assert "WorkPaths.dirWork()" in workspace
     assert "WorkPaths.dirOut()" in output_browser
     assert "explicitTrue" in runner
+    config_schema = (ROOT / "app/src/main/java/com/alvsia/pro/tool/SubToolConfig.kt").read_text(encoding="utf-8")
+    assert '"frida_js_dump", "frida_spawn" -> listOf(' in config_schema
+    assert '"frida_jni_hook", "frida_spawn" -> listOf(' not in config_schema
 
 
 def test_bridge_call_signatures_match_helpers():
@@ -162,4 +165,4 @@ if __name__ == "__main__":
     for test in tests:
         test()
         print("PASS", test.__name__)
-    print("TOOL DISPATCH TEST: PASS (5/5)")
+    print(f"TOOL DISPATCH TEST: PASS ({len(tests)}/{len(tests)})")
