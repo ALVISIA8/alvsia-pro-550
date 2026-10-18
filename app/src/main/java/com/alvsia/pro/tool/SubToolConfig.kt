@@ -80,7 +80,7 @@ fun subToolConfig(subId: String): List<SubToolConfig> = when (subId) {
     )
 
     // Module 11 — Frida Tracer
-    "frida_spawn" -> listOf(
+    "frida_js_dump", "frida_spawn" -> listOf(
         SubToolConfig(
             field = "target_pkg",
             label = "Target Package Name",
