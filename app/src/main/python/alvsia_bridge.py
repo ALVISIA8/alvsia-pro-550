@@ -1,4 +1,3 @@
-from __future__ import annotations
 import os
 import re
 
@@ -23,23 +22,18 @@ def _install_sealed_runtime():
 def configure_runtime(token, sealed_runtime="1"):
     try:
         token = str(token).strip()
-    except Exception:
-        return False
-    if re.fullmatch(r"[0-9A-Fa-f]{64}", token) is None:
-        return False
-    try:
+        if re.fullmatch(r"[0-9A-Fa-f]{64}", token) is None:
+            return False
         from com.alvsia.pro.sec import SessionGate
-        # isTokenCurrent validates session age, HMAC, and token equality atomically.
-        # Do not call isSessionAuthorized separately: RASP can lock between calls.
         if not bool(SessionGate.isTokenCurrent(token)):
             return False
+        os.environ.pop("ALVSIA_SESSION_TOKEN", None)
+        os.environ["ALVSIA_APK_SESSION"] = "1"
+        os.environ["ALVSIA_SEALED_RUNTIME"] = "1" if str(sealed_runtime) == "1" else "0"
+        _install_sealed_runtime()
+        return True
     except Exception:
         return False
-    os.environ.pop("ALVSIA_SESSION_TOKEN", None)
-    os.environ["ALVSIA_APK_SESSION"] = "1"
-    os.environ["ALVSIA_SEALED_RUNTIME"] = "1" if str(sealed_runtime) == "1" else "0"
-    _install_sealed_runtime()
-    return True
 
 def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
     if not _authorized() or os.environ.get("ALVSIA_APK_SESSION") != "1":
