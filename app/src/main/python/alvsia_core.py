@@ -1474,7 +1474,14 @@ class TencentPakFile:
         if '\x00' in mount_text:
             _log_path_debug('INVALID MOUNT POINT', mount_point=mount_text, output_root=str(out_path))
             raise ValueError('PAK mount point contains an embedded NUL character.')
-        out_path /= self._mount_point
+        base_root = Path(out_path).resolve()
+        out_path = (base_root / mount_text).resolve()
+        try:
+            out_path.relative_to(base_root)
+        except ValueError:
+            _log_path_debug('UNSAFE MOUNT POINT', mount_point=mount_text, output_root=str(base_root))
+            raise ValueError('PAK mount point escapes the extraction directory.')
+        safe_root = out_path
         skipped_dirs = 0
         skipped_files = 0
         for dir_path, dir in self._index.items():
@@ -1483,7 +1490,13 @@ class TencentPakFile:
                 skipped_dirs += 1
                 _log_path_debug('INVALID DIRECTORY PATH', directory=dir_text, output_root=str(out_path), reason='embedded NUL character')
                 continue
-            current_out_path = Path(out_path / dir_path)
+            current_out_path = (safe_root / dir_text).resolve()
+            try:
+                current_out_path.relative_to(safe_root)
+            except ValueError:
+                skipped_dirs += 1
+                _log_path_debug('UNSAFE DIRECTORY PATH', directory=dir_text, output_path=str(current_out_path), reason='path escapes extraction root')
+                continue
             if '\x00' in str(current_out_path):
                 skipped_dirs += 1
                 _log_path_debug('INVALID OUTPUT DIRECTORY', directory=dir_text, output_path=str(current_out_path), reason='embedded NUL character')
@@ -1501,7 +1514,13 @@ class TencentPakFile:
                     skipped_files += 1
                     _log_path_debug('INVALID FILE NAME', directory=dir_text, file_name=file_text, reason='embedded NUL character')
                     continue
-                file_out_path = current_out_path / file_name
+                file_out_path = (current_out_path / file_text).resolve()
+                try:
+                    file_out_path.relative_to(safe_root)
+                except ValueError:
+                    skipped_files += 1
+                    _log_path_debug('UNSAFE FILE PATH', directory=dir_text, file_name=file_text, output_path=str(file_out_path), reason='path escapes extraction root')
+                    continue
                 if '\x00' in str(file_out_path):
                     skipped_files += 1
                     _log_path_debug('INVALID FILE OUTPUT PATH', directory=dir_text, file_name=file_text, output_path=str(file_out_path), reason='embedded NUL character')
@@ -1521,15 +1540,18 @@ class TencentPakFile:
         """
         normalized = tuple((ext.lower() if str(ext).startswith('.') else '.' + str(ext).lower() for ext in extensions))
         stats = {'matched': 0, 'extracted': 0, 'failed': 0, 'errors': []}
+        safe_root = Path(out_path).resolve()
         for dir_path, files in self._index.items():
             for file_name, entry in files.items():
                 if not str(file_name).lower().endswith(normalized):
                     continue
                 stats['matched'] += 1
-                target_dir = Path(out_path / dir_path)
-                target_dir.mkdir(parents=True, exist_ok=True)
-                target_file = target_dir / file_name
+                target_dir = (safe_root / str(dir_path)).resolve()
+                target_file = (target_dir / str(file_name)).resolve()
                 try:
+                    target_dir.relative_to(safe_root)
+                    target_file.relative_to(safe_root)
+                    target_dir.mkdir(parents=True, exist_ok=True)
                     self._write_to_disk(target_file, entry)
                     stats['extracted'] += 1
                 except Exception as e:
