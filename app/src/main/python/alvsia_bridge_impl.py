@@ -82,6 +82,33 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
             d.mkdir(parents=True, exist_ok=True)
             return d
 
+        def try_pak_unpack(result, target_dir: Path):
+            """After decrypt/decompress, try the native PAK parser as well as ZIP."""
+            if not isinstance(result, dict) or not result.get("ok"):
+                return result
+            payload = result.get("out")
+            if not payload or not Path(payload).is_file():
+                return result
+            extract_dir = target_dir / (Path(payload).stem + "_unpacked")
+            try:
+                unpacked = core.run_pak_unpack(payload, extract_dir)
+                if isinstance(unpacked, dict) and unpacked.get("ok"):
+                    files = [item for item in extract_dir.rglob("*") if item.is_file()]
+                    if files:
+                        result["pak_unpack"] = {
+                            "ok": True, "files": len(files), "out": str(extract_dir)
+                        }
+                    else:
+                        result["pak_unpack_note"] = "native PAK parser produced no files"
+                else:
+                    result["pak_unpack_note"] = (
+                        unpacked.get("error", "native PAK parser rejected payload")
+                        if isinstance(unpacked, dict) else str(unpacked)
+                    )
+            except Exception as exc:
+                result["pak_unpack_note"] = str(exc)[:240]
+            return result
+
         # ── 1  PAK Unpack ────────────────────────────────────────────────
         if mid == 1 or sid.startswith("pak_full") or sid in ("pak_list", "pak_info", "pak_csv"):
             if not need_file(): return "\n".join(lines)
@@ -601,10 +628,12 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                     lines.append("X WORK/pak_pass.txt requires passphrase=<text> plus iv=<32 hex chars>, or key=<32 hex chars> plus iv=<32 hex chars>")
                     return "\n".join(lines)
                 r = ult.pak_deep_aes(ip, dest_pakd, key_hex, iv_hex)
+                r = try_pak_unpack(r, dest_pakd)
                 lines.append(str(r))
                 return "\n".join(lines)
             if sid == "pak_deep_zstd":
                 r = ult.pak_deep_zstd(ip, dest_pakd)
+                r = try_pak_unpack(r, dest_pakd)
                 lines.append(str(r))
                 return "\n".join(lines)
             if sid == "pak_deep_zuc":
@@ -614,6 +643,7 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                     lines.append("X WORK/zuc_config.txt requires key=<hex>")
                     return "\n".join(lines)
                 r = ult.pak_deep_zuc(ip, dest_pakd, key_hex, iv_hex)
+                r = try_pak_unpack(r, dest_pakd)
                 lines.append(str(r))
                 return "\n".join(lines)
             if sid == "pak_deep_sm4":
@@ -628,10 +658,21 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                     lines.append("X SM4-CBC requires iv=<32 hex characters>")
                     return "\n".join(lines)
                 r = ult.pak_deep_sm4(ip, dest_pakd, key_hex, mode, iv_hex)
+                r = try_pak_unpack(r, dest_pakd)
                 lines.append(str(r))
                 return "\n".join(lines)
             if sid == "pak_deep_auto":
-                r = ult.pak_deep_auto(ip, dest_pakd)
+                native_dir = dest_pakd / (Path(ip).stem + "_native")
+                try:
+                    native_result = core.run_pak_unpack(ip, native_dir)
+                except Exception as exc:
+                    native_result = {"ok": False, "error": str(exc)[:240]}
+                native_files = [item for item in native_dir.rglob("*") if item.is_file()] if native_dir.is_dir() else []
+                if isinstance(native_result, dict) and native_result.get("ok") and native_files:
+                    r = {"ok": True, "method": "native_pak_parser",
+                         "files": len(native_files), "out": str(native_dir)}
+                else:
+                    r = ult.pak_deep_auto(ip, dest_pakd)
                 lines.append(str(r))
                 return "\n".join(lines)
 
