@@ -12680,23 +12680,36 @@ def xor_batch(input_path, out_dir, key_hex=""):
 
 # ── Module 13: Decrypt Engine ─────────────────────────────────────────────────
 
+def _aes_unpad_plaintext(data):
+    """Remove valid PKCS#7 padding after decryption; otherwise preserve bytes."""
+    if not data:
+        return data
+    pad_len = data[-1]
+    if 1 <= pad_len <= 16 and data[-pad_len:] == bytes([pad_len]) * pad_len:
+        return data[:-pad_len]
+    return data
+
+
 def _aes_ecb_decrypt(data, key):
     try:
         from Crypto.Cipher import AES
-        c = AES.new(key, AES.MODE_ECB)
-        pad = 16 - len(data) % 16
-        data = data + bytes([pad]*pad)
-        return c.decrypt(data)
+        if not data or len(data) % 16:
+            raise ValueError("AES ciphertext length must be a non-zero multiple of 16 bytes")
+        cipher = AES.new(key, AES.MODE_ECB)
+        return _aes_unpad_plaintext(cipher.decrypt(data))
     except ImportError:
         return None
+
 
 def _aes_cbc_decrypt(data, key, iv):
     try:
         from Crypto.Cipher import AES
-        c = AES.new(key, AES.MODE_CBC, iv)
-        pad = 16 - len(data) % 16
-        data = data + bytes([pad]*pad)
-        return c.decrypt(data)
+        if not data or len(data) % 16:
+            raise ValueError("AES ciphertext length must be a non-zero multiple of 16 bytes")
+        if len(iv) != 16:
+            raise ValueError("AES-CBC IV must be exactly 16 bytes")
+        cipher = AES.new(key, AES.MODE_CBC, iv)
+        return _aes_unpad_plaintext(cipher.decrypt(data))
     except ImportError:
         return None
 
@@ -12730,11 +12743,12 @@ def decrypt_auto(input_path, out_dir):
             Path(out_file).write_bytes(dec)
             results.append("XOR key=0x%02X => %s" % (key, out_file.name))
             break
-    if not results:
+    succeeded = bool(results)
+    if not succeeded:
         results.append("no auto-decryption method succeeded — manual analysis needed")
     out_report = out_dir / "decrypt_auto_report.txt"
     Path(out_report).write_text("\n".join(results))
-    return {"ok": True, "out": str(out_report), "methods_tried": len(results)}
+    return {"ok": succeeded, "out": str(out_report), "methods_tried": len(results)}
 
 
 def decrypt_aes(input_path, out_dir, key_hex="", iv_hex=""):
