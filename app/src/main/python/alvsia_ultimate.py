@@ -12769,8 +12769,13 @@ def decrypt_zuc(input_path, out_dir, key_hex="", iv_hex=""):
     except Exception:
         return {"ok": False, "error": "invalid key_hex"}
     raw = p.read_bytes()
-    # Simple LFSR-based approximation for ZUC-like stream
-    state = list(key) + ([0]*max(0,16-len(key)))
+    # This is an explicitly labeled ZUC-like fallback, not standards-compliant ZUC.
+    # Incorporate the configured IV into the fallback stream instead of silently ignoring it.
+    try:
+        iv = bytes.fromhex(iv_hex.replace(" ", "")) if iv_hex else b""
+    except Exception:
+        return {"ok": False, "error": "invalid iv_hex"}
+    state = (list(key) + list(iv) + [0] * 16)[:16]
     stream = []
     for i in range(len(raw)):
         out_word = state[0] ^ state[3] ^ state[5] ^ state[11]
@@ -12902,9 +12907,9 @@ def pak_deep_zstd(input_path, out_dir):
     return {"ok": True, "out": str(out_file), "dec_size": len(dec)}
 
 
-def pak_deep_zuc(input_path, out_dir, key_hex=""):
-    """ZUC decrypt PAK then extract."""
-    result = decrypt_zuc(input_path, out_dir, key_hex)
+def pak_deep_zuc(input_path, out_dir, key_hex="", iv_hex=""):
+    """ZUC-like fallback decrypt PAK then attempt ZIP extraction."""
+    result = decrypt_zuc(input_path, out_dir, key_hex, iv_hex)
     if not result.get("ok"): return result
     from pathlib import Path
     import zipfile
@@ -13055,31 +13060,30 @@ def lua_patch_bytecode(input_path, out_dir, patch_offset="", patch_hex=""):
     return {"ok": True, "out": str(out_file), "patched_at": "0x%X" % offset}
 
 
-def lua_inject_hook(input_path, out_dir):
-    """Generate a Lua hook injection script for the target file."""
+def lua_inject_hook(input_path, out_dir, hook_path=None):
+    """Prepend user-supplied Lua hook source to a Lua source file."""
     from pathlib import Path
-    p = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
-    hook_script = """-- ALVSIA Lua Hook Injection
--- Target: %s
--- Inject this at the top of a decompiled Lua source
-
-local _orig_require = require
-require = function(modname)
-    print("[ALVSIA HOOK] require: " .. tostring(modname))
-    return _orig_require(modname)
-end
-
-local _orig_load = load
-load = function(chunk, chunkname, mode, env)
-    print("[ALVSIA HOOK] load called, chunk type: " .. type(chunk))
-    return _orig_load(chunk, chunkname, mode, env)
-end
-
-print("[ALVSIA] Hooks active in: %s")
-""" % (p.name, p.name)
-    out_file = out_dir / ("inject_hook_%s.lua" % p.stem)
-    Path(out_file).write_text(hook_script)
-    return {"ok": True, "out": str(out_file)}
+    p = Path(input_path)
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    if not p.is_file():
+        return {"ok": False, "error": "input Lua source file not found"}
+    if not hook_path or not Path(hook_path).is_file():
+        return {"ok": False, "error": "hook source file required"}
+    try:
+        source = p.read_text(encoding="utf-8")
+        hook = Path(hook_path).read_text(encoding="utf-8").strip()
+    except UnicodeError:
+        return {"ok": False, "error": "input and hook must be text Lua source files"}
+    if not hook:
+        return {"ok": False, "error": "hook source is empty"}
+    out_file = out_dir / ("%s_hooked.lua" % p.stem)
+    out_file.write_text(hook + "\\n\\n" + source, encoding="utf-8")
+    return {
+        "ok": True,
+        "out": str(out_file),
+        "note": "Hook source prepended; Lua bytecode compilation is not performed by this operation."
+    }
 
 
 def lua_mod_repack(input_path, out_dir):
