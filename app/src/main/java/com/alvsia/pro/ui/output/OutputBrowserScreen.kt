@@ -54,7 +54,7 @@ fun OutputBrowserScreen(onBack: () -> Unit) {
 
     LaunchedEffect(Unit) {
         val outDir = File(android.os.Environment.getExternalStoragePublicDirectory(
-            android.os.Environment.DIRECTORY_DOWNLOAD), "ALVSIA/OUT")
+            android.os.Environment.DIRECTORY_DOWNLOADS), "ALVSIA/OUT")
         if (outDir.isDirectory) {
             files = outDir.walkTopDown()
                 .filter { it.isFile && it.length() > 0 && it.length() < 5_000_000 }
@@ -75,7 +75,7 @@ fun OutputBrowserScreen(onBack: () -> Unit) {
             TextButton(onClick = onBack) { Text("← BACK", color = AlvisiaCyan, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
             TextButton(onClick = {
                 val outDir = File(android.os.Environment.getExternalStoragePublicDirectory(
-                    android.os.Environment.DIRECTORY_DOWNLOAD), "ALVSIA/OUT")
+                    android.os.Environment.DIRECTORY_DOWNLOADS), "ALVSIA/OUT")
                 if (outDir.isDirectory) { outDir.deleteRecursively(); outDir.mkdirs(); files = emptyList() }
             }) { Text("CLEAR ALL", color = Color(0xFFFF2D55), fontWeight = FontWeight.Bold, fontSize = 11.sp) }
         }
