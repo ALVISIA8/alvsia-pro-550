@@ -175,6 +175,30 @@ def test_obb_extract_normalizes_archive_paths():
         assert result.get("ok"), result
         assert (out / "folder" / "file.txt").read_text(encoding="utf-8") == "hello"
 
+
+def test_large_file_helpers_stream_and_report_hashes():
+    source = (ROOT / "app/src/main/python/alvsia_features.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    names = {"run_strings_scan", "run_export_report"}
+    functions = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names]
+    assert {node.name for node in functions} == names
+    namespace = {}
+    exec(compile(ast.Module(body=functions, type_ignores=[]), str(ROOT / "app/src/main/python/alvsia_features.py"), "exec"), namespace)
+    with tempfile.TemporaryDirectory() as td:
+        base = Path(td)
+        sample = base / "sample.bin"
+        sample.write_bytes(b"alpha-string\x00beta-string\x00alpha-string")
+        scan = namespace["run_strings_scan"](sample, base / "scan")
+        assert scan.get("ok"), scan
+        output = Path(scan["out"]).read_text(encoding="utf-8")
+        assert output.splitlines() == ["alpha-string", "beta-string"]
+        report = namespace["run_export_report"](sample, base / "report")
+        assert report.get("ok"), report
+        import hashlib
+        expected = hashlib.sha256(sample.read_bytes()).hexdigest()
+        assert report.get("sha256") == expected, report
+        assert expected in Path(report["out"]).read_text(encoding="utf-8")
+
 if __name__ == "__main__":
     tests = (
         test_menu_ids_are_unique_and_reachable,
@@ -184,6 +208,7 @@ if __name__ == "__main__":
         test_tool_argument_and_storage_contracts,
         test_bridge_call_signatures_match_helpers,
         test_obb_extract_normalizes_archive_paths,
+        test_large_file_helpers_stream_and_report_hashes,
     )
     for test in tests:
         test()
