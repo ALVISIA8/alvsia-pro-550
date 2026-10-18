@@ -288,7 +288,7 @@ class ToolEngine(private val context: Context) {
                 val report = File(WorkPaths.moduleOut(8), "report_${input.name}_${System.currentTimeMillis()}.txt")
                 return try {
                     report.writeText(
-                        "ALVSIA FILE REPORT\\nname=${input.name}\\npath=${input.absolutePath}\\nsize=${input.length()}\\nsha256=${digest(input, "SHA-256")}\\n",
+                        "ALVSIA FILE REPORT\nname=${input.name}\npath=${input.absolutePath}\nsize=${input.length()}\nsha256=${digest(input, "SHA-256")}\n",
                         Charsets.UTF_8
                     )
                     lines.add("OK OUTPUT -> ${report.absolutePath}")
