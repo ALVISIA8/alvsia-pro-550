@@ -89,7 +89,7 @@ object SubMenus {
                 "Select file → OUT/LUA/*.xor"),
             SubTool("lua_multi_xor",   "Multi-XOR Probe",    "Candidate scan",
                 "Select file → OUT/LUA/*_xor_*.bin"),
-            SubTool("lua_vm_deobfuscate", "VM Deobfuscate",  "Auto-detect & reverse Lua protection (ALVSEAL3/ALVLUA1/BGMI-VM)",
+            SubTool("lua_vm_deobfuscate", "VM Deobfuscate",  "Detect supported ALVSEAL/ALVLUA formats and report recovery results",
                 "Select protected .lua/.luac/.alvlua → OUT/LUA/*_recovered.lua or partial recovery report"),
         )
 
@@ -131,7 +131,7 @@ object SubMenus {
                 "One key per line (hex or utf8). Select binary → OUT/SO/multikey_results.txt"),
             SubTool("so_url_dump",    "URL/String Dump",  "Extract plaintext endpoints",
                 "Select .so → OUT/SO/urls.txt + strings.txt"),
-            SubTool("so_aes_probe",   "AES Key Probe",    "Detect AES-CBC/ECB key candidates",
+            SubTool("so_aes_probe",   "AES Key Probe",    "Scan for AES-related patterns; does not recover secret keys",
                 "Select .so → OUT/SO/aes_keys.txt  (entropy + pattern scan)"),
             SubTool("so_patch_url",   "Patch Plaintext URL", "Replace an existing URL in a .so binary",
                 "CONFIG: old_url=<existing URL> and new_url=<same-length or shorter URL>; output is written under OUT/SO/"),
@@ -139,7 +139,7 @@ object SubMenus {
 
         // ── 11 Frida Tracer ───────────────────────────────────────────────
         11 -> listOf(
-            SubTool("frida_jni_hook",  "JNI URL Tracer",  "Generate JNI hook script for a selected .so",
+            SubTool("frida_jni_hook",  "JNI URL Tracer",  "Generate a script to observe JNI_OnLoad; manual review required",
                 "Select the target .so → OUT/FRIDA/jni_hook_<name>.js"),
             SubTool("frida_js_dump",   "JS Script Dump",  "Export generated Frida script for manual use",
                 "Enter target package in CONFIG; script is saved under OUT/FRIDA/", needsFile = false),
@@ -161,7 +161,7 @@ object SubMenus {
 
         // ── 13 Decrypt Engine ─────────────────────────────────────────────
         13 -> listOf(
-            SubTool("dec_auto",        "Auto-Detect",       "Try AES-CBC/ECB, ZUC, SM4, SIMPLE1",
+            SubTool("dec_auto",        "Auto-Detect",       "Probe supported transforms; validate output before use",
                 "Select encrypted blob → OUT/DEC/auto_result.bin  (first successful algo wins)"),
             SubTool("dec_aes_cbc",     "AES-CBC Decrypt",   "Key+IV from WORK/aes_config.txt",
                 "aes_config.txt: key=<hex32> iv=<hex16>. Select ciphertext → OUT/DEC/*_aes.bin"),
@@ -191,21 +191,21 @@ object SubMenus {
 
         // ── 15 String Recover ─────────────────────────────────────────────
         15 -> listOf(
-            SubTool("str_recover",     "String Restore",    "Reconstruct obfuscated strings from bytecode",
+            SubTool("str_recover",     "String Restore",    "Recover candidate readable strings; not guaranteed deobfuscation",
                 "Select .luac → OUT/STR/*_strings_recovered.txt"),
             SubTool("str_constant_pool","Constant Pool",    "Extract embedded Lua bytecode strings (not a full typed parser)",
                 "Select .luac → OUT/STR/*_constants_typed.txt"),
-            SubTool("str_xref",        "String XRef",       "Cross-reference strings to function names",
+            SubTool("str_xref",        "String XRef",       "Search byte offsets for a supplied string",
                 "Select .luac → OUT/STR/*_xref.txt"),
         )
 
         // ── 16 Lua Inject ─────────────────────────────────────────────────
         16 -> listOf(
-            SubTool("lua_patch_byte",  "Patch Bytecode",    "Inject opcode/constant into .luac",
+            SubTool("lua_patch_byte",  "Patch Bytecode",    "Replace raw bytes at a chosen offset; validate bytecode separately",
                 "CONFIG: offset=0x1234 and patch_hex=DEADBEEF. Select .luac → OUT/LINJ/*_patched.luac"),
             SubTool("lua_inject_hook", "Inject Hook Func",  "Prepend custom hook source to a selected Lua source file",
                 "Enter hook source in CONFIG and select a Lua source → OUT/LINJ/*_hooked.lua (source only; no bytecode compile)"),
-            SubTool("lua_mod_repack",  "Mod + Repack PAK",  "Full workflow: decompile → patch → repack",
+            SubTool("lua_mod_repack",  "Mod + Repack PAK",  "Repack an already-edited tree; decompile and patch separately",
                 "Place the edited tree in WORK/MOD or OUT/PAK/<pak-name>, then select the original .pak → OUT/LINJ/*_modded.pak"),
         )
 
@@ -225,7 +225,7 @@ object SubMenus {
                 "Create WORK/lua_protect_key.txt with a 64-character hex key. Select .lua → OUT/LPROTECT/*.alvlua"),
             SubTool("lua_protect_decrypt", "Restore Protected Lua", "Authenticate and decrypt an ALVLUA1 payload",
                 "Use the same WORK/lua_protect_key.txt and select .alvlua → OUT/LPROTECT/*.lua"),
-            SubTool("lua_vm_protect", "VM Protect (BGMI pattern)", "Self-executing VM-obfuscated Lua source",
+            SubTool("lua_vm_protect", "VM Protect (BGMI pattern)", "Encrypted Lua wrapper with dispatcher decoys; not a full VM compiler",
                 "Select .lua source → OUT/LPROTECT/*.alvlua3.lua (self-executing; reversible via module 05 / VM Deobfuscate)")
         )
 
