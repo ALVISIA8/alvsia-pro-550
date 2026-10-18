@@ -74,13 +74,13 @@ fun subToolConfig(subId: String): List<SubToolConfig> = when (subId) {
             field = "patch_config",
             label = "Patch Config",
             type = ConfigType.MULTILINE,
-            hint = "offset=0x1234 key=0xAB new_url=https://...",
+            hint = "old_url=https://old.example\nnew_url=https://new.example",
             workFileName = "patch_config.txt"
         )
     )
 
     // Module 11 — Frida Tracer
-    "frida_jni_hook", "frida_spawn" -> listOf(
+    "frida_spawn" -> listOf(
         SubToolConfig(
             field = "target_pkg",
             label = "Target Package Name",
@@ -96,7 +96,7 @@ fun subToolConfig(subId: String): List<SubToolConfig> = when (subId) {
             field = "aes_config",
             label = "AES Config",
             type = ConfigType.MULTILINE,
-            hint = "key=<hex32>\niv=<hex16>",
+            hint = "key=<hex32>\niv=<hex32> (CBC requires IV)",
             workFileName = "aes_config.txt"
         )
     )
@@ -123,9 +123,9 @@ fun subToolConfig(subId: String): List<SubToolConfig> = when (subId) {
     "pak_deep_aes" -> listOf(
         SubToolConfig(
             field = "passphrase",
-            label = "PAK Passphrase",
-            type = ConfigType.TEXT,
-            hint = "AES-SHA1 PAK passphrase",
+            label = "PAK AES-SHA1 Config",
+            type = ConfigType.MULTILINE,
+            hint = "passphrase=<text>\niv=<hex32> (or key=<hex32>\niv=<hex32>)",
             workFileName = "pak_pass.txt"
         )
     )
@@ -148,13 +148,24 @@ fun subToolConfig(subId: String): List<SubToolConfig> = when (subId) {
         )
     )
 
+    // Module 15 — String Recover
+    "str_xref" -> listOf(
+        SubToolConfig(
+            field = "search",
+            label = "String to Find",
+            type = ConfigType.TEXT,
+            hint = "search=<literal text>",
+            workFileName = "xref_query.txt"
+        )
+    )
+
     // Module 16 — Lua Inject
     "lua_patch_byte" -> listOf(
         SubToolConfig(
             field = "patch_json",
             label = "Patch JSON",
             type = ConfigType.MULTILINE,
-            hint = "{\"offset\": N, \"opcode\": N, \"value\": N}",
+            hint = "offset=0x1234\npatch_hex=DEADBEEF",
             workFileName = "lua_patch.json"
         )
     )
