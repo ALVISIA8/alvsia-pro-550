@@ -258,11 +258,46 @@ class ToolEngine(private val context: Context) {
             return lines
         }
 
-        when (moduleId) {
-            11 -> return lines + runHash(subId, inputPath)
-            3 -> return lines + runObb(subId, inputPath)
-            8 -> return lines + runStrings(subId, inputPath)
-            4 -> return lines + runObbRepack(subId, inputPath)
+        // Only route to native implementations that actually match the selected module.
+        // Older routing sent PAK Compact to OBB extraction, Frida to hashing, and
+        // Export Report to string scanning whenever Chaquopy was unavailable.
+        when {
+            moduleId == 7 && subId == "clear_work" -> {
+                try {
+                    WorkPaths.dirWork().deleteRecursively()
+                    WorkPaths.dirOut().deleteRecursively()
+                    WorkPaths.ensureTree()
+                    lines.add("OK workspace cleared (native)")
+                } catch (e: Exception) {
+                    lines.add("X workspace clear failed: ${e.message ?: e.javaClass.simpleName}")
+                }
+                return lines
+            }
+            moduleId == 4 -> return when (subId) {
+                "obb_info", "obb_unzip" -> lines + runObb(subId, inputPath)
+                "obb_rezip" -> lines + runObbRepack(subId, inputPath)
+                else -> lines + listOf("X Unsupported OBB subtool in native fallback: $subId")
+            }
+            moduleId == 6 -> return when (subId) {
+                "string_scan" -> lines + runStrings(subId, inputPath)
+                "hash_scan" -> lines + runHash(subId, inputPath)
+                else -> lines + listOf("X Unsupported scan subtool in native fallback: $subId")
+            }
+            moduleId == 8 && inputPath.isNotEmpty() -> {
+                val input = File(inputPath)
+                val report = File(WorkPaths.moduleOut(8), "report_${input.name}_${System.currentTimeMillis()}.txt")
+                return try {
+                    report.writeText(
+                        "ALVSIA FILE REPORT\\nname=${input.name}\\npath=${input.absolutePath}\\nsize=${input.length()}\\nsha256=${digest(input, "SHA-256")}\\n",
+                        Charsets.UTF_8
+                    )
+                    lines.add("OK OUTPUT -> ${report.absolutePath}")
+                    lines
+                } catch (e: Exception) {
+                    lines.add("X report failed: ${e.message ?: e.javaClass.simpleName}")
+                    lines
+                }
+            }
         }
 
         return lines + nativeFallback(moduleId, subId, inputPath, extraName)
@@ -304,7 +339,7 @@ class ToolEngine(private val context: Context) {
             return lines
         }
         val f = File(inputPath)
-        val outDir = WorkPaths.moduleOut(11)
+        val outDir = WorkPaths.moduleOut(6)
         try {
             val md5 = digest(f, "MD5")
             val sha1 = digest(f, "SHA-1")
@@ -370,7 +405,7 @@ class ToolEngine(private val context: Context) {
             return lines
         }
         val f = File(inputPath)
-        val outDir = WorkPaths.moduleOut(3)
+        val outDir = WorkPaths.moduleOut(4)
         when (subId) {
             "obb_info" -> {
                 lines.addAll(zipInfo(f, outDir))
@@ -497,7 +532,7 @@ class ToolEngine(private val context: Context) {
             return lines
         }
         val f = File(inputPath)
-        val outDir = WorkPaths.moduleOut(8)
+        val outDir = WorkPaths.moduleOut(6)
         val minLen = if (subId == "str_filter") 4 else 4
         try {
             val found = extractAsciiStrings(f, minLen)
@@ -549,55 +584,30 @@ class ToolEngine(private val context: Context) {
     ): List<String> {
         val lines = mutableListOf<String>()
         when (moduleId) {
-            11 -> return runHash(subId, inputPath)
-            3 -> return runObb(subId, inputPath)
-            8 -> return runStrings(subId, inputPath)
-            1, 7 -> {
-                if (inputPath.isEmpty()) {
-                    lines.add("X No input")
-                    return lines
+            7 -> {
+                try {
+                    WorkPaths.dirWork().deleteRecursively()
+                    WorkPaths.dirOut().deleteRecursively()
+                    WorkPaths.ensureTree()
+                    lines.add("OK workspace cleared (native)")
+                } catch (e: Exception) {
+                    lines.add("X workspace clear failed: ${e.message ?: e.javaClass.simpleName}")
                 }
-                lines.addAll(zipExtract(File(inputPath), File(WorkPaths.moduleOut(moduleId), "extract")))
             }
-            10 -> {
-                if (inputPath.isEmpty()) {
-                    lines.add("X No input")
-                    return lines
-                }
-                val f = File(inputPath)
-                val newName = extraName?.ifBlank { null } ?: "renamed_${f.name}"
-                val dest = File(WorkPaths.moduleOut(10), newName)
-                f.copyTo(dest, overwrite = true)
-                lines.add("OK OUTPUT -> ${dest.absolutePath}")
+            4 -> return when (subId) {
+                "obb_info", "obb_unzip" -> runObb(subId, inputPath)
+                "obb_rezip" -> runObbRepack(subId, inputPath)
+                else -> listOf("X Unsupported OBB subtool in native fallback: $subId")
             }
-            13 -> {
-                lines.add("session markers OK")
-                lines.add("OUT -> ${WorkPaths.moduleOut(13).absolutePath}")
-            }
-            15 -> {
-                val rep = File(WorkPaths.moduleOut(15), "session_report.txt")
-                val root = WorkPaths.alvsiaRoot()
-                val sb = StringBuilder()
-                sb.appendLine("ALVSIA session report")
-                root.walkTopDown().maxDepth(3).forEach { p ->
-                    if (p.isDirectory) sb.appendLine("DIR ${p.relativeTo(root)}")
-                }
-                rep.writeText(sb.toString())
-                lines.add("OK OUTPUT -> ${rep.absolutePath}")
+            6 -> return when (subId) {
+                "string_scan" -> runStrings(subId, inputPath)
+                "hash_scan" -> runHash(subId, inputPath)
+                else -> listOf("X Unsupported scan subtool in native fallback: $subId")
             }
             else -> {
-                lines.add("X Module $moduleId native path limited in this build")
-                lines.add("hint: use Hash (11), OBB (03), Strings (08) as verified pipelines")
-                lines.add("OUT folder -> ${WorkPaths.moduleOut(moduleId).absolutePath}")
-                if (inputPath.isNotEmpty()) {
-                    val f = File(inputPath)
-                    val copy = File(WorkPaths.moduleOut(moduleId), "copy_${f.name}")
-                    try {
-                        f.copyTo(copy, overwrite = true)
-                        lines.add("OK file copied -> ${copy.absolutePath}")
-                    } catch (_: Exception) {
-                    }
-                }
+                lines.add("X Python bridge unavailable; this module was not executed.")
+                lines.add("Chaquopy: ${PythonBridgeRunner.startupDiagnostic()}")
+                lines.add("No placeholder output was created. Retry after the Python runtime is ready.")
             }
         }
         return lines
