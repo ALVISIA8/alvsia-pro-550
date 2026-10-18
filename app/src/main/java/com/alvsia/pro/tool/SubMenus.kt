@@ -156,7 +156,7 @@ object SubMenus {
             SubTool("xor_luas_strip",  "LuaS Strip-XOR",   "Strip LuaS header then XOR",
                 "Select .luac with XOR-wrapped LuaS → OUT/XOR/*_stripped.lua"),
             SubTool("xor_batch",       "Batch XOR",         "Apply same key to all files in WORK/BATCH/",
-                "Drop files in WORK/BATCH/, set WORK/xor_key.txt → OUT/XOR/batch/"),
+                "Drop files in WORK/BATCH/, enter key in CONFIG → OUT/XOR/batch/", needsFile = false),
         )
 
         // ── 13 Decrypt Engine ─────────────────────────────────────────────
