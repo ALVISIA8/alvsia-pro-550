@@ -36,7 +36,7 @@ enum class ConfigType {
  *
  * Each entry maps to a field that the ToolWorkspace renders as an
  * inline form. On RUN, the app writes each field's value to
- * WORK/<workFileName> transparently before calling the bridge.
+ * WORK config files transparently before calling the bridge.
  */
 fun subToolConfig(subId: String): List<SubToolConfig> = when (subId) {
     // Module 12 — XOR Suite
@@ -154,7 +154,7 @@ fun subToolConfig(subId: String): List<SubToolConfig> = when (subId) {
             field = "patch_json",
             label = "Patch JSON",
             type = ConfigType.MULTILINE,
-            hint = '{"offset": N, "opcode": N, "value": N}',
+            hint = "{\"offset\": N, \"opcode\": N, \"value\": N}",
             workFileName = "lua_patch.json"
         )
     )
