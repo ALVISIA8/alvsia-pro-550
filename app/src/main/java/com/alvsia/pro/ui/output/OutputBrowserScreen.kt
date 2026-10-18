@@ -40,6 +40,7 @@ import com.alvsia.pro.ui.theme.AlvisiaBlue
 import com.alvsia.pro.ui.theme.AlvisiaCyan
 import com.alvsia.pro.ui.theme.AlvisiaDeep
 import com.alvsia.pro.ui.theme.AlvisiaSilver
+import com.alvsia.pro.tool.WorkPaths
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -53,8 +54,8 @@ fun OutputBrowserScreen(onBack: () -> Unit) {
     var previewText by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
-        val outDir = File(android.os.Environment.getExternalStoragePublicDirectory(
-            android.os.Environment.DIRECTORY_DOWNLOADS), "ALVSIA/OUT")
+        WorkPaths.bindApp(ctx)
+        val outDir = WorkPaths.dirOut()
         if (outDir.isDirectory) {
             files = outDir.walkTopDown()
                 .filter { it.isFile && it.length() > 0 && it.length() < 5_000_000 }
@@ -74,8 +75,8 @@ fun OutputBrowserScreen(onBack: () -> Unit) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onBack) { Text("← BACK", color = AlvisiaCyan, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
             TextButton(onClick = {
-                val outDir = File(android.os.Environment.getExternalStoragePublicDirectory(
-                    android.os.Environment.DIRECTORY_DOWNLOADS), "ALVSIA/OUT")
+                WorkPaths.bindApp(ctx)
+                val outDir = WorkPaths.dirOut()
                 if (outDir.isDirectory) { outDir.deleteRecursively(); outDir.mkdirs(); files = emptyList() }
             }) { Text("CLEAR ALL", color = Color(0xFFFF2D55), fontWeight = FontWeight.Bold, fontSize = 11.sp) }
         }
