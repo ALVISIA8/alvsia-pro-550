@@ -54,24 +54,28 @@ object WorkPaths {
     }
 
     private fun moduleName(moduleId: Int): String = when (moduleId) {
-        1, 2 -> "PAK"
-        3, 4 -> "OBB"
-        5, 6 -> "LUA"
+        1, 2, 3 -> "PAK"
+        4 -> "OBB"
+        5 -> "LUA"
+        6 -> "SCAN"
         7 -> "ASSET"
-        8 -> "STRINGS"
-        9 -> "UE"
-        10 -> "RENAME"
-        11 -> "HASH"
-        12 -> "SM4"
-        13 -> "INTEGRITY"
-        14 -> "PATCH"
-        15 -> "REPORT"
+        8 -> "REPORT"
+        9 -> "REBRAND"
+        10 -> "SO"
+        11 -> "FRIDA"
+        12 -> "XOR"
+        13 -> "DEC"
+        14 -> "PAKD"
+        15 -> "STR"
+        16 -> "LINJ"
+        17 -> "AUDIT"
+        18 -> "LPROTECT"
         else -> "MISC"
     }
 
     fun ensureTree() {
         dirIn(); dirWork(); dirOut()
-        for (id in 1..15) {
+        for (id in 1..18) {
             moduleIn(id); moduleWork(id); moduleOut(id)
         }
     }
@@ -91,7 +95,7 @@ object WorkPaths {
                   WORK/<MODULE>/  temp / intermediate
                   OUT/<MODULE>/   final results (always check here)
 
-                Modules: PAK OBB LUA ASSET STRINGS UE RENAME HASH SM4 INTEGRITY PATCH REPORT
+                Modules: PAK OBB LUA SCAN ASSET REPORT REBRAND SO FRIDA XOR DEC PAKD STR LINJ AUDIT LPROTECT
 
                 Key:  @ALVSIA_PRO
                 Owner: @OriginalOnwerALV
