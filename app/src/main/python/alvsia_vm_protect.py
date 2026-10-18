@@ -286,7 +286,7 @@ local function _alvsia_run()
     -- Verify integrity (first 32 bytes = SHA-256 of plaintext, lightweight
     -- version uses 16-byte rolling hash)
     local stored_hash = string.sub(plaintext, 1, 16)
-    local actual = string.sub(plaintext, 17)
+    local actual = string.sub(plaintext, 33)
     local actual_hash = _alvsia_sha256_first16(actual)
     if stored_hash ~= actual_hash then
         error("ALVSEAL3 integrity check failed")
