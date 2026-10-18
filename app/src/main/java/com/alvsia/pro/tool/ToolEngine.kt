@@ -269,7 +269,7 @@ class ToolEngine(private val context: Context) {
     }
 
     private fun needsInput(moduleId: Int, subId: String): Boolean {
-        if (subId in listOf("frida_js_dump", "frida_spawn", "clear_work")) return false
+        if (subId in listOf("frida_js_dump", "frida_spawn", "xor_batch", "clear_work")) return false
         if (subId.contains("session") || subId.contains("local") || subId.contains("report") || subId.contains("clear")) return false
         return moduleId !in listOf(7, 13, 15) && !subId.contains("clear")
     }
