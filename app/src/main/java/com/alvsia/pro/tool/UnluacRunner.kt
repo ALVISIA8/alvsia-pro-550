@@ -32,7 +32,7 @@ import java.util.zip.Inflater
 object UnluacRunner {
 
     /** Hard safety limit for the in-process (ART) unluac call. */
-    private const val ART_SAFE_LIMIT = 8L * 1024L * 1024L
+    private const val ART_SAFE_LIMIT = 1L * 1024L * 1024L
 
     /**
      * Above this, we go straight to the streaming Python fallback rather
