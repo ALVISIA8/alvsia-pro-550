@@ -12789,7 +12789,7 @@ def decrypt_zuc(input_path, out_dir, key_hex="", iv_hex=""):
         iv = bytes.fromhex(iv_hex.replace(" ", "")) if iv_hex else b""
     except Exception:
         return {"ok": False, "error": "invalid iv_hex"}
-    state = (list(key) + list(iv) + [0] * 16)[:16]
+    state = [(key[i % len(key)] ^ iv[i % len(iv)]) if iv else key[i % len(key)] for i in range(16)]
     stream = []
     for i in range(len(raw)):
         out_word = state[0] ^ state[3] ^ state[5] ^ state[11]
