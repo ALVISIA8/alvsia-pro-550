@@ -4,7 +4,7 @@ package com.alvsia.pro.tool
  * ALVISIA PRO 5.5.2 — SubToolConfig (UX Sprint 1)
  *
  * Inline config schema for subtools that previously required manual
- * WORK/*.txt file creation. The ToolWorkspace renders an inline form
+ * WORK config-file creation. The ToolWorkspace renders an inline form
  * from this schema, and on RUN writes the config file transparently
  * before invoking the bridge.
  *
@@ -18,7 +18,7 @@ data class SubToolConfig(
     val hint: String = "",       // placeholder/help text
     val default: String? = null, // default value
     val required: Boolean = true,
-    val workFileName: String? = null  // if set, value written to WORK/<workFileName>
+    val workFileName: String? = null  // if set, value written to WORK config files
 )
 
 enum class ConfigType {
