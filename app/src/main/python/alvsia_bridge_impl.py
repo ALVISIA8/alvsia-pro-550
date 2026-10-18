@@ -562,10 +562,15 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
             if sid == "dec_sm4":
                 cfg = read_config("sm4_config.txt")
                 key_hex = cfg.get("key", cfg.get("key_hex", ""))
+                mode = cfg.get("mode", "ECB").upper()
+                iv_hex = cfg.get("iv", cfg.get("iv_hex", ""))
                 if not key_hex:
                     lines.append("X WORK/sm4_config.txt requires key=<32 hex characters>")
                     return "\n".join(lines)
-                r = ult.decrypt_sm4(ip, dest_dec, key_hex)
+                if mode == "CBC" and not iv_hex:
+                    lines.append("X SM4-CBC requires iv=<32 hex characters>")
+                    return "\n".join(lines)
+                r = ult.decrypt_sm4(ip, dest_dec, key_hex, mode, iv_hex)
                 lines.append(str(r))
                 return "\n".join(lines)
             if sid == "dec_simple1":
@@ -613,10 +618,15 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
             if sid == "pak_deep_sm4":
                 cfg = read_config("sm4_config.txt")
                 key_hex = cfg.get("key", cfg.get("key_hex", ""))
+                mode = cfg.get("mode", "ECB").upper()
+                iv_hex = cfg.get("iv", cfg.get("iv_hex", ""))
                 if not key_hex:
                     lines.append("X WORK/sm4_config.txt requires key=<32 hex characters>")
                     return "\n".join(lines)
-                r = ult.pak_deep_sm4(ip, dest_pakd, key_hex)
+                if mode == "CBC" and not iv_hex:
+                    lines.append("X SM4-CBC requires iv=<32 hex characters>")
+                    return "\n".join(lines)
+                r = ult.pak_deep_sm4(ip, dest_pakd, key_hex, mode, iv_hex)
                 lines.append(str(r))
                 return "\n".join(lines)
             if sid == "pak_deep_auto":
