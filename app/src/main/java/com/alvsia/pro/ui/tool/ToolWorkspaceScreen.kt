@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.sp
 import com.alvsia.pro.tool.FileMagic
 import com.alvsia.pro.tool.SubTool
 import com.alvsia.pro.tool.UXStore
+import com.alvsia.pro.tool.WorkPaths
 import com.alvsia.pro.tool.subToolConfig
 import com.alvsia.pro.ui.theme.AlvisiaBlue
 import com.alvsia.pro.ui.theme.AlvisiaCyan
