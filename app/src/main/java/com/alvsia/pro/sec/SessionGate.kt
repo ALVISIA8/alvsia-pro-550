@@ -139,8 +139,10 @@ object SessionGate {
     // ── Unlock ────────────────────────────────────────────────────────────
     fun unlock(ctx: Context, newToken: String, newLicense: String) {
         if (newToken.isBlank() || newLicense.isBlank()) return
-        if (!NativeGate.preCheck()) return
         synchronized(this) {
+            // Keep the native precheck and state transition in the same critical
+            // section as lock(), so a concurrent RASP lock cannot be overwritten.
+            if (!NativeGate.preCheck()) return@synchronized
             _appCtx = ctx.applicationContext
             token    = newToken
             tokenMac = computeMac(newToken)
