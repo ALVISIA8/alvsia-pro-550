@@ -80,6 +80,7 @@ def test_engine_surfaces_bridge_failures():
 
 
 def test_tool_argument_and_storage_contracts():
+    engine = ENGINE.read_text(encoding="utf-8")
     bridge = BRIDGE_IMPL.read_text(encoding="utf-8")
     runner = RUNNER.read_text(encoding="utf-8")
     workspace = WORKSPACE.read_text(encoding="utf-8")
