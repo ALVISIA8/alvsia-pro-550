@@ -12730,9 +12730,9 @@ def decrypt_auto(input_path, out_dir, work_dir=None):
             if not data:
                 return False
             magics = (
-                b"\\x1bLua", b"\\x1bLJ\\x02", b"\\x1bLJ\\x01",
-                b"\\x7fELF", b"PK\\x03\\x04", b"ALVSEAL1", b"ALVLUA1",
-                b"ALVSEAL3", b"\\x28\\xb5\\x2f\\xfd", b"\\x04\\x22\\x4d\\x18",
+                b"\x1bLua", b"\x1bLJ\x02", b"\x1bLJ\x01",
+                b"\x7fELF", b"PK\x03\x04", b"ALVSEAL1", b"ALVLUA1",
+                b"ALVSEAL3", b"\x28\xb5\x2f\xfd", b"\x04\x22\x4d\x18",
             )
             if any(data.startswith(magic) for magic in magics):
                 return True
@@ -12765,8 +12765,8 @@ def decrypt_auto(input_path, out_dir, work_dir=None):
     # Try repeating single-byte XOR, but accept only known file magic.
     for key in range(1, 256):
         head = bytes(raw[i] ^ key for i in range(min(8, len(raw))))
-        if (head[:3] == b"\\x1bLu" or head[:4] in
-                (b"\\x7fELF", b"PK\\x03\\x04", b"\\x1bLJ\\x02", b"\\x1bLua")):
+        if (head[:3] == b"\x1bLu" or head[:4] in
+                (b"\x7fELF", b"PK\x03\x04", b"\x1bLJ\x02", b"\x1bLua")):
             dec = bytes(raw[i] ^ key for i in range(len(raw)))
             out_file = out_dir / ("auto_xor0x%02X_%s" % (key, p.name))
             out_file.write_bytes(dec)
@@ -12845,7 +12845,7 @@ def decrypt_auto(input_path, out_dir, work_dir=None):
         results.append("No candidate generated; manual analysis needed.")
     if not successes:
         results.append("No candidate passed basic validation; inspect generated candidates cautiously.")
-    out_report.write_text("\\n".join(results), encoding="utf-8")
+    out_report.write_text("\n".join(results), encoding="utf-8")
     return {
         "ok": bool(successes),
         "out": str(out_report),
