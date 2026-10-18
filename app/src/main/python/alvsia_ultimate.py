@@ -13078,7 +13078,7 @@ def lua_inject_hook(input_path, out_dir, hook_path=None):
     if not hook:
         return {"ok": False, "error": "hook source is empty"}
     out_file = out_dir / ("%s_hooked.lua" % p.stem)
-    out_file.write_text(hook + "\\n\\n" + source, encoding="utf-8")
+    out_file.write_text(hook + "\n\n" + source, encoding="utf-8")
     return {
         "ok": True,
         "out": str(out_file),
