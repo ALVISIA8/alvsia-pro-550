@@ -34,6 +34,9 @@ jobs:
       - name: Run Lua decompiler safety regression tests
         run: python3 -m unittest discover -s tests -p 'test_lua*.py'
 
+      - name: Run Lua Protector round-trip tests
+        run: python3 tests/test_vm_protect_roundtrip.py
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
