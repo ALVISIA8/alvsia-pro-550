@@ -33,16 +33,16 @@ object SessionGate {
     @Volatile private var strikes   = 0
 
     val sessionOk: Boolean
-        get() {
-            if (!granted || token.isBlank()) return false
+        get() = synchronized(this) {
+            if (!granted || token.isBlank()) return@synchronized false
             val age = System.currentTimeMillis() - grantedAt
             // age in 0..SESSION_TTL  ← checker looks for this exact string
-            if (age !in 0..SESSION_TTL) return false
-            return tokenMacOk()
+            if (age !in 0..SESSION_TTL) return@synchronized false
+            tokenMacOk()
         }
 
     val sessionToken: String
-        get() = if (sessionOk) token else ""
+        get() = synchronized(this) { if (sessionOk) token else "" }
 
     /**
      * Stable Java/Chaquopy bridge API. Python must ask the Kotlin session gate
@@ -53,9 +53,9 @@ object SessionGate {
     fun isSessionAuthorized(): Boolean = sessionOk
 
     @JvmStatic
-    fun isTokenCurrent(candidate: String): Boolean {
-        if (!sessionOk || candidate.isBlank()) return false
-        return try {
+    fun isTokenCurrent(candidate: String): Boolean = synchronized(this) {
+        if (!sessionOk || candidate.isBlank()) return@synchronized false
+        try {
             MessageDigest.isEqual(
                 token.toByteArray(Charsets.UTF_8),
                 candidate.toByteArray(Charsets.UTF_8)
@@ -140,14 +140,16 @@ object SessionGate {
     fun unlock(ctx: Context, newToken: String, newLicense: String) {
         if (newToken.isBlank() || newLicense.isBlank()) return
         if (!NativeGate.preCheck()) return
-        _appCtx = ctx.applicationContext
-        token    = newToken
-        tokenMac = computeMac(newToken)
-        license  = newLicense
-        grantedAt = System.currentTimeMillis()
-        granted  = true
-        strikes  = 0
-        NativeGate.sessionUnlocked = true
+        synchronized(this) {
+            _appCtx = ctx.applicationContext
+            token    = newToken
+            tokenMac = computeMac(newToken)
+            license  = newLicense
+            grantedAt = System.currentTimeMillis()
+            granted  = true
+            strikes  = 0
+            NativeGate.sessionUnlocked = true
+        }
     }
 
     fun unlock(newToken: String, newLicense: String) {
@@ -159,12 +161,14 @@ object SessionGate {
     fun lock() { val ctx = _appCtx ?: return; lock(ctx) }
 
     fun lock(@Suppress("UNUSED_PARAMETER") ctx: Context) {
-        token    = ""
-        tokenMac = ""
-        license  = ""
-        grantedAt = 0L
-        granted  = false
-        NativeGate.sessionUnlocked = false
+        synchronized(this) {
+            token    = ""
+            tokenMac = ""
+            license  = ""
+            grantedAt = 0L
+            granted  = false
+            NativeGate.sessionUnlocked = false
+        }
     }
 
     fun onThreat()                                         { strikes++; lock() }
