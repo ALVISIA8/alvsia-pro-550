@@ -125,9 +125,22 @@ object PythonBridgeRunner {
             val log = rawResult?.toString().orEmpty()
             val lines = log.split("\n").filter { it.isNotBlank() }.toMutableList()
             if (stagedUnluacJar != null) lines.add(0, "OK bundled Unluac available: $stagedUnluacJar")
-            val bridgeFailed = log.contains("'ok': False") ||
-                    lines.any { it.startsWith("X ") || it.startsWith("ERROR:") || it.startsWith("CRITICAL:") } ||
-                    lines.none { it.startsWith("OK ") || it.startsWith("OUT ") || it.startsWith("> ") }
+            // Many Python handlers return a structured dict rendered as text rather
+            // than a line beginning with "OK". Honor an explicit success result so
+            // valid operations aren't reported as failures by the Kotlin wrapper.
+            val explicitFalse = log.contains("'ok': False") ||
+                    log.contains("\"ok\": false") ||
+                    log.contains("\"ok\": False")
+            val explicitTrue = log.contains("'ok': True") ||
+                    log.contains("\"ok\": true") ||
+                    log.contains("\"ok\": True")
+            val hasErrorLine = lines.any {
+                it.startsWith("X ") || it.startsWith("ERROR:") || it.startsWith("CRITICAL:")
+            }
+            val hasSuccessLine = lines.any {
+                it.startsWith("OK ") || it.startsWith("OUT ") || it.startsWith("> ")
+            }
+            val bridgeFailed = explicitFalse || hasErrorLine || (!explicitTrue && !hasSuccessLine)
             return !bridgeFailed to lines
         } catch (e: Throwable) {
             return false to listOf("... bridge error: ${e.message ?: e.javaClass.simpleName}")
