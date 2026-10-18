@@ -250,9 +250,16 @@ fun ToolWorkspaceScreen(
                         val workDir = WorkPaths.dirWork()
                         configSchema.forEach { cfg ->
                             val value = configValues.value[cfg.field] ?: ""
-                            if (value.isNotBlank() && cfg.workFileName != null) {
+                            val fileName = cfg.workFileName
+                            if (fileName != null) {
+                                val configFile = File(workDir, fileName)
                                 try {
-                                    File(workDir, cfg.workFileName).writeText(value)
+                                    if (value.isBlank()) {
+                                        // Never reuse a stale key/config from a previous run.
+                                        configFile.delete()
+                                    } else {
+                                        configFile.writeText(value)
+                                    }
                                 } catch (_: Exception) {}
                             }
                         }
