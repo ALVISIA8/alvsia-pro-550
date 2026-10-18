@@ -333,7 +333,7 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                 lines.append(str(r))
                 return "\n".join(lines)
             if sid == "lua_xor_crypt":
-                r = feat.run_lua_xor(ip, dest_lua, key_byte=None)
+                r = feat.run_lua_xor(ip, dest_lua, key_hex=None)
                 lines.append(str(r))
                 return "\n".join(lines)
             if sid == "lua_multi_xor":
