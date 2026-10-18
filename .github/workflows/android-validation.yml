@@ -28,14 +28,21 @@ jobs:
 
       - name: Compile Python tool modules and run dispatch contract tests
         run: |
-          python3 -m py_compile \
-            app/src/main/python/alvsia_bridge.py \
-            app/src/main/python/alvsia_bridge_impl.py \
-            app/src/main/python/alvsia_core.py \
-            app/src/main/python/alvsia_features.py \
-            app/src/main/python/alvsia_ultimate.py \
-            app/src/main/python/alvsia_vm_protect.py \
-            app/src/main/python/sealed_loader.py
+          python3 - <<'PY'
+          from pathlib import Path
+          modules = (
+              "app/src/main/python/alvsia_bridge.py",
+              "app/src/main/python/alvsia_bridge_impl.py",
+              "app/src/main/python/alvsia_core.py",
+              "app/src/main/python/alvsia_features.py",
+              "app/src/main/python/alvsia_ultimate.py",
+              "app/src/main/python/alvsia_vm_protect.py",
+              "app/src/main/python/sealed_loader.py",
+          )
+          for name in modules:
+              compile(Path(name).read_text(encoding="utf-8"), name, "exec")
+          print("PYTHON SYNTAX CHECK: PASS")
+          PY
           python3 tests/test_tool_dispatch.py
 
       - name: Run sealed payload cryptographic tests
