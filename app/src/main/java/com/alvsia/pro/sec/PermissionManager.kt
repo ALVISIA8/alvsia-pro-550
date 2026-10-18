@@ -88,7 +88,6 @@ object ToolPermissionMatrix {
         10 -> forTool(1)
         // 11 Frida Tracer — needs query packages + (optional) root via ADB
         11 -> listOf(
-            ToolPermission("android.permission.QUERY_ALL_PACKAGES", "install_time", "List installed packages for hook target"),
             ToolPermission("android.permission.READ_EXTERNAL_STORAGE", "runtime_auto", "Read .so/.apk inputs"),
             ToolPermission("android.permission.WRITE_EXTERNAL_STORAGE", "runtime_auto", "Write OUT/FRIDA"),
             ToolPermission("android.permission.MANAGE_EXTERNAL_STORAGE", "settings_intent", "Bulk access on Android 11+"),
@@ -105,11 +104,9 @@ object ToolPermissionMatrix {
         16 -> forTool(1)
         // 17 Anti-RE Audit
         17 -> listOf(
-            ToolPermission("android.permission.QUERY_ALL_PACKAGES", "install_time", "List installed packages for APK audit"),
             ToolPermission("android.permission.READ_EXTERNAL_STORAGE", "runtime_auto", "Read .apk/.so/.lua"),
             ToolPermission("android.permission.WRITE_EXTERNAL_STORAGE", "runtime_auto", "Write OUT/AUDIT"),
             ToolPermission("android.permission.MANAGE_EXTERNAL_STORAGE", "settings_intent", "Bulk access on Android 11+"),
-            ToolPermission("android.permission.REQUEST_INSTALL_PACKAGES", "settings_intent", "Optional APK install audit"),
         )
         // 18 Lua Protector
         18 -> forTool(1)

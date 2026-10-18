@@ -91,6 +91,32 @@ fun subToolConfig(subId: String): List<SubToolConfig> = when (subId) {
     )
 
     // Module 13 — Decrypt Engine
+    "dec_auto" -> listOf(
+        SubToolConfig(
+            field = "aes_config",
+            label = "AES Candidate Config (optional)",
+            type = ConfigType.MULTILINE,
+            hint = "key=<hex32|48|64>\niv=<hex32> (IV enables CBC)",
+            required = false,
+            workFileName = "aes_config.txt"
+        ),
+        SubToolConfig(
+            field = "zuc_config",
+            label = "ZUC-like Candidate Config (optional)",
+            type = ConfigType.MULTILINE,
+            hint = "key=<hex>\niv=<hex>",
+            required = false,
+            workFileName = "zuc_config.txt"
+        ),
+        SubToolConfig(
+            field = "sm4_config",
+            label = "SM4 Candidate Config (optional)",
+            type = ConfigType.MULTILINE,
+            hint = "key=<32 hex chars>\nmode=ECB|CBC\niv=<32 hex chars>",
+            required = false,
+            workFileName = "sm4_config.txt"
+        )
+    )
     "dec_aes_cbc", "dec_aes_ecb" -> listOf(
         SubToolConfig(
             field = "aes_config",

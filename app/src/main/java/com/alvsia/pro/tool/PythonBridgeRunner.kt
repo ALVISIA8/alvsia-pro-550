@@ -140,7 +140,7 @@ object PythonBridgeRunner {
             val hasSuccessLine = lines.any {
                 it.startsWith("OK ") || it.startsWith("OUT ") || it.startsWith("> ")
             }
-            val bridgeFailed = explicitFalse || hasErrorLine || (!explicitTrue && !hasSuccessLine)
+            val bridgeFailed = (explicitFalse && !explicitTrue) || hasErrorLine || (!explicitTrue && !hasSuccessLine)
             return !bridgeFailed to lines
         } catch (e: Throwable) {
             return false to listOf("... bridge error: ${e.message ?: e.javaClass.simpleName}")

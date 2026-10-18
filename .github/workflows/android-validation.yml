@@ -26,6 +26,18 @@ jobs:
       - name: Run source-level security checks
         run: python3 tools/security_release_check.py
 
+      - name: Compile Python tool modules and run dispatch contract tests
+        run: |
+          python3 -m py_compile \
+            app/src/main/python/alvsia_bridge.py \
+            app/src/main/python/alvsia_bridge_impl.py \
+            app/src/main/python/alvsia_core.py \
+            app/src/main/python/alvsia_features.py \
+            app/src/main/python/alvsia_ultimate.py \
+            app/src/main/python/alvsia_vm_protect.py \
+            app/src/main/python/sealed_loader.py
+          python3 tests/test_tool_dispatch.py
+
       - name: Run sealed payload cryptographic tests
         run: |
           python3 -m pip install --disable-pip-version-check cryptography

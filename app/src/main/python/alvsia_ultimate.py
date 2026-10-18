@@ -12441,6 +12441,8 @@ def so_multi_xor(input_path, out_dir, key_hex=""):
         return {"ok": False, "error": "key_hex required (e.g. 'DEADBEEF')"}
     try:
         key = bytes.fromhex(key_hex.replace(" ",""))
+        if not key:
+            return {"ok": False, "error": "key_hex must contain at least one byte"}
     except Exception:
         return {"ok": False, "error": "invalid key_hex"}
     dec = bytes(raw[i] ^ key[i % len(key)] for i in range(len(raw)))
@@ -12540,6 +12542,7 @@ Java.perform(function() {
     console.log("[ALVSIA] Hooks installed.");
 });
 """
+    script = script.replace("<package>", p.name)
     out_file = out_dir / "alvsia_trace.js"
     Path(out_file).write_text(script)
     return {"ok": True, "out": str(out_file)}
@@ -12631,6 +12634,8 @@ def xor_apply_key(input_path, out_dir, key_hex=""):
         return {"ok": False, "error": "key_hex required"}
     try:
         key = bytes.fromhex(key_hex.replace(" ","").replace("0x",""))
+        if not key:
+            return {"ok": False, "error": "key_hex must contain at least one byte"}
     except Exception:
         return {"ok": False, "error": "invalid key_hex"}
     raw = p.read_bytes()
@@ -12665,6 +12670,8 @@ def xor_batch(input_path, out_dir, key_hex=""):
         return {"ok": False, "error": "key_hex required"}
     try:
         key = bytes.fromhex(key_hex.replace(" ","").replace("0x",""))
+        if not key:
+            return {"ok": False, "error": "key_hex must contain at least one byte"}
     except Exception:
         return {"ok": False, "error": "invalid key_hex"}
     processed = 0
@@ -12675,6 +12682,8 @@ def xor_batch(input_path, out_dir, key_hex=""):
             dest = out_dir / fp.relative_to(base)
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(dec); processed += 1
+    if processed == 0:
+        return {"ok": False, "error": "WORK/BATCH contains no supported files", "out": str(out_dir)}
     return {"ok": True, "processed": processed, "out": str(out_dir)}
 
 
@@ -12773,6 +12782,19 @@ def decrypt_auto(input_path, out_dir, work_dir=None):
             results.append("XOR key=0x%02X candidate -> %s" % (key, out_file.name))
             successes.append(str(out_file))
             break
+
+    # Try the legacy SIMPLE1 (single-byte 0x01 XOR) candidate.
+    try:
+        result = decrypt_simple1(p, out_dir)
+        candidate = Path(result.get("out", "")) if result.get("out") else None
+        if result.get("ok") and candidate and candidate.is_file():
+            unique = out_dir / ("auto_simple1_%s" % p.name)
+            unique.write_bytes(candidate.read_bytes())
+            results.append("SIMPLE1 candidate -> %s" % unique.name)
+            if looks_decoded(unique):
+                successes.append(str(unique))
+    except Exception as exc:
+        results.append("SIMPLE1 candidate skipped: %s" % (str(exc)[:160]))
 
     # Configured cipher candidates. Keep each candidate under a unique name.
     cfg_root = Path(work_dir) if work_dir else None
@@ -12883,6 +12905,8 @@ def decrypt_zuc(input_path, out_dir, key_hex="", iv_hex=""):
         return {"ok": False, "error": "key_hex required"}
     try:
         key = bytes.fromhex(key_hex.replace(" ",""))
+        if not key:
+            return {"ok": False, "error": "key_hex must contain at least one byte"}
     except Exception:
         return {"ok": False, "error": "invalid key_hex"}
     raw = p.read_bytes()

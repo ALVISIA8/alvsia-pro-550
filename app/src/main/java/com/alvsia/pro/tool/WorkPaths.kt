@@ -18,8 +18,17 @@ object WorkPaths {
             val dl = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
             val root = File(dl, "ALVSIA")
             if (!root.exists()) root.mkdirs()
-            if (root.exists() && root.canWrite()) root
-            else appFallback ?: root
+            val canUsePublicRoot = try {
+                if (!root.isDirectory) {
+                    false
+                } else {
+                    val probe = File.createTempFile(".alvsia-write-probe-", ".tmp", root)
+                    probe.delete()
+                }
+            } catch (_: Exception) {
+                false
+            }
+            if (canUsePublicRoot) root else appFallback ?: root
         } catch (_: Exception) {
             appFallback ?: File("/sdcard/Download/ALVSIA")
         }

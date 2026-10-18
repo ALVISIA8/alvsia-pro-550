@@ -1,4 +1,4 @@
-"""Static regression checks for the 17-module Android tool menu/bridge contract."""
+"""Static regression checks for the 18-module Android tool menu/bridge contract."""
 from pathlib import Path
 import re
 
@@ -8,6 +8,9 @@ BRIDGE = ROOT / "app/src/main/python/alvsia_bridge.py"
 BRIDGE_IMPL = ROOT / "app/src/main/python/alvsia_bridge_impl.py"
 CATALOG = ROOT / "app/src/main/java/com/alvsia/pro/tool/ToolCatalog.kt"
 ENGINE = ROOT / "app/src/main/java/com/alvsia/pro/tool/ToolEngine.kt"
+RUNNER = ROOT / "app/src/main/java/com/alvsia/pro/tool/PythonBridgeRunner.kt"
+WORKSPACE = ROOT / "app/src/main/java/com/alvsia/pro/ui/tool/ToolWorkspaceScreen.kt"
+OUTPUT_BROWSER = ROOT / "app/src/main/java/com/alvsia/pro/ui/output/OutputBrowserScreen.kt"
 
 
 def test_menu_ids_are_unique_and_reachable():
@@ -39,10 +42,10 @@ def test_menu_ids_are_unique_and_reachable():
     assert not missing, f"Menu IDs without bridge routes: {missing}"
 
 
-def test_catalog_contains_all_seventeen_modules():
+def test_catalog_contains_all_eighteen_modules():
     catalog = CATALOG.read_text(encoding="utf-8")
     ids = [int(x) for x in re.findall(r'ToolItem\((\d+),', catalog)]
-    assert ids == list(range(1, 18)), f"Expected module IDs 1..17 in order, got {ids}"
+    assert ids == list(range(1, 19)), f"Expected module IDs 1..18 in order, got {ids}"
 
 
 def test_engine_surfaces_bridge_failures():
@@ -55,13 +58,27 @@ def test_engine_surfaces_bridge_failures():
     assert "Lua filenames sample ->" in bridge
 
 
+def test_tool_argument_and_storage_contracts():
+    bridge = BRIDGE_IMPL.read_text(encoding="utf-8")
+    runner = RUNNER.read_text(encoding="utf-8")
+    workspace = WORKSPACE.read_text(encoding="utf-8")
+    output_browser = OUTPUT_BROWSER.read_text(encoding="utf-8")
+    assert "custom_keys=keys" not in bridge
+    assert 'ult.decrypt_auto(ip, dest_dec, str(work_dir()))' in bridge
+    assert 'ult.lua_inject_hook(ip, dest_inj, str(hf))' in bridge
+    assert 'ult.pak_deep_zuc(ip, dest_pakd, key_hex, iv_hex)' in bridge
+    assert "WorkPaths.dirWork()" in workspace
+    assert "WorkPaths.dirOut()" in output_browser
+    assert "explicitTrue" in runner
+
 if __name__ == "__main__":
     tests = (
         test_menu_ids_are_unique_and_reachable,
-        test_catalog_contains_all_seventeen_modules,
+        test_catalog_contains_all_eighteen_modules,
         test_engine_surfaces_bridge_failures,
+        test_tool_argument_and_storage_contracts,
     )
     for test in tests:
         test()
         print("PASS", test.__name__)
-    print("TOOL DISPATCH TEST: PASS (3/3)")
+    print("TOOL DISPATCH TEST: PASS (4/4)")

@@ -21,13 +21,13 @@ object ToolCatalog {
         ToolItem(8,  "Export Report",   "Session / file summary"),
         ToolItem(9,  "Rebrand",         "ALVSIA PRO auto · manual brand/channel"),
         // --- NEW v5.5.0 ---
-        ToolItem(10, "SO Analyzer",     "XOR-brute · URL extract · AES probe · patch binary"),
-        ToolItem(11, "Frida Tracer",    "Live hook JNI · libc strstr · URL sniff via device"),
+        ToolItem(10, "SO Analyzer",     "XOR-brute · URL extract · AES probe · plaintext URL patch"),
+        ToolItem(11, "Frida Tracer",    "Generate JNI hook scripts and Frida spawn/trace commands"),
         ToolItem(12, "XOR Suite",       "Single-byte scan · multi-key · LuaS strip · batch"),
-        ToolItem(13, "Decrypt Engine",  "AES-CBC/ECB · ZUC · SM4 · SIMPLE1 · auto-detect"),
-        ToolItem(14, "PAK Deep",        "AES-SHA1 PAK · Zstd decompress · ZUC-PAK · SM4"),
+        ToolItem(13, "Decrypt Engine",  "AES-CBC/ECB · ZUC-like fallback · SM4 · SIMPLE1 · auto-detect"),
+        ToolItem(14, "PAK Deep",        "AES-SHA1 PAK · Zstd decompress · ZUC-like fallback · SM4"),
         ToolItem(15, "String Recover",  "Obfuscated string restore · constant pool dump"),
-        ToolItem(16, "Lua Inject",      "Patch lua bytecode · inject hook · mod repack"),
+        ToolItem(16, "Lua Inject",      "Patch Lua bytes · prepend hook source · repack edited PAK tree"),
         ToolItem(17, "Anti-RE Audit",   "Detect weak points in target APK · generate report"),
         ToolItem(18, "Lua Protector",    "AES-256-GCM encrypt Lua source into authenticated protected payload"),
     )
