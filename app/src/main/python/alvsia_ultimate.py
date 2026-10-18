@@ -12801,8 +12801,8 @@ def decrypt_zuc(input_path, out_dir, key_hex="", iv_hex=""):
     return {"ok": True, "out": str(out_file), "note": "ZUC approximation — use real ZUC lib for production"}
 
 
-def decrypt_sm4(input_path, out_dir, key_hex=""):
-    """SM4 block cipher decrypt (pure-Python)."""
+def decrypt_sm4(input_path, out_dir, key_hex="", mode="ECB", iv_hex=""):
+    """SM4 block cipher decrypt in ECB or CBC mode (pure-Python)."""
     from pathlib import Path
     p = Path(input_path); out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
     if not key_hex:
@@ -12812,7 +12812,18 @@ def decrypt_sm4(input_path, out_dir, key_hex=""):
         if len(key) != 16: raise ValueError("SM4 key must be 16 bytes")
     except Exception as e:
         return {"ok": False, "error": str(e)}
+    mode = (mode or "ECB").strip().upper()
+    if mode not in ("ECB", "CBC"):
+        return {"ok": False, "error": "SM4 mode must be ECB or CBC"}
+    try:
+        iv = bytes.fromhex(iv_hex.replace(" ", "")) if iv_hex else b""
+    except Exception:
+        return {"ok": False, "error": "invalid SM4 IV"}
+    if mode == "CBC" and len(iv) != 16:
+        return {"ok": False, "error": "SM4-CBC IV must be 16 bytes"}
     raw = p.read_bytes()
+    if not raw or len(raw) % 16:
+        return {"ok": False, "error": "SM4 ciphertext length must be a non-zero multiple of 16 bytes"}
     # SM4 S-box
     SBOX = [0xd6,0x90,0xe9,0xfe,0xcc,0xe1,0x3d,0xb7,0x16,0xb6,0x14,0xc2,0x28,0xfb,0x2c,0x05,
             0x2b,0x67,0x9a,0x76,0x2a,0xbe,0x04,0xc3,0xaa,0x44,0x13,0x26,0x49,0x86,0x06,0x99,
@@ -12859,13 +12870,20 @@ def decrypt_sm4(input_path, out_dir, key_hex=""):
             Xi = X[0]^sm4_T(tmp)
             X=[X[1],X[2],X[3],Xi]
         return _struct.pack(">4I",X[3],X[2],X[1],X[0])
-    # ECB decrypt (pad to 16)
-    pad = 16 - len(raw)%16
-    padded = raw + bytes([pad]*pad)
-    dec = b"".join(sm4_block(padded[i:i+16], rk_dec) for i in range(0,len(padded),16))
+    # Decrypt the ciphertext as-is; padding belongs to plaintext, not ciphertext.
+    plain_blocks = []
+    previous = iv
+    for offset in range(0, len(raw), 16):
+        cipher_block = raw[offset:offset + 16]
+        plain_block = sm4_block(cipher_block, rk_dec)
+        if mode == "CBC":
+            plain_block = bytes(a ^ b for a, b in zip(plain_block, previous))
+            previous = cipher_block
+        plain_blocks.append(plain_block)
+    dec = _aes_unpad_plaintext(b"".join(plain_blocks))
     out_file = out_dir / ("sm4_dec_%s" % p.name)
     Path(out_file).write_bytes(dec)
-    return {"ok": True, "out": str(out_file), "head": dec[:8].hex()}
+    return {"ok": True, "out": str(out_file), "head": dec[:8].hex(), "mode": mode}
 
 
 def decrypt_simple1(input_path, out_dir, key_hex="01"):
@@ -12936,9 +12954,9 @@ def pak_deep_zuc(input_path, out_dir, key_hex="", iv_hex=""):
     return result
 
 
-def pak_deep_sm4(input_path, out_dir, key_hex=""):
-    """SM4 decrypt PAK then extract."""
-    result = decrypt_sm4(input_path, out_dir, key_hex)
+def pak_deep_sm4(input_path, out_dir, key_hex="", mode="ECB", iv_hex=""):
+    """SM4 decrypt PAK then attempt ZIP extraction."""
+    result = decrypt_sm4(input_path, out_dir, key_hex, mode, iv_hex)
     if not result.get("ok"): return result
     from pathlib import Path
     import zipfile
