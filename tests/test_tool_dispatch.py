@@ -21,7 +21,7 @@ def test_python_auth_normalizes_java_string_and_lua_avoids_art_oom():
     bridge = (ROOT / "app/src/main/python/alvsia_bridge.py").read_text(encoding="utf-8")
     unluac = (ROOT / "app/src/main/java/com/alvsia/pro/tool/UnluacRunner.kt").read_text(encoding="utf-8")
     impl = (ROOT / "app/src/main/python/alvsia_bridge_impl.py").read_text(encoding="utf-8")
-    assert "token_text = str(token)" in bridge
+    assert "token = str(token)" in bridge
     assert "gate.isSessionAuthorized()" in bridge
     assert "gate.isTokenCurrent(token)" in bridge
     assert "ART_SAFE_LIMIT = 1L * 1024L * 1024L" in unluac
