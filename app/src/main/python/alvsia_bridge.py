@@ -28,7 +28,10 @@ def configure_runtime(token, sealed_runtime="1"):
         return False
     try:
         gate = _gate()
-        if not bool(gate.isSessionAuthorized()) or not bool(gate.isTokenCurrent(token)):
+        # isTokenCurrent performs the session-validity check and token comparison
+        # in one native call. Calling isSessionAuthorized() separately first
+        # creates a race with RaspEngine locking the session between the two checks.
+        if not bool(gate.isTokenCurrent(token)):
             return False
     except Exception:
         return False
