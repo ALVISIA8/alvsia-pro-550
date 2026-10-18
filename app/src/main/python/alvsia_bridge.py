@@ -21,12 +21,17 @@ def _install_sealed_runtime():
         pass
 
 def configure_runtime(token, sealed_runtime="1"):
-    token = str(token)
+    try:
+        token = str(token).strip()
+    except Exception:
+        return False
     if re.fullmatch(r"[0-9A-Fa-f]{64}", token) is None:
         return False
     try:
         from com.alvsia.pro.sec import SessionGate
-        if not SessionGate.isSessionAuthorized() or not SessionGate.isTokenCurrent(token):
+        # isTokenCurrent validates session age, HMAC, and token equality atomically.
+        # Do not call isSessionAuthorized separately: RASP can lock between calls.
+        if not bool(SessionGate.isTokenCurrent(token)):
             return False
     except Exception:
         return False
