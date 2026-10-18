@@ -24,10 +24,20 @@ def _install_sealed_runtime():
         pass
 
 def configure_runtime(token, sealed_runtime="1"):
-    if not isinstance(token, str) or re.fullmatch(r"[0-9A-Fa-f]{64}", token) is None:
+    # Chaquopy/reflection can deliver a Java String proxy rather than a native
+    # Python str. Normalize first, then validate the exact token against the
+    # live Kotlin SessionGate; never treat an environment flag as authorization.
+    try:
+        token_text = str(token)
+    except Exception:
+        return False
+    if re.fullmatch(r"[0-9A-Fa-f]{64}", token_text) is None:
         return False
     try:
-        if not bool(_gate().isTokenCurrent(token)):
+        gate = _gate()
+        if not bool(gate.isSessionAuthorized()):
+            return False
+        if not bool(gate.isTokenCurrent(token_text)):
             return False
     except Exception:
         return False
