@@ -158,6 +158,23 @@ def test_bridge_call_signatures_match_helpers():
 
     assert not errors, "Bridge/helper call contract mismatches:\n" + "\n".join(errors)
 
+
+def test_obb_extract_normalizes_archive_paths():
+    source = (ROOT / "app/src/main/python/alvsia_features.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    fn = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "run_obb_extract")
+    namespace = {}
+    exec(compile(ast.Module(body=[fn], type_ignores=[]), str(ROOT / "app/src/main/python/alvsia_features.py"), "exec"), namespace)
+    with tempfile.TemporaryDirectory() as td:
+        base = Path(td)
+        archive, out = base / "sample.zip", base / "out"
+        import zipfile
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("folder\\\\file.txt", "hello")
+        result = namespace["run_obb_extract"](archive, out)
+        assert result.get("ok"), result
+        assert (out / "folder" / "file.txt").read_text(encoding="utf-8") == "hello"
+
 if __name__ == "__main__":
     tests = (
         test_menu_ids_are_unique_and_reachable,
@@ -166,6 +183,7 @@ if __name__ == "__main__":
         test_engine_surfaces_bridge_failures,
         test_tool_argument_and_storage_contracts,
         test_bridge_call_signatures_match_helpers,
+        test_obb_extract_normalizes_archive_paths,
     )
     for test in tests:
         test()
