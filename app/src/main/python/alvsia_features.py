@@ -918,16 +918,40 @@ def run_lua_constants(input_path, out_dir):
 
 
 def run_obb_extract(input_path, out_dir):
-    """Extract OBB/ZIP to out_dir."""
+    """Safely extract OBB/ZIP entries without allowing paths outside out_dir."""
+    import shutil
     import zipfile
     from pathlib import Path
-    p = Path(input_path); out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
+
+    p = Path(input_path)
+    root = Path(out_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    root = root.resolve()
     try:
         with zipfile.ZipFile(p, "r") as zf:
-            zf.extractall(out_dir)
-            count = len(zf.namelist())
-        return {"ok": True, "extracted": count, "out": str(out_dir)}
+            entries = zf.infolist()
+            validated = []
+            # Validate every member before writing anything, preventing ZIP-slip
+            # archives from partially extracting outside the destination.
+            for info in entries:
+                member = info.filename.replace("\\\\", "/")
+                if member.startswith("/") or (len(member) >= 2 and member[1] == ":"):
+                    return {"ok": False, "error": "unsafe absolute archive path rejected"}
+                target = (root / member).resolve()
+                if target != root and root not in target.parents:
+                    return {"ok": False, "error": "unsafe archive path rejected: %s" % info.filename}
+                validated.append((info, target))
+
+            count = 0
+            for info, target in validated:
+                if info.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with zf.open(info, "r") as src, target.open("wb") as dst:
+                    shutil.copyfileobj(src, dst)
+                count += 1
+        return {"ok": True, "extracted": count, "out": str(root)}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
