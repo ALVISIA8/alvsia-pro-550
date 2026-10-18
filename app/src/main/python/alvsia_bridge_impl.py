@@ -565,7 +565,7 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
             if not need_file(): return "\n".join(lines)
             dest_dec = out_dir("DEC")
             if sid == "dec_auto":
-                r = ult.decrypt_auto(ip, dest_dec)
+                r = ult.decrypt_auto(ip, dest_dec, str(work_dir()))
                 lines.append(str(r))
                 return "\n".join(lines)
             if sid in ("dec_aes_cbc", "dec_aes_ecb"):
