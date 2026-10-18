@@ -37,15 +37,8 @@ android {
         }
     }
 
-    // Sprint 1: APK splits by ABI — smaller per-arch APK, harder to repack
-    splits {
-        abi {
-            isEnable = true
-            reset()
-            include("arm64-v8a")
-            isUniversalApk = false
-        }
-    }
+    // ABI is restricted to arm64-v8a by defaultConfig.ndk. Do not enable splits here,
+    // because Android Gradle Plugin rejects using splits.abi and ndk.abiFilters together.
 
     buildTypes {
         release {
