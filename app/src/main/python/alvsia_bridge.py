@@ -1,17 +1,14 @@
 from __future__ import annotations
 import os
 import re
-
 def _gate():
     from com.alvsia.pro.sec import SessionGate
     return SessionGate
-
 def _authorized():
     try:
         return bool(_gate().isSessionAuthorized())
     except Exception:
         return False
-
 def _install_sealed_runtime():
     if os.environ.get("ALVSIA_SEALED_RUNTIME") != "1" or not _authorized():
         return
@@ -22,22 +19,16 @@ def _install_sealed_runtime():
             sealed_loader.install()
     except (ImportError, FileNotFoundError, RuntimeError, TypeError):
         pass
-
 def configure_runtime(token, sealed_runtime="1"):
-    # Chaquopy/reflection can deliver a Java String proxy rather than a native
-    # Python str. Normalize first, then validate the exact token against the
-    # live Kotlin SessionGate; never treat an environment flag as authorization.
     try:
-        token_text = str(token)
+        token = str(token)
     except Exception:
         return False
-    if re.fullmatch(r"[0-9A-Fa-f]{64}", token_text) is None:
+    if re.fullmatch(r"[0-9A-Fa-f]{64}", token) is None:
         return False
     try:
         gate = _gate()
-        if not bool(gate.isSessionAuthorized()):
-            return False
-        if not bool(gate.isTokenCurrent(token_text)):
+        if not bool(gate.isSessionAuthorized()) or not bool(gate.isTokenCurrent(token)):
             return False
     except Exception:
         return False
@@ -46,17 +37,15 @@ def configure_runtime(token, sealed_runtime="1"):
     os.environ["ALVSIA_SEALED_RUNTIME"] = "1" if str(sealed_runtime) == "1" else "0"
     _install_sealed_runtime()
     return True
-
 def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
     if not _authorized() or os.environ.get("ALVSIA_APK_SESSION") != "1":
-        return "X AUTH: no valid Kotlin APK session — login with your key first"
+        return "X AUTH: login required"
     _install_sealed_runtime()
     try:
         import alvsia_bridge_impl as impl
         return impl.run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir)
     except Exception as exc:
         return "X SEALED BRIDGE: %s" % (str(exc) or type(exc).__name__)
-
 def bridge_run_sub(module_id, sub_id, input_path, extra_name, work_dir_path, jars_dir_path):
     return run_tool(int(module_id), str(sub_id), str(input_path) if input_path else "",
                     str(work_dir_path), str(jars_dir_path), str(jars_dir_path))
