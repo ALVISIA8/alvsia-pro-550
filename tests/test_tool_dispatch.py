@@ -1,6 +1,7 @@
 """Static regression checks for the 18-module Android tool menu/bridge contract."""
 from pathlib import Path
 import re
+import ast
 
 ROOT = Path(__file__).resolve().parents[1]
 MENUS = ROOT / "app/src/main/java/com/alvsia/pro/tool/SubMenus.kt"
@@ -72,14 +73,73 @@ def test_tool_argument_and_storage_contracts():
     assert "WorkPaths.dirOut()" in output_browser
     assert "explicitTrue" in runner
 
+
+def test_bridge_call_signatures_match_helpers():
+    source_paths = {
+        "core": ROOT / "app/src/main/python/alvsia_core.py",
+        "feat": ROOT / "app/src/main/python/alvsia_features.py",
+        "ult": ROOT / "app/src/main/python/alvsia_ultimate.py",
+    }
+    helpers = {}
+    for alias, path in source_paths.items():
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        helpers[alias] = {
+            node.name: node for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+
+    bridge_tree = ast.parse(BRIDGE_IMPL.read_text(encoding="utf-8"), filename=str(BRIDGE_IMPL))
+    errors = []
+    for node in ast.walk(bridge_tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        owner = node.func.value
+        if not isinstance(owner, ast.Name) or owner.id not in helpers:
+            continue
+        alias, name = owner.id, node.func.attr
+        fn = helpers[alias].get(name)
+        if fn is None:
+            errors.append(f"{alias}.{name}: helper definition not found")
+            continue
+
+        argspec = fn.args
+        positional = list(argspec.posonlyargs) + list(argspec.args)
+        kwonly = [arg.arg for arg in argspec.kwonlyargs]
+        has_varargs = argspec.vararg is not None
+        has_kwargs = argspec.kwarg is not None
+        if any(isinstance(arg, ast.Starred) for arg in node.args):
+            continue
+        supplied_pos = len(node.args)
+        if supplied_pos > len(positional) and not has_varargs:
+            errors.append(f"{alias}.{name}: too many positional args ({supplied_pos}>{len(positional)})")
+            continue
+        keyword_names = {kw.arg for kw in node.keywords if kw.arg is not None}
+        valid_names = set(arg.arg for arg in positional) | set(kwonly)
+        if not has_kwargs:
+            invalid = sorted(keyword_names - valid_names)
+            if invalid:
+                errors.append(f"{alias}.{name}: unsupported keyword(s) {invalid}")
+        default_count = len(argspec.defaults)
+        required_positional = positional[:len(positional) - default_count]
+        supplied_names = {arg.arg for arg in positional[:supplied_pos]} | keyword_names
+        missing = [arg.arg for arg in required_positional if arg.arg not in supplied_names]
+        for arg, default in zip(kwonly, argspec.kw_defaults):
+            if default is None and arg not in keyword_names:
+                missing.append(arg)
+        if missing:
+            errors.append(f"{alias}.{name}: missing required argument(s) {missing}")
+
+    assert not errors, "Bridge/helper call contract mismatches:\n" + "\n".join(errors)
+
 if __name__ == "__main__":
     tests = (
         test_menu_ids_are_unique_and_reachable,
         test_catalog_contains_all_eighteen_modules,
         test_engine_surfaces_bridge_failures,
         test_tool_argument_and_storage_contracts,
+        test_bridge_call_signatures_match_helpers,
     )
     for test in tests:
         test()
         print("PASS", test.__name__)
-    print("TOOL DISPATCH TEST: PASS (4/4)")
+    print("TOOL DISPATCH TEST: PASS (5/5)")
