@@ -312,7 +312,7 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                     in_size = Path(ip).stat().st_size
                 except Exception:
                     in_size = 0
-                if in_size > 8 * 1024 * 1024:
+                if in_size > 1 * 1024 * 1024:
                     try:
                         from lua_engine.streaming_decompiler import decompile_large
                         r = decompile_large(Path(ip), dest_lua, jars_dir=jars)
