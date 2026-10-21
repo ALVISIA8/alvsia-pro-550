@@ -3,8 +3,7 @@ def _authorized():
     try:
         from com.alvsia.pro.sec import SessionGate
         return bool(SessionGate.isSessionAuthorized())
-    except Exception:
-        return False
+    except Exception: return False
 def _install_sealed_runtime():
     if os.environ.get("ALVSIA_SEALED_RUNTIME")!="1" or not _authorized(): return
     try:
@@ -15,8 +14,7 @@ def _install_sealed_runtime():
     except Exception: pass
 def _extract_str(v):
     try:
-        s=v if isinstance(v,str) else str(v)
-        s=s.strip()
+        s=(v if isinstance(v,str) else str(v)).strip()
         if s.startswith(("java.","com.chaquo.")):
             try: s=v.__str__().strip()
             except Exception: return ""
