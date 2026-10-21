@@ -17,11 +17,12 @@ def _install_sealed_runtime():
 def configure_runtime(token,sealed_runtime="1"):
  global _DIAG
  try:
-  token=str(token).strip()
+  token = str(token).strip()
   if re.fullmatch(r"[0-9A-Fa-f]{64}",token) is None:
    _DIAG="token_shape"; return False
   from com.alvsia.pro.sec import SessionGate
-  if not bool(SessionGate.isTokenCurrent(token)):
+  gate = SessionGate
+  if not bool(gate.isTokenCurrent(token)):
    _DIAG="session_gate_rejected"; return False
   os.environ.pop("ALVSIA_SESSION_TOKEN",None)
   os.environ["ALVSIA_APK_SESSION"]="1"
