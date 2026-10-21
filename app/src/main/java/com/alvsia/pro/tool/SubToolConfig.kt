@@ -26,7 +26,6 @@ enum class ConfigType {
     HEX,         // hexadecimal input (validates 0-9a-fA-F)
     MULTILINE,   // multiline text (for Lua source, etc.)
     FILE_PICK,   // file picker button
-    PATH,        // filesystem path input
     INT,         // integer input
     BOOL          // toggle switch
 }
