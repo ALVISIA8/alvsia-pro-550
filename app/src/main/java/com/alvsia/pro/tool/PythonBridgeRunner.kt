@@ -34,17 +34,12 @@ object PythonBridgeRunner {
             if (!isStarted) {
                 val platformClass = Class.forName("com.chaquo.python.android.AndroidPlatform")
                 val platformInst = platformClass.getConstructor(android.content.Context::class.java).newInstance(app)
-                // Chaquopy's Platform type differs by runtime version. Resolve the
-                // actual start(Platform) overload from the instantiated AndroidPlatform
-                // instead of loading the non-existent PythonPlatform class.
                 val startMethod = pyClass.methods.firstOrNull { method ->
                     method.name == "start" &&
                         java.lang.reflect.Modifier.isStatic(method.modifiers) &&
                         method.parameterTypes.size == 1 &&
                         method.parameterTypes[0].isAssignableFrom(platformInst.javaClass)
-                } ?: throw NoSuchMethodException(
-                    "Python.start(AndroidPlatform) overload not found"
-                )
+                } ?: throw NoSuchMethodException("Python.start(AndroidPlatform) overload not found")
                 startMethod.invoke(null, platformInst)
             }
             startupError = if (isReady()) "Chaquopy ready" else "Python class loaded but runtime reports not started"
@@ -54,10 +49,6 @@ object PythonBridgeRunner {
         }
     }
 
-    /** Stage the bundled Unluac jar into the Python engine's configured jars directory.
-     * The Python fallback only searches jarsDirPath, whereas Android assets are not
-     * filesystem paths. Keep this lazy and scoped to the Lua fallback dependency.
-     */
     private fun ensureBundledUnluacJar(jarsDirPath: String): String? {
         return try {
             val context = appContext ?: return null
@@ -93,55 +84,49 @@ object PythonBridgeRunner {
                 File(appContext?.filesDir ?: File("/data/local/tmp"), "jars").absolutePath
             }
             val stagedUnluacJar = ensureBundledUnluacJar(resolvedJarsDir)
-
             val py = pyClass.getMethod("getInstance").invoke(null) ?: return false to listOf("... Python instance null")
             val getModule = pyClass.getMethod("getModule", String::class.java)
-
             val pyObjectCls = Class.forName("com.chaquo.python.PyObject")
             val callAttr = pyObjectCls.getMethod("callAttr", String::class.java, Array<Any?>::class.java)
-
             val token = SessionGate.sessionToken.trim()
             if (!token.matches(Regex("^[0-9A-Fa-f]{64}$"))) {
                 return false to listOf("X AUTH: native session token invalid")
             }
-
             val bridge = getModule.invoke(py, "alvsia_bridge") ?: return false to listOf("... alvsia_bridge unavailable")
-            // Configure the authenticated Python session through a bridge function.
-            // This avoids relying on PyObject.get(String), which is not available in
-            // some Chaquopy runtimes and caused "PyObject.get" reflection failures.
-            // Distinguish a native session-gate rejection from a Python/Chaquopy bridge rejection.
             if (!SessionGate.isTokenCurrent(token)) {
                 return false to listOf("X AUTH DIAG: Kotlin SessionGate rejected the current token before Python configuration")
             }
-            val configure = callAttr.invoke(
-                bridge,
-                "configure_runtime",
-                arrayOf<Any?>(token, "1")
-            )
-            if (configure?.toString() != "True") {
+            val configure = callAttr.invoke(bridge, "configure_runtime", arrayOf<Any?>(token, "1"))
+            val configureOk = try {
+                pyObjectCls.getMethod("toBoolean").invoke(configure) as? Boolean
+                    ?: configure?.toString()?.trim()?.let { it == "True" || it == "true" || it == "1" }
+                    ?: false
+            } catch (_: Throwable) {
+                configure?.toString()?.trim()?.let { it == "True" || it == "true" || it == "1" } ?: false
+            }
+            if (!configureOk) {
+                val runtimeDiag = try {
+                    callAttr.invoke(bridge, "runtime_diagnostic", arrayOf<Any?>())?.toString()?.take(80) ?: "empty"
+                } catch (e: Throwable) {
+                    "unavailable:${e.javaClass.simpleName}"
+                }
                 val returnedType = configure?.javaClass?.simpleName ?: "null"
                 return false to listOf(
-                    "X AUTH DIAG: Kotlin SessionGate accepted token, but Python configure_runtime did not return True",
-                    "diagnostic: return_type=$returnedType; chaquopy_started=$isStarted; token_shape=64_hex"
+                    "X AUTH DIAG: Kotlin SessionGate accepted token, but Python configure_runtime rejected it",
+                    "diagnostic: python_runtime=$runtimeDiag; return_type=$returnedType; chaquopy_started=$isStarted; token_shape=64_hex"
                 )
             }
             val rawResult = callAttr.invoke(
-                bridge,
-                "bridge_run_sub",
+                bridge, "bridge_run_sub",
                 arrayOf<Any?>(moduleId, subId, inputPath, extraName ?: "", workDirPath, resolvedJarsDir)
             )
             val log = rawResult?.toString().orEmpty()
             val lines = log.split("\n").filter { it.isNotBlank() }.toMutableList()
             if (stagedUnluacJar != null) lines.add(0, "OK bundled Unluac available: $stagedUnluacJar")
-            // Many Python handlers return a structured dict rendered as text rather
-            // than a line beginning with "OK". Honor an explicit success result so
-            // valid operations aren't reported as failures by the Kotlin wrapper.
             val explicitFalse = log.contains("'ok': False") ||
-                    log.contains("\"ok\": false") ||
-                    log.contains("\"ok\": False")
+                    log.contains("\"ok\": false") || log.contains("\"ok\": False")
             val explicitTrue = log.contains("'ok': True") ||
-                    log.contains("\"ok\": true") ||
-                    log.contains("\"ok\": True")
+                    log.contains("\"ok\": true") || log.contains("\"ok\": True")
             val hasErrorLine = lines.any {
                 it.startsWith("X ") || it.startsWith("ERROR:") || it.startsWith("CRITICAL:")
             }
@@ -158,15 +143,12 @@ object PythonBridgeRunner {
     fun setEnv(key: String, value: String) {
         try {
             val pyClass = Class.forName("com.chaquo.python.Python")
-            val isStarted = pyClass.getMethod("isStarted").invoke(null) as Boolean
-            if (!isStarted) return
+            if (!(pyClass.getMethod("isStarted").invoke(null) as Boolean)) return
             val py = pyClass.getMethod("getInstance").invoke(null) ?: return
-            val getModule = pyClass.getMethod("getModule", String::class.java)
-            val osMod = getModule.invoke(py, "os") ?: return
+            val osMod = pyClass.getMethod("getModule", String::class.java).invoke(py, "os") ?: return
             val pyObjectCls = Class.forName("com.chaquo.python.PyObject")
             val callAttr = pyObjectCls.getMethod("callAttr", String::class.java, Array<Any?>::class.java)
-            val getObj = pyObjectCls.getMethod("get", Any::class.java)
-            val environ = getObj.invoke(osMod, "environ") ?: return
+            val environ = pyObjectCls.getMethod("get", Any::class.java).invoke(osMod, "environ") ?: return
             callAttr.invoke(environ, "__setitem__", arrayOf<Any?>(key, value))
         } catch (_: Throwable) { }
     }
@@ -174,17 +156,13 @@ object PythonBridgeRunner {
     fun clearEnv(key: String) {
         try {
             val pyClass = Class.forName("com.chaquo.python.Python")
-            val isStarted = pyClass.getMethod("isStarted").invoke(null) as Boolean
-            if (!isStarted) return
+            if (!(pyClass.getMethod("isStarted").invoke(null) as Boolean)) return
             val py = pyClass.getMethod("getInstance").invoke(null) ?: return
-            val getModule = pyClass.getMethod("getModule", String::class.java)
-            val osMod = getModule.invoke(py, "os") ?: return
+            val osMod = pyClass.getMethod("getModule", String::class.java).invoke(py, "os") ?: return
             val pyObjectCls = Class.forName("com.chaquo.python.PyObject")
             val callAttr = pyObjectCls.getMethod("callAttr", String::class.java, Array<Any?>::class.java)
-            val getObj = pyObjectCls.getMethod("get", Any::class.java)
-            val environ = getObj.invoke(osMod, "environ") ?: return
+            val environ = pyObjectCls.getMethod("get", Any::class.java).invoke(osMod, "environ") ?: return
             callAttr.invoke(environ, "pop", arrayOf<Any?>(key, null))
         } catch (_: Throwable) { }
     }
-
 }
