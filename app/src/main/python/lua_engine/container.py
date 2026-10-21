@@ -42,7 +42,19 @@ def unwrap_lua_container(data: bytes, max_output: int = 256 * 1024 * 1024):
     observed in the supplied CharacterBase.lua. If data is not a container,
     the original bytes are returned unchanged.
     """
-    if not data.startswith(b"\x78\xda"):
+    # Accept any valid zlib header: CMF=0x78 (deflate, 32KB window) with any
+    # FLG byte such that (CMF*256+FLG) % 31 == 0.  Common values:
+    #   78 01 (no compression), 78 5E (fast), 78 9C (default), 78 DA (best).
+    # Previous code only matched 78 DA and silently returned the raw bytes for
+    # all other zlib levels — causing unwrap to report wrapped=False on files
+    # produced with zlib.compress(data, level=0) or level=6.
+    def _is_zlib_header(d: bytes) -> bool:
+        if len(d) < 2:
+            return False
+        cmf, flg = d[0], d[1]
+        return cmf == 0x78 and (cmf * 256 + flg) % 31 == 0
+
+    if not _is_zlib_header(data):
         return data, ContainerInfo(False, "none", 0, len(data), ())
 
     # First try a normal zlib stream. This handles ordinary .zlib files.

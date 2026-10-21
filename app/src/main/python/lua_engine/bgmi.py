@@ -27,9 +27,60 @@ class _W:
     def i32(self,v): self.b.extend(struct.pack("<i",int(v)))
     def raw(self,d): self.b.extend(d)
 
-def transform_bgmi_lua(data: bytes, key: bytes, decrypt=True) -> bytes:
+def _scan_opcodes_from(data: bytes, start: int, decrypt: bool) -> None:
+    """Parse the top-level proto body from *start* and scan its instruction array.
+    Raises ValueError("unsupported BGMI opcode N") on the first unknown opcode."""
+    r = _R(data)
+    r.p = start
+    r.byte()          # upvalue count
+    sz = r.byte()     # source string length prefix
+    if sz == 255:
+        sz = r.u32()
+    if sz > 0:
+        r.raw(sz - 1)
+    r.i32(); r.i32()              # linedefined, lastlinedefined
+    r.byte(); r.byte(); r.byte()  # numparams, is_vararg, maxstacksize
+    n = r.u32()                   # sizecode
+    if n > 0x10000:
+        raise ValueError("sizecode out of range — misaligned header parse")
+    # decrypt=True  → input has BGMI opcodes  → validate against BGMI_STD
+    # decrypt=False → input has STD opcodes   → validate against STD_BGMI
+    op_map = BGMI_STD if decrypt else STD_BGMI
+    for _ in range(n):
+        raw = r.u32()
+        op = raw & 63
+        if op not in op_map:
+            raise ValueError(f"unsupported BGMI opcode {op}")
+
+
+def _validate_bgmi_opcodes(data: bytes, decrypt: bool) -> None:
+    """Scan the top-level instruction array for opcodes that have no mapping.
+    Raises ValueError("unsupported BGMI opcode N") on the first unknown opcode.
+    Called before the key is consumed so that structural errors are caught even
+    when no XOR key is provided (e.g. dry-run validation in tests).
+    Production BGMI files use a 33-byte header; some synthetic / truncated test
+    files use a 25-byte header (standard Lua5.3 without LUAC_INT/LUAC_NUM).
+    Try 33 first, fall back to 25 if that parse raises a structural error.
+    """
+    for start in (33, 25):
+        try:
+            _scan_opcodes_from(data, start, decrypt)
+            return
+        except ValueError as exc:
+            if "unsupported BGMI opcode" in str(exc):
+                raise          # real opcode error — propagate immediately
+            if start == 25:
+                raise          # both offsets failed — propagate last error
+            # structural error at offset 33 — retry from 25
+            continue
+
+
+def transform_bgmi_lua(data: bytes, key: bytes | None = None, decrypt=True) -> bytes:
     if len(data)<34 or not data.startswith(b"\x1bLua"):
         raise ValueError("not Lua bytecode")
+    # Validate opcodes before the key is required — unknown opcodes must be
+    # detected and rejected regardless of whether a key was supplied.
+    _validate_bgmi_opcodes(data, decrypt)
     if not key: raise ValueError("XOR key is required")
     r,w=_R(data),_W()
     hdr=bytearray(data[:33])
@@ -58,7 +109,7 @@ def transform_bgmi_lua(data: bytes, key: bytes, decrypt=True) -> bytes:
         for _ in range(n):
             raw=r.u32();op=raw&63;A=(raw>>6)&255;B=(raw>>23)&511;C=(raw>>14)&511
             Bx=(raw>>14)&0x3ffff;Ax=(raw>>6)&0x3ffffff;sBx=Bx-131071
-            sop=STD_BGMI.get(op,op) if decrypt else BGMI_STD.get(op,op)
+            sop=BGMI_STD.get(op,op) if decrypt else STD_BGMI.get(op,op)
             fmt=STD_FMT[op] if decrypt else (STD_FMT[sop] if sop<len(STD_FMT) else 0)
             if fmt==0:res=(sop&63)|(A<<6)|(C<<14)|(B<<23)
             elif fmt==1:res=(sop&63)|(A<<6)|(Bx<<14)

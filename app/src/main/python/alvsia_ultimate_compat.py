@@ -197,11 +197,11 @@ def _frida_js(pkg, include_url=True):
     url_hooks = """
     const strstr = Module.findExportByName('libc.so', 'strstr');
     if (strstr) Interceptor.attach(strstr, { onEnter(args) {
-      try { const a = Memory.readUtf8String(args[0]); if (a && /https?:\/\//i.test(a)) send({type:'URL_FOUND',source:'libc->strstr',data:a}); } catch (_) {}
+      try { const a = Memory.readUtf8String(args[0]); if (a && /https?:[/][/]/i.test(a)) send({type:'URL_FOUND',source:'libc->strstr',data:a}); } catch (_) {}
     }});
     const sprintf = Module.findExportByName('libc.so', 'sprintf');
     if (sprintf) Interceptor.attach(sprintf, { onEnter(args) { this.buf=args[0]; }, onLeave(_) {
-      try { const a=Memory.readUtf8String(this.buf); if(a && /https?:\/\//i.test(a)) send({type:'URL_FOUND',source:'libc->sprintf',data:a}); } catch (_) {}
+      try { const a=Memory.readUtf8String(this.buf); if(a && /https?:[/][/]/i.test(a)) send({type:'URL_FOUND',source:'libc->sprintf',data:a}); } catch (_) {}
     }});
     """
     return f"""Java.perform(function () {{
@@ -211,7 +211,7 @@ def _frida_js(pkg, include_url=True):
     const env = Java.vm.getEnv();
     const NewStringUTF = env.handle.readPointer().add(Process.pointerSize * 167).readPointer();
     Interceptor.attach(NewStringUTF, {{ onEnter(args) {{
-      try {{ const s=Memory.readUtf8String(args[1]); if(s && /https?:\/\//i.test(s)) send({{type:'URL_FOUND',source:'JNI->NewStringUTF',data:s}}); }} catch (_) {{}}
+      try {{ const s=Memory.readUtf8String(args[1]); if(s && /https?:[/][/]/i.test(s)) send({{type:'URL_FOUND',source:'JNI->NewStringUTF',data:s}}); }} catch (_) {{}}
     }} }});
   }} catch (_) {{}}
 }});

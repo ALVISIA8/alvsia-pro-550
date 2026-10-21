@@ -53,7 +53,12 @@ def detect_lua(path) -> LuaInfo:
     p = Path(path)
     data = p.read_bytes()
     info = detect_bytes(data)
-    if info.kind != "unknown" or not data.startswith(b"\x78\xda"):
+    # Accept any valid zlib header: CMF=0x78 with FLG such that (CMF*256+FLG)%31==0
+    # (78 01, 78 5E, 78 9C, 78 DA are the common ones at various compression levels).
+    def _is_zlib_header(d: bytes) -> bool:
+        return len(d) >= 2 and d[0] == 0x78 and (d[0] * 256 + d[1]) % 31 == 0
+
+    if info.kind != "unknown" or not _is_zlib_header(data):
         return info
     try:
         payload, ci = unwrap_lua_container(data)

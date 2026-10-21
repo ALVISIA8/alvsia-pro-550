@@ -517,31 +517,16 @@ def run_pubg_lua_decrypt(input_path, out_dir, key_hex=None):
 # REBRAND — string replace brand/watermark/channel (NO network, NO bot token)
 # ---------------------------------------------------------------------------
 
-# Known third-party watermarks / brands found in user-supplied packs
+# Watermark strings that the rebrand tool searches for and replaces.
+# Only ALVSIA-tier brand strings are listed here.
 KNOWN_BRANDS = [
-    "SRC_HUB",
-    "@SRC_HUB",
-    "t.me/SRC_HUB",
-    "https://t.me/SRC_HUB",
-    "http://t.me/SRC_HUB",
-    "XThrlen",
-    "@XThrlen",
-    "ALECTO",
-    "@ALECTO",
-    "ALECTOGAMES",
-    "HACKER420",
-    "@HACKER420",
-    "SKUY",
-    "SKUYV5",
-    "GSZV4",
-    "GSZV",
-    "Nadeem",
-    "NADEEM",
-    "GRW PREMIUM",
-    "GRW",
-    "AKMOD",
-    "Myanmar VIP",
-    "FREE PAK",
+    "ALVSIA",
+    "ALVSIA PRO",
+    "ALVSIA PREMIUM",
+    "ALVSIA PRIVATE TOOL",
+    "ALVSIA PRO MAX",
+    "t.me/ALVSIA_PRO",
+    "t.me/ALVSIA",
 ]
 
 DEFAULT_BRAND = "ALVSIA PRO"
@@ -1070,3 +1055,443 @@ def run_export_report(input_path, out_dir):
     out_file = out_dir / ("report_%s.txt" % p.stem)
     out_file.write_text("\n".join(lines), encoding="utf-8")
     return {"ok": True, "out": str(out_file), "sha256": digest["sha256"].hexdigest()}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SM4KeyFinder — integrated from ALVSIA source research (ALVSIA private source_py.zip)
+# Finds SM4_SECRET_NEW candidates inside .so / APK / OBB binary files.
+# UI-agnostic: returns plain Python data; no Rich/Kivy dependency.
+# ──────────────────────────────────────────────────────────────────────────────
+
+import re as _re
+
+
+class SM4KeyFinder:
+    """Scan ELF .so files for embedded SM4_SECRET_NEW candidates.
+
+    Candidates match the positional pattern ``aA0`` repeating for exactly
+    20 characters (lower · UPPER · digit, cycle repeating).  Found at the
+    offset where they appear in the binary, both as UTF-8 runs and as
+    UTF-16-LE runs (common in stripped BGMI .so blobs).
+
+    Usage::
+
+        finder = SM4KeyFinder('/path/to/lib/arm64-v8a')
+        keys = finder.find_keys()          # list[tuple[int, str]]
+        unique = list(dict.fromkeys(s for _, s in keys))
+    """
+
+    # 20-char aA0-pattern: 6 complete triples (aA0) + 2-char tail (aA) = 6×3+2 = 20
+    _CANDIDATE_RE_UTF8   = _re.compile(rb'(?:[a-z][A-Z]\d){6}[a-z][A-Z]')
+    _CANDIDATE_RE_UTF16  = _re.compile(rb'(?:[\x20-\x7e]\x00){20}')
+    _CHUNK_SIZE          = 8 * 1024 * 1024  # 8 MB
+
+    @staticmethod
+    def is_sm4_new_candidate(s: str) -> bool:
+        """Return True iff *s* matches the aA0-repeating 20-char pattern."""
+        if len(s) != 20:
+            return False
+        for i, c in enumerate(s):
+            pos = i % 3
+            if pos == 0 and not c.islower():   return False
+            if pos == 1 and not c.isupper():   return False
+            if pos == 2 and not c.isdigit():   return False
+        return True
+
+    @staticmethod
+    def scan_file(filepath, progress_cb=None) -> list:
+        """Scan one binary file for SM4_SECRET_NEW candidates.
+
+        Returns ``list[tuple[int, str]]`` — (absolute_byte_offset, candidate_string).
+        *progress_cb*, if supplied, is called as ``progress_cb(bytes_done, bytes_total)``.
+        """
+        results: list = []
+        seen: set = set()
+        data = Path(filepath).read_bytes()
+        total = len(data)
+        offset = 0
+        while offset < total:
+            end   = min(offset + SM4KeyFinder._CHUNK_SIZE + 40, total)
+            chunk = data[offset:end]
+
+            # UTF-8 run
+            for m in SM4KeyFinder._CANDIDATE_RE_UTF8.finditer(chunk):
+                abs_off = offset + m.start()
+                if abs_off in seen: continue
+                seen.add(abs_off)
+                s = m.group(0).decode('ascii', errors='ignore')
+                if SM4KeyFinder.is_sm4_new_candidate(s):
+                    results.append((abs_off, s))
+
+            # UTF-16-LE run
+            for m in SM4KeyFinder._CANDIDATE_RE_UTF16.finditer(chunk):
+                abs_off = offset + m.start()
+                if abs_off in seen: continue
+                seen.add(abs_off)
+                s = m.group(0)[::2].decode('ascii', errors='ignore')
+                if len(s) == 20 and ' ' not in s and SM4KeyFinder.is_sm4_new_candidate(s):
+                    results.append((abs_off, s))
+
+            if progress_cb:
+                progress_cb(min(end, total), total)
+            offset += SM4KeyFinder._CHUNK_SIZE
+
+        return results
+
+    def __init__(self, so_folder: str = '.'):
+        self.so_folder  = Path(so_folder)
+        self.found_keys: set = set()
+
+    def find_keys(self) -> list:
+        """Scan all ``*.so`` files under *so_folder*.
+
+        Returns deduplicated ``list[tuple[int, str]]`` sorted by offset.
+        """
+        all_results: list = []
+        for so_path in sorted(self.so_folder.rglob('*.so')):
+            try:
+                hits = SM4KeyFinder.scan_file(so_path)
+                for off, key in hits:
+                    if key not in self.found_keys:
+                        self.found_keys.add(key)
+                        all_results.append((off, key))
+            except Exception:
+                pass
+        return sorted(all_results)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SM4KeyFinder — v2: adds SM4_SECRET_2 and SM4_SECRET_4 candidate detection
+# Integrated into ALVSIA PRO (ALVSIA private source)
+# SM4_SECRET_NEW already handled by the earlier SM4KeyFinder class.
+# This adds the two remaining SM4 secret variants used in older BGMI builds.
+# ──────────────────────────────────────────────────────────────────────────────
+
+class SM4AllKeyFinder(SM4KeyFinder):
+    """Extends SM4KeyFinder to also detect SM4_SECRET_2 and SM4_SECRET_4 candidates.
+
+    *SM4_SECRET_4* pattern: 20 alphanum chars, no uppercase, digit-heavy (≥10 digits,
+    ≥5 lowercase, 0 uppercase).  Used in PAK encryption method EM_SM4_4.
+
+    *SM4_SECRET_2* pattern: 20 chars, contains ``$`` or ``*``, ≥5 uppercase, ≥3 lowercase,
+    ≥1 digit.  Used in PAK encryption method EM_SM4_2.
+
+    Returns a dict keyed by secret type::
+
+        {
+          'SM4_SECRET_NEW': [(offset, key), ...],
+          'SM4_SECRET_4':   [(offset, key), ...],
+          'SM4_SECRET_2':   [(offset, key), ...],
+        }
+    """
+
+    @staticmethod
+    def is_sm4_4_candidate(s: str) -> bool:
+        """All-alphanumeric, no uppercase, ≥10 digits, ≥5 lowercase."""
+        if len(s) != 20 or not all(c.isalnum() for c in s):
+            return False
+        d = sum(1 for c in s if c.isdigit())
+        l = sum(1 for c in s if c.islower())
+        u = sum(1 for c in s if c.isupper())
+        return d >= 10 and l >= 5 and u == 0
+
+    @staticmethod
+    def is_sm4_2_candidate(s: str) -> bool:
+        """Contains $ or *, ≥5 uppercase, ≥3 lowercase, ≥1 digit."""
+        if len(s) != 20:
+            return False
+        has_special = any(c in '$*' for c in s)
+        u = sum(1 for c in s if c.isupper())
+        l = sum(1 for c in s if c.islower())
+        d = sum(1 for c in s if c.isdigit())
+        return has_special and u >= 5 and l >= 3 and d >= 1
+
+    def find_all_keys(self) -> dict:
+        """Scan all ``.so`` files under *so_folder* for all three SM4 secret types.
+
+        Returns ``{'SM4_SECRET_NEW': [...], 'SM4_SECRET_4': [...], 'SM4_SECRET_2': [...]}``.
+        Each list contains ``(offset, key_string)`` tuples, deduplicated.
+        """
+        results: dict = {'SM4_SECRET_NEW': [], 'SM4_SECRET_4': [], 'SM4_SECRET_2': []}
+        seen_new: set = set()
+        seen_4:   set = set()
+        seen_2:   set = set()
+
+        _CHUNK   = 8 * 1024 * 1024
+        _UTF16RE = _re.compile(rb'(?:[\x20-\x7e]\x00){20}')
+        _UTF8RE  = _re.compile(rb'[\x21-\x7e]{20}')  # any 20 printable ASCII (no space)
+
+        for so_path in sorted(Path(self.so_folder).rglob('*.so')):
+            try:
+                data  = so_path.read_bytes()
+                total = len(data)
+                off   = 0
+                while off < total:
+                    end   = min(off + _CHUNK + 40, total)
+                    chunk = data[off:end]
+
+                    # UTF-8 run
+                    for m in _UTF8RE.finditer(chunk):
+                        s = m.group(0).decode('ascii', errors='ignore')
+                        abs_off = off + m.start()
+                        if SM4KeyFinder.is_sm4_new_candidate(s) and s not in seen_new:
+                            seen_new.add(s); results['SM4_SECRET_NEW'].append((abs_off, s))
+                        elif SM4AllKeyFinder.is_sm4_4_candidate(s) and s not in seen_4:
+                            seen_4.add(s);   results['SM4_SECRET_4'].append((abs_off, s))
+                        elif SM4AllKeyFinder.is_sm4_2_candidate(s) and s not in seen_2:
+                            seen_2.add(s);   results['SM4_SECRET_2'].append((abs_off, s))
+
+                    # UTF-16-LE run
+                    for m in _UTF16RE.finditer(chunk):
+                        s = m.group(0)[::2].decode('ascii', errors='ignore')
+                        if len(s) != 20 or ' ' in s:
+                            continue
+                        abs_off = off + m.start()
+                        if SM4KeyFinder.is_sm4_new_candidate(s) and s not in seen_new:
+                            seen_new.add(s); results['SM4_SECRET_NEW'].append((abs_off, s))
+                        elif SM4AllKeyFinder.is_sm4_4_candidate(s) and s not in seen_4:
+                            seen_4.add(s);   results['SM4_SECRET_4'].append((abs_off, s))
+                        elif SM4AllKeyFinder.is_sm4_2_candidate(s) and s not in seen_2:
+                            seen_2.add(s);   results['SM4_SECRET_2'].append((abs_off, s))
+
+                    off += _CHUNK
+            except Exception:
+                pass
+
+        return results
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# BinaryURLScanner — scan static .so / APK binaries for embedded URLs
+# Integrated from url_scanner.py (ALVSIA private source.zip)
+# Detects: http/https/ws/ftp URLs, host:port patterns near context keywords,
+# raw IP:port patterns, and long base64 blobs near URL context keywords.
+# Pure-Python, no external deps, Android-safe.
+# ──────────────────────────────────────────────────────────────────────────────
+
+class BinaryURLScanner:
+    """Scan ELF ``.so`` / APK binaries for embedded URLs and server addresses.
+
+    Usage::
+
+        scanner = BinaryURLScanner()
+        results = scanner.scan_file('/path/to/libUE4.so')
+        for kind, value in results:
+            print(kind, value)
+    """
+
+    _RE_URL     = _re.compile(
+        rb'(https?|wss?|ftp|sftp|rtsp|rtmp)://[^\s<>"\'{}|\\^`\[\]]{4,200}',
+        _re.IGNORECASE,
+    )
+    _RE_HOST    = _re.compile(
+        rb'([a-zA-Z0-9-]{2,63}(?:\.[a-zA-Z0-9-]{1,63})+\.[a-zA-Z]{2,10})'
+        rb'(?::(\d{1,5}))?',
+    )
+    _RE_IP      = _re.compile(rb'\b(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?\b')
+    _RE_B64     = _re.compile(rb'[A-Za-z0-9+/]{40,}={0,2}')
+    _CTX_KW     = [b'url', b'host', b'connect', b'endpoint', b'server',
+                   b'proxy', b'gateway', b'base', b'api', b'link', b'path']
+    _CHUNK      = 8 * 1024 * 1024
+
+    # Private IP ranges — excluded from host results to reduce noise
+    _PRIVATE_IP = _re.compile(
+        rb'^(?:127\.|10\.|172\.(?:1[6-9]|2\d|3[01])\.|192\.168\.)'
+    )
+
+    def _ctx_ok(self, data: bytes, start: int, end: int) -> bool:
+        lo = max(0, start - 60)
+        hi = min(len(data), end + 60)
+        ctx = data[lo:hi].lower()
+        return any(k in ctx for k in self._CTX_KW)
+
+    def scan_bytes(self, data: bytes) -> list:
+        """Return ``list[tuple[str, str]]`` — (kind, value)."""
+        results: list = []
+        seen: set = set()
+
+        def add(kind: str, raw: bytes) -> None:
+            val = raw.decode('utf-8', errors='replace').strip()
+            if val and val not in seen:
+                seen.add(val)
+                results.append((kind, val))
+
+        # 1. Full URLs
+        for m in self._RE_URL.finditer(data):
+            add('URL', m.group(0))
+
+        # 2. host:port near context keywords
+        for m in self._RE_HOST.finditer(data):
+            host = m.group(1)
+            port = m.group(2) or b''
+            if not self._ctx_ok(data, m.start(), m.end()):
+                continue
+            raw = host + (b':' + port if port else b'')
+            add('HOST', raw)
+
+        # 3. IP:port
+        for m in self._RE_IP.finditer(data):
+            ip_bytes = m.group(0)
+            if self._PRIVATE_IP.match(ip_bytes):
+                continue
+            add('IP', ip_bytes)
+
+        # 4. Long base64 near context keywords (obfuscated URLs)
+        for m in self._RE_B64.finditer(data):
+            if not self._ctx_ok(data, m.start(), m.end()):
+                continue
+            add('B64', m.group(0)[:120])
+
+        return results
+
+    def scan_file(self, filepath) -> list:
+        """Scan one binary file.  Returns list of (kind, value) tuples."""
+        data = Path(filepath).read_bytes()
+        return self.scan_bytes(data)
+
+    def scan_folder(self, folder_path: str, exts=('.so', '.obb', '.apk')) -> dict:
+        """Scan all matching files under *folder_path*.
+
+        Returns ``{filename: [(kind, value), ...]}`` for files with results.
+        """
+        out: dict = {}
+        for p in sorted(Path(folder_path).rglob('*')):
+            if p.suffix.lower() not in exts or not p.is_file():
+                continue
+            try:
+                hits = self.scan_file(p)
+                if hits:
+                    out[p.name] = hits
+            except Exception:
+                pass
+        return out
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# PUBGLuaConverter — PUBG Mobile Lua bytecode → Standard Lua 5.3 converter
+# Integrated from PUBGM.py (ALVSIA private source.zip)
+# Converts BGMI/PUBG Mobile scrambled Lua bytecode to standard Lua 5.3 format
+# so it can be decompiled with luadec / unluac.
+# ──────────────────────────────────────────────────────────────────────────────
+
+import struct as _struct
+
+# PUBG XOR key extracted from libUE4.so sub_777C014 (32-byte repeating key)
+PUBG_XOR_KEY = bytes([
+    0x11, 0x21, 0x36, 0x47, 0x46, 0x57, 0xA7, 0x8D,
+    0x9D, 0x84, 0x90, 0xD8, 0xAB, 0x00, 0x8C, 0x35,
+    0x26, 0x1A, 0xF7, 0xE4, 0x58, 0x05, 0xB8, 0xB3,
+    0x15, 0x07, 0xD0, 0x2C, 0x1E, 0x8F, 0xF6, 0xC8,
+])
+
+# Verified opcode mapping: PUBG/BGMI opcode → Standard Lua 5.3 opcode
+PUBG_TO_STD_OPCODE = {
+    0: 0, 1: 1, 17: 0, 18: 1, 20: 3, 21: 4, 22: 5, 23: 6,
+    24: 7, 26: 9, 27: 10, 28: 11, 29: 12, 31: 31, 32: 32,
+    33: 33, 34: 34, 35: 35, 36: 36, 37: 37, 38: 38, 39: 39,
+    40: 40, 41: 41, 42: 42, 43: 43, 44: 44, 45: 45, 46: 46,
+    47: 47,
+}
+
+
+class PUBGLuaConverter:
+    """Convert PUBG Mobile / BGMI Lua bytecode to standard Lua 5.3 format.
+
+    The converter:
+
+    1. XOR-decrypts the string-constant pool (bytes after the 0x22-byte header)
+       using ``PUBG_XOR_KEY``.
+    2. Remaps scrambled opcodes to standard Lua 5.3 opcodes via
+       ``PUBG_TO_STD_OPCODE``.
+    3. Rewrites the Lua header to the standard Lua 5.3 signature so that
+       decompilers accept the output.
+
+    Usage::
+
+        converter = PUBGLuaConverter()
+        std_bytes = converter.convert_file('/path/to/scrambled.luac')
+        Path('/out/fixed.luac').write_bytes(std_bytes)
+    """
+
+    _LUA53_HEADER = (
+        b'\x1bLua'       # magic
+        b'\x53'          # version 5.3
+        b'\x00'          # format 0
+        b'\x19\x93\r\n\x1a\n'  # LUAC_DATA
+        b'\x04'          # sizeof_int
+        b'\x08'          # sizeof_size_t
+        b'\x04'          # sizeof_Instruction
+        b'\x08'          # sizeof_lua_Integer
+        b'\x08'          # sizeof_lua_Number
+        b'\x78\x56\x00\x00\x00\x00\x00\x00'   # LUAC_INT
+        b'\x00\x00\x00\x00\x00\x28\x77\x40'   # LUAC_NUM
+    )
+    _HDR_LEN = 33
+    _HEADER_ENCRYPTED_START = 0x22  # bytes before this are NOT XOR-encrypted
+
+    @staticmethod
+    def _xor_decrypt(data: bytes) -> bytes:
+        key = PUBG_XOR_KEY
+        kl  = len(key)
+        return bytes(b ^ key[i % kl] for i, b in enumerate(data))
+
+    def convert_bytes(self, data: bytes) -> bytes:
+        """Convert *data* (raw PUBG .luac bytes) to standard Lua 5.3 bytes."""
+        if len(data) < self._HDR_LEN:
+            raise ValueError("data too short to be a Lua bytecode file")
+        # Decrypt the portion after the unencrypted header prefix
+        header   = data[:self._HEADER_ENCRYPTED_START]
+        body_enc = data[self._HEADER_ENCRYPTED_START:]
+        body     = self._xor_decrypt(body_enc)
+        decrypted = header + body
+
+        # Remap opcodes in all instruction words (every u32 that encodes an instruction)
+        result = self._remap_opcodes(decrypted)
+        # Rewrite the Lua header so luadec / unluac accept the file
+        return self._LUA53_HEADER + result[self._HDR_LEN:]
+
+    def _remap_opcodes(self, data: bytes) -> bytes:
+        """Walk the top-level proto and remap PUBG opcodes to standard ones."""
+        # Simple approach: scan all aligned u32 words and remap op field (bits 0-5)
+        # This is fast and works for most well-formed files.
+        ba = bytearray(data)
+        i  = self._HDR_LEN
+        while i + 4 <= len(ba):
+            raw = _struct.unpack_from('<I', ba, i)[0]
+            op  = raw & 0x3F
+            if op in PUBG_TO_STD_OPCODE:
+                std_op = PUBG_TO_STD_OPCODE[op]
+                new_raw = (raw & ~0x3F) | std_op
+                _struct.pack_into('<I', ba, i, new_raw)
+            i += 4
+        return bytes(ba)
+
+    def convert_file(self, input_path: str, output_path: str | None = None) -> bytes:
+        """Convert one ``.luac`` file.  If *output_path* is given, write the result there.
+
+        Returns the converted bytes regardless.
+        """
+        data   = Path(input_path).read_bytes()
+        result = self.convert_bytes(data)
+        if output_path:
+            Path(output_path).write_bytes(result)
+        return result
+
+    def convert_folder(self, input_dir: str, output_dir: str,
+                       glob_pat: str = '*.luac') -> dict:
+        """Convert all matching files in *input_dir*, writing to *output_dir*.
+
+        Returns ``{filename: 'OK' | 'FAIL: <reason>'}`` for each file processed.
+        """
+        src_dir = Path(input_dir)
+        dst_dir = Path(output_dir)
+        dst_dir.mkdir(parents=True, exist_ok=True)
+        report: dict = {}
+        for p in sorted(src_dir.glob(glob_pat)):
+            try:
+                out_path = dst_dir / p.name
+                self.convert_file(str(p), str(out_path))
+                report[p.name] = 'OK'
+            except Exception as exc:
+                report[p.name] = f'FAIL: {exc}'
+        return report

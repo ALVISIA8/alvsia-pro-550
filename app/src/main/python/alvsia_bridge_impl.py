@@ -837,6 +837,351 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                 lines.append("X Lua Protector failed: %s" % (str(exc)[:400] or type(exc).__name__))
                 return "\n".join(lines)
 
+        # ── SM4 Key Finder (sub_id: "sm4_keyfind") ───────────────────────
+        # Scans a folder of .so files extracted from an APK/OBB for embedded
+        # SM4_SECRET_NEW candidates — the 20-char aA0-pattern keys used by
+        # BGMI-style PAK encryption.  Input: folder path (not a single file).
+        elif sid == "sm4_keyfind":
+            from alvsia_features import SM4KeyFinder
+            so_dir = Path(ip) if ip and Path(ip).is_dir() else None
+            if so_dir is None:
+                # Treat input as a single .so file — scan its parent folder.
+                so_dir = Path(ip).parent if ip and Path(ip).is_file() else None
+            if so_dir is None:
+                lines.append("X input must be a folder containing .so files or a .so file path")
+                return "\n".join(lines)
+            try:
+                finder = SM4KeyFinder(str(so_dir))
+                hits = finder.find_keys()
+                if not hits:
+                    lines.append("No SM4_SECRET_NEW candidates found in %s" % so_dir)
+                else:
+                    lines.append("Found %d candidate(s) in %s:" % (len(hits), so_dir))
+                    for offset, key in hits:
+                        lines.append("  0x%08X  %s" % (offset, key))
+                    # Write result file
+                    result_file = out_dir("SM4") / "sm4_keys.txt"
+                    result_file.write_text("\n".join(k for _, k in hits))
+                    lines.append("OUT -> %s" % result_file)
+            except Exception as exc:
+                lines.append("X SM4KeyFinder error: %s" % str(exc)[:300])
+            return "\n".join(lines)
+
+
+
+        # ══════════════════════════════════════════════════════════════════════
+        # ALVSIA PRIVATE TOOL — sealed runtime required for all sub-ids below
+        # ══════════════════════════════════════════════════════════════════════
+        elif sid in (
+            "priv_zuc_decrypt",    "priv_aes_scan",      "priv_xor_recover",
+            "priv_lua_parse",      "priv_lua_convert",   "priv_lua_heping",
+            "priv_compress_fit",   "priv_apk_audit",     "priv_str_recover",
+            "priv_entropy_map",    "priv_pak_manifest",  "priv_apk_manifest",
+        ):
+            # Gate: sealed runtime must be active
+            import os as _ose
+            if _ose.environ.get("ALVSIA_SEALED_RUNTIME") != "1":
+                lines.append("X ALVSIA PRIVATE TOOL: sealed runtime not active")
+                lines.append("X Authenticate via ALVSIA panel first")
+                return "\n".join(lines)
+            from alvsia_private import (
+                ZUCCipher, AESKeyScanner, XORKeyRecovery, LuaBytecodeParser,
+                LuaOpcodeConverter, CompressionBestFit, APKAuditor,
+                StringConstantRecovery, EntropyAnalyzer, PAKManifestGenerator,
+                AlvsiaLuaWriter,
+            )
+            dest = out_dir("ALVSIA_PRIVATE")
+
+            # ── ZUC-128 decrypt ──────────────────────────────────────────────
+            if sid == "priv_zuc_decrypt":
+                if not need_file(): return "\n".join(lines)
+                cfg = read_config("zuc_config.txt")
+                key_hex = cfg.get("key", "")
+                iv_hex  = cfg.get("iv", "")
+                if len(key_hex) != 32 or len(iv_hex) != 32:
+                    lines.append("X ZUC key and IV must each be 32 hex chars (16 bytes)")
+                    return "\n".join(lines)
+                try:
+                    data_in = Path(ip).read_bytes()
+                    zuc = ZUCCipher(bytes.fromhex(key_hex), bytes.fromhex(iv_hex))
+                    out_file = dest / (Path(ip).stem + "_zuc_dec.bin")
+                    out_file.write_bytes(zuc.decrypt(data_in))
+                    lines.append("ZUC decrypt: %d bytes" % len(data_in))
+                    lines.append("OUT -> %s" % out_file)
+                except Exception as e:
+                    lines.append("X ZUC error: %s" % str(e)[:200])
+
+            # ── AES key scanner ──────────────────────────────────────────────
+            elif sid == "priv_aes_scan":
+                if not need_file(): return "\n".join(lines)
+                hits = AESKeyScanner.scan_file(ip)
+                if not hits:
+                    lines.append("No AES key material found in %s" % ip)
+                else:
+                    lines.append("Found %d AES indicators:" % len(hits))
+                    out_lines = []
+                    for h in hits:
+                        line = "[%s] %s  key=%s" % (
+                            h["type"], h["offset"], h.get("raw_key", "-"))
+                        lines.append("  " + line)
+                        out_lines.append(line)
+                    r = dest / "aes_scan.txt"
+                    r.write_text("\n".join(out_lines))
+                    lines.append("OUT -> %s" % r)
+
+            # ── XOR key recovery ─────────────────────────────────────────────
+            elif sid == "priv_xor_recover":
+                if not need_file(): return "\n".join(lines)
+                data_in = Path(ip).read_bytes()
+                results = XORKeyRecovery.recover(data_in, max_key_len=32)
+                if not results:
+                    lines.append("No XOR key candidates found")
+                else:
+                    lines.append("Top XOR key candidates:")
+                    out_lines = []
+                    for kl, key_b, score in results[:5]:
+                        line = "key_len=%d  key=%s  score=%.3f" % (kl, key_b.hex(), score)
+                        lines.append("  " + line)
+                        out_lines.append(line)
+                    r = dest / "xor_keys.txt"
+                    r.write_text("\n".join(out_lines))
+                    lines.append("OUT -> %s" % r)
+
+            # ── Lua bytecode parser ──────────────────────────────────────────
+            elif sid == "priv_lua_parse":
+                if not need_file(): return "\n".join(lines)
+                data_in = Path(ip).read_bytes()
+                try:
+                    parser = LuaBytecodeParser(data_in)
+                    info   = parser.parse()
+                    lines.append("Source  : %s" % info.source_name)
+                    lines.append("Lines   : %d–%d" % (info.line_defined, info.last_line))
+                    lines.append("Strings : %d  Numbers: %d  Protos: %d" % (
+                        len(info.strings), len(info.numbers), info.n_protos))
+                    out_lines = ["source: " + info.source_name]
+                    for s in info.strings: out_lines.append("str: " + s.value[:120])
+                    for n in info.numbers: out_lines.append("num: %s" % n.value)
+                    r = dest / (Path(ip).stem + "_parsed.txt")
+                    r.write_text("\n".join(out_lines))
+                    lines.append("OUT -> %s" % r)
+                except Exception as e:
+                    lines.append("X Parse error: %s" % str(e)[:200])
+
+            # ── Lua BGMI opcode converter ────────────────────────────────────
+            elif sid == "priv_lua_convert":
+                target = dest / "bgmi_std"
+                conv = LuaOpcodeConverter(variant="bgmi")
+                if Path(ip).is_dir():
+                    report = conv.convert_folder(ip, str(target))
+                    ok = sum(1 for v in report.values() if v == "OK")
+                    lines.append("BGMI→Std: %d/%d converted" % (ok, len(report)))
+                else:
+                    if not need_file(): return "\n".join(lines)
+                    out_f = target / (Path(ip).stem + "_std.luac")
+                    target.mkdir(parents=True, exist_ok=True)
+                    conv.convert_file(ip, str(out_f))
+                    lines.append("OUT -> %s" % out_f)
+
+            # ── Lua HePing opcode converter ──────────────────────────────────
+            elif sid == "priv_lua_heping":
+                target = dest / "heping_std"
+                conv = LuaOpcodeConverter(variant="heping")
+                if Path(ip).is_dir():
+                    report = conv.convert_folder(ip, str(target))
+                    ok = sum(1 for v in report.values() if v == "OK")
+                    lines.append("HePing→Std: %d/%d converted" % (ok, len(report)))
+                else:
+                    if not need_file(): return "\n".join(lines)
+                    out_f = target / (Path(ip).stem + "_std.luac")
+                    target.mkdir(parents=True, exist_ok=True)
+                    conv.convert_file(ip, str(out_f))
+                    lines.append("OUT -> %s" % out_f)
+
+            # ── Compression best-fit ─────────────────────────────────────────
+            elif sid == "priv_compress_fit":
+                if not need_file(): return "\n".join(lines)
+                cfg = read_config("compress_config.txt")
+                method = cfg.get("method", "zlib")
+                try:
+                    target_sz = int(cfg.get("target_size", "0"))
+                except ValueError:
+                    target_sz = 0
+                data_in = Path(ip).read_bytes()
+                result = CompressionBestFit.compress(data_in, method=method,
+                                                     target_size=target_sz)
+                if result:
+                    ratio = len(result) / len(data_in) * 100
+                    out_f = dest / (Path(ip).stem + "_compressed.bin")
+                    out_f.write_bytes(result)
+                    lines.append("%s compress: %d→%d bytes (%.1f%%)" % (
+                        method, len(data_in), len(result), ratio))
+                    lines.append("OUT -> %s" % out_f)
+                else:
+                    lines.append("X Compression failed — no level fits target size %d" % target_sz)
+
+            # ── APK auditor ──────────────────────────────────────────────────
+            elif sid == "priv_apk_audit":
+                target_file = ip if ip and Path(ip).suffix.lower() == ".apk" else None
+                if not target_file or not Path(target_file).is_file():
+                    lines.append("X input must be an .apk file")
+                    return "\n".join(lines)
+                summary = APKAuditor.audit_file(target_file)
+                for l in summary.split("\n"): lines.append(l)
+                r = dest / "apk_audit.txt"
+                r.write_text(summary)
+                lines.append("OUT -> %s" % r)
+
+            # ── APK manifest extract ─────────────────────────────────────────
+            elif sid == "priv_apk_manifest":
+                if not need_file(): return "\n".join(lines)
+                try:
+                    import zipfile as _zf
+                    with _zf.ZipFile(ip, "r") as zf:
+                        raw_manifest = zf.read("AndroidManifest.xml")
+                    r = dest / "AndroidManifest.raw.xml"
+                    r.write_bytes(raw_manifest)
+                    lines.append("Manifest extracted: %d bytes" % len(raw_manifest))
+                    pkg = APKAuditor._find_package(raw_manifest)
+                    lines.append("Package (best-effort): %s" % pkg)
+                    lines.append("OUT -> %s" % r)
+                except Exception as e:
+                    lines.append("X Manifest extract error: %s" % str(e)[:200])
+
+            # ── String constant recovery ──────────────────────────────────────
+            elif sid == "priv_str_recover":
+                if not need_file(): return "\n".join(lines)
+                data_in = Path(ip).read_bytes()
+                results = StringConstantRecovery.recover(data_in)
+                out_lines = []
+                for r_item in results[:5]:
+                    lines.append("[%s] key=%s score=%.3f  %d strings" % (
+                        r_item["method"], r_item["key"][:16] or "none",
+                        r_item["score"], len(r_item["strings"])))
+                    out_lines.append("## method=%s key=%s" % (
+                        r_item["method"], r_item["key"][:32]))
+                    out_lines.extend(r_item["strings"][:30])
+                r = dest / "strings_recovered.txt"
+                r.write_text("\n".join(out_lines))
+                lines.append("OUT -> %s" % r)
+
+            # ── Entropy map ───────────────────────────────────────────────────
+            elif sid == "priv_entropy_map":
+                if not need_file(): return "\n".join(lines)
+                summary = EntropyAnalyzer.analyze_file(ip)
+                out_lines = [
+                    "ALVSIA Entropy Analysis",
+                    "Total blocks   : %d" % summary["total_blocks"],
+                    "Mean entropy   : %.3f" % summary["overall_mean"],
+                    "High (enc/comp): %d blocks" % len(summary["high_entropy"]),
+                    "Low (padding)  : %d blocks" % len(summary["low_entropy"]),
+                    "Code-like      : %d blocks" % len(summary["code_like"]),
+                    "",
+                    "High-entropy offsets (top 20):",
+                ]
+                for off, h in summary["high_entropy"][:20]:
+                    out_lines.append("  0x%08X  H=%.3f" % (off, h))
+                r = dest / "entropy_map.txt"
+                r.write_text("\n".join(out_lines))
+                for l in out_lines[:8]: lines.append(l)
+                lines.append("OUT -> %s" % r)
+
+            # ── PAK manifest ──────────────────────────────────────────────────
+            elif sid == "priv_pak_manifest":
+                if not need_file(): return "\n".join(lines)
+                gen = PAKManifestGenerator(ip)
+                csv = gen.generate()
+                r = dest / (Path(ip).stem + "_manifest.csv")
+                r.write_text(csv)
+                n = csv.count("\n")
+                lines.append("Manifest: %d entries" % n)
+                lines.append("OUT -> %s" % r)
+
+            return "\n".join(lines)
+
+        # ── SM4 All-Type Key Finder ──────────────────────────────────────────
+        elif sid == "sm4_find_all":
+            from alvsia_features import SM4AllKeyFinder
+            from pathlib import Path as _P
+            so_dir = _P(ip) if ip and _P(ip).is_dir() else (
+                _P(ip).parent if ip and _P(ip).is_file() else None)
+            if so_dir is None:
+                lines.append("X input must be a folder containing .so files or a .so path")
+                return "\n".join(lines)
+            try:
+                finder = SM4AllKeyFinder(str(so_dir))
+                hits = finder.find_all_keys()
+                total = sum(len(v) for v in hits.values())
+                if total == 0:
+                    lines.append("No SM4 candidates found in %s" % so_dir)
+                else:
+                    lines.append("Found %d total candidates in %s:" % (total, so_dir))
+                    result_lines = []
+                    for key_type in ('SM4_SECRET_NEW', 'SM4_SECRET_4', 'SM4_SECRET_2'):
+                        for off, key in hits[key_type]:
+                            lines.append("  [%s] 0x%08X  %s" % (key_type, off, key))
+                            result_lines.append("%s  %s" % (key_type, key))
+                    dest = out_dir("SM4") / "sm4_all_keys.txt"
+                    dest.write_text("\n".join(result_lines))
+                    lines.append("OUT -> %s" % dest)
+            except Exception as exc:
+                lines.append("X SM4AllKeyFinder error: %s" % str(exc)[:300])
+            return "\n".join(lines)
+
+        # ── URL Scanner for .so / APK binaries ──────────────────────────────
+        elif sid == "url_scan_so":
+            from alvsia_features import BinaryURLScanner
+            from pathlib import Path as _P
+            if not ip or not (_P(ip).is_file() or _P(ip).is_dir()):
+                lines.append("X input must be a .so file or folder")
+                return "\n".join(lines)
+            try:
+                scanner = BinaryURLScanner()
+                if _P(ip).is_file():
+                    hits = scanner.scan_file(ip)
+                    label = _P(ip).name
+                    all_hits = {label: hits} if hits else {}
+                else:
+                    all_hits = scanner.scan_folder(ip)
+                if not all_hits:
+                    lines.append("No URLs found in %s" % ip)
+                else:
+                    dest = out_dir("URLSCAN") / "urls_found.txt"
+                    out_lines = []
+                    for fname, file_hits in all_hits.items():
+                        lines.append("[%s] %d results:" % (fname, len(file_hits)))
+                        for kind, val in file_hits[:20]:
+                            lines.append("  [%s] %s" % (kind, val[:120]))
+                        for kind, val in file_hits:
+                            out_lines.append("%s\t%s\t%s" % (fname, kind, val))
+                    dest.write_text("\n".join(out_lines))
+                    lines.append("OUT -> %s" % dest)
+            except Exception as exc:
+                lines.append("X BinaryURLScanner error: %s" % str(exc)[:300])
+            return "\n".join(lines)
+
+        # ── PUBG/BGMI Lua Bytecode Converter ────────────────────────────────
+        elif sid == "pubg_lua_convert":
+            from alvsia_features import PUBGLuaConverter
+            from pathlib import Path as _P
+            if not need_file(): return "\n".join(lines)
+            try:
+                converter = PUBGLuaConverter()
+                dest_dir  = out_dir("PUBGLUA")
+                if _P(ip).is_dir():
+                    report = converter.convert_folder(ip, str(dest_dir))
+                    ok  = sum(1 for v in report.values() if v == 'OK')
+                    bad = sum(1 for v in report.values() if v.startswith('FAIL'))
+                    lines.append("Converted %d/%d files. %d failed." % (ok, ok+bad, bad))
+                    for fn, status in report.items():
+                        lines.append("  %s: %s" % (fn, status))
+                else:
+                    out_file = dest_dir / (_P(ip).stem + "_std.luac")
+                    converter.convert_file(ip, str(out_file))
+                    lines.append("OUT -> %s" % out_file)
+            except Exception as exc:
+                lines.append("X PUBGLuaConverter error: %s" % str(exc)[:300])
+            return "\n".join(lines)
+
         # ── fallback ─────────────────────────────────────────────────────
         lines.append("X Unknown sub_id='%s' for module=%s" % (sid, mid))
         return "\n".join(lines)
@@ -857,3 +1202,6 @@ def bridge_run_sub(module_id, sub_id, input_path, extra_name, work_dir_path, jar
         engine_dir=str(jars_dir_path),
         jars_dir=str(jars_dir_path),
     )
+
+# ── SM4 All-Type Key Finder (sub_id: "sm4_find_all") ─────────────────────────
+# Detects SM4_SECRET_NEW + SM4_SECRET_4 + SM4_SECRET_2 from .so files

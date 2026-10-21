@@ -238,6 +238,73 @@ fun subToolConfig(subId: String): List<SubToolConfig> = when (subId) {
         )
     )
 
+
+    // URL Scanner — input: .so file or folder
+    "url_scan_so" -> listOf(
+        SubToolConfig(
+            field = "so_path",
+            label = "Path to .so file or folder containing .so files",
+            type = ConfigType.PATH,
+            hint = "/sdcard/AlvsiaWork/lib/arm64-v8a",
+            required = true,
+            workFileName = "so_path.txt"
+        )
+    )
+
+    // SM4 All-Type Key Finder — input: folder of .so files
+    "sm4_find_all" -> listOf(
+        SubToolConfig(
+            field = "so_folder",
+            label = "Folder containing .so files",
+            type = ConfigType.PATH,
+            hint = "/sdcard/AlvsiaWork/extracted_apk/lib/arm64-v8a",
+            required = true,
+            workFileName = "so_folder.txt"
+        )
+    )
+
+    // PUBG/BGMI Lua Converter — input: .luac file or folder
+    "pubg_lua_convert" -> listOf(
+        SubToolConfig(
+            field = "input_path",
+            label = "Path to .luac file or folder of .luac files",
+            type = ConfigType.PATH,
+            hint = "/sdcard/AlvsiaWork/extracted_lua",
+            required = true,
+            workFileName = "lua_input.txt"
+        )
+    )
+
+    // ALVISIA PRIVATE TOOL configs
+    "priv_zuc_decrypt" -> listOf(
+        SubToolConfig(field = "key", label = "ZUC Key (32 hex chars = 16 bytes)",
+            type = ConfigType.HEX, hint = "0000000000000000ffffffffffffffff",
+            required = true, workFileName = "zuc_config.txt"),
+        SubToolConfig(field = "iv", label = "ZUC IV (32 hex chars = 16 bytes)",
+            type = ConfigType.HEX, hint = "00000000000000000000000000000001",
+            required = true, workFileName = "zuc_config.txt")
+    )
+    "priv_compress_fit" -> listOf(
+        SubToolConfig(field = "method", label = "Method (zlib / zstd)",
+            type = ConfigType.TEXT, hint = "zlib",
+            required = false, workFileName = "compress_config.txt"),
+        SubToolConfig(field = "target_size", label = "Target compressed size (bytes, 0 = no limit)",
+            type = ConfigType.TEXT, hint = "4096",
+            required = false, workFileName = "compress_config.txt")
+    )
+
+    // SM4 Key Finder — input: folder containing extracted .so files (or a .so path)
+    "sm4_keyfind" -> listOf(
+        SubToolConfig(
+            field = "so_folder",
+            label = "Folder containing .so files (or path to single .so)",
+            type = ConfigType.PATH,
+            hint = "/sdcard/AlvsiaWork/extracted_apk/lib/arm64-v8a",
+            required = true,
+            workFileName = "so_folder.txt"
+        )
+    )
+
     // All other subtools — no inline config needed
     else -> emptyList()
 }

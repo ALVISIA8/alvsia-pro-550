@@ -80,7 +80,10 @@ def _xor_candidate(data: bytes, key: bytes, offset: int):
 def _normalized_input(path: Path, out: Path):
     """Normalize a wrapped Lua container into a real .luac/.lj input."""
     raw = path.read_bytes()
-    if not raw.startswith(b"\x78\xda"):
+    # Accept any valid zlib header: CMF=0x78, (CMF*256+FLG)%31==0
+    def _is_zlib_header(d: bytes) -> bool:
+        return len(d) >= 2 and d[0] == 0x78 and (d[0] * 256 + d[1]) % 31 == 0
+    if not _is_zlib_header(raw):
         return path, None
     payload, ci = unwrap_lua_container(raw)
     if not payload.startswith((b"\x1bLua", b"\x1bLJ")):
@@ -92,8 +95,11 @@ def _normalized_input(path: Path, out: Path):
 def analyze_lua(path, out_dir=None, keys=None):
     p=Path(path); out=Path(out_dir) if out_dir else p.parent; out.mkdir(parents=True,exist_ok=True)
     raw=p.read_bytes(); container=None; work=p
+    def _is_zlib_header(d: bytes) -> bool:
+        return len(d) >= 2 and d[0] == 0x78 and (d[0] * 256 + d[1]) % 31 == 0
+
     try:
-        if raw.startswith(b"\x78\xda"):
+        if _is_zlib_header(raw):
             work, container = _normalized_input(p, out)
     except Exception as exc:
         return {"ok": False, "file": str(p), "format": "container-unknown",

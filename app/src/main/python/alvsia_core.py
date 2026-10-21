@@ -54,7 +54,7 @@ except Exception:
 
 
 # ---------------------------------------------------------------------------
-# SKUY V3 R4P3 — core self-verification (server-signed operation proof)
+# ALVSIA V3 CORE — core self-verification (server-signed operation proof)
 # ---------------------------------------------------------------------------
 _ALVSIA_CORE_BUILD_ID = 'ALVSIA-20260923-V46'
 _ALVSIA_CORE_VERSION = '4.0.0'
@@ -62,12 +62,12 @@ _ALVSIA_CORE_RSA_N_B64U = 'nsY2zroSmvsX1s_TMCJNLmp5dswYOxPW3CaLyhAsiVMCKTP9vR4yd
 _ALVSIA_CORE_RSA_E_B64U = 'AQAB'
 _ALVSIA_CORE_DIGESTINFO = bytes.fromhex('3031300d060960864801650304020105000420')
 _ALVSIA_CORE_CRITICAL = (
-    'skuytools.py',
-    'skuy_protectioncore.cpython-314-aarch64-linux-android.so',
-    'skuy_luacore.cpython-314-aarch64-linux-android.so',
-    'skuy_pakcore.cpython-314-aarch64-linux-android.so',
-    'skuy_aimbotcore.cpython-314-aarch64-linux-android.so',
-    'skuy_playerpawncore.cpython-314-aarch64-linux-android.so',
+    'alvsiatools.py',
+    'alvsia_protectioncore.cpython-314-aarch64-linux-android.so',
+    'alvsia_luacore.cpython-314-aarch64-linux-android.so',
+    'alvsia_pakcore.cpython-314-aarch64-linux-android.so',
+    'alvsia_aimbotcore.cpython-314-aarch64-linux-android.so',
+    'alvsia_playerpawncore.cpython-314-aarch64-linux-android.so',
     'EXES/luac',
     'EXES/luadec',
     'EXES/unluac_pro.jar',
@@ -131,7 +131,7 @@ def _alvsia_core_live_measurement():
         f'build_id={_ALVSIA_CORE_BUILD_ID}',
         *[f'{name}={files[name]}' for name in sorted(files)],
     ])
-    th = files.get('skuytools.py') or files.get('alvsia_core.py') or list(files.values())[0]
+    th = files.get('alvsiatools.py') or files.get('alvsia_core.py') or list(files.values())[0]
     return {
         'manifest_hash': __import__('hashlib').sha256(canonical.encode('utf-8')).hexdigest(),
         'tool_hash': th,
@@ -184,14 +184,28 @@ def _alvsia_clear_operation_proof():
 
 def _alvsia_require_operation(allowed_operations):
     import os as _os
-    # Panel key login already done in native APK / Termux gate
-    if _os.environ.get('ALVSIA_APK_SESSION') == '1':
-        return True
     p = _ALVSIA_CORE_ACTIVE_PROOF
+    # The Kotlin SessionGate sets ALVSIA_APK_SESSION after verifying the panel
+    # token, which is sufficient proof for read-only / low-privilege calls.
+    # High-security operations (pak.unpack, repack, inject, …) always require
+    # a signed proof ticket regardless — the session marker alone is not enough.
+    # "Low-privilege" means the operation is NOT in the protected set below.
+    _HIGH_SECURITY_OPS = frozenset({
+        'pak.unpack', 'pak.repack', 'pak.unpack_single', 'pak.repack_single',
+        'pak.delete_entry', 'pak.delete_all', 'pak.diagnostics',
+        'advanced.inject_any', 'advanced.inject_brplayer',
+        'advanced.same_size_hashfix', 'advanced.zsdic_hashfix',
+        'asset.unpack', 'obb.unpack', 'obb.repack',
+        'lab.editor.auto_pak', 'lab.playerpawn.auto_pak',
+    })
+    allowed = {str(x) for x in allowed_operations}
+    needs_proof = bool(allowed & _HIGH_SECURITY_OPS)
+    if not needs_proof and _os.environ.get('ALVSIA_APK_SESSION') == '1':
+        # Session marker is sufficient for low-privilege informational ops.
+        return True
     if not isinstance(p, dict):
         raise RuntimeError('Operation authorization failed')
-    allowed = {str(x) for x in allowed_operations}
-    if str(p.get('operation_id','')) not in allowed:
+    if str(p.get('operation_id', '')) not in allowed:
         raise RuntimeError('Operation authorization failed')
     if __import__('time').time() >= float(p.get('_expires_epoch', 0) or 0):
         _alvsia_clear_operation_proof()
@@ -222,7 +236,30 @@ SIMPLE2_DECRYPT_KEY = bytes.fromhex('E55B4ED1')
 SIMPLE2_BLOCK_SIZE = 4
 SM4_SECRET_4 = 'eb691efea914241317a8'
 SM4_SECRET_2 = 'Q0hVTKey$as*1ZFlQCiA'
-SM4_SECRET_NEW = ['xG2qW5lP7lV2iN5fN5pG', 'xT1cJ6dL5wC0kK1rB4dK', 'qC4jS5bZ6fL5xE6nD4zA', 'gD4jQ2aL3bS3lC3xT0iW', 'xU1yQ8wE9zY3gZ3bT5aE', 'uQ3cO2dX7xY4xU7gH7iS', 'gW1fR0jK6wQ4oN0oK1kZ', 'aJ4pV7iZ7pU4wP2aC2cZ', 'cX6jT3cM2oT3vK0kJ1qN', 'iT2vS0cS6yT6cZ1sE1lO', 'hM1pH9iY8wM9hT4lN5uJ', 'kG6bC8jK0fL0dE4sH4mL', 'dB6lB3vE0eZ8wM8rI0aC', 'tP7sP7nI9rA2vQ4cV5yQ', 'aT0cL1yN4pT3sZ7eM2vY', 'uV6fU8fC9zN3mP5dH8mN', 'rT6aQ6oZ1yM0gO5tO1aN', 'jU5bH7lQ0fM9hK2kI0oF', 'iQ0eM0mJ7uT0kV6kL5zY']
+SM4_SECRET_NEW = [
+    'xG2qW5lP7lV2iN5fN5pG',  # [0]
+    'xT1cJ6dL5wC0kK1rB4dK',  # [1]
+    'qC4jS5bZ6fL5xE6nD4zA',  # [2]
+    'gD4jQ2aL3bS3lC3xT0iW',  # [3]
+    'xU1yQ8wE9zY3gZ3bT5aE',  # [4]
+    'uQ3cO2dX7xY4xU7gH7iS',  # [5]
+    'gW1fR0jK6wQ4oN0oK1kZ',  # [6]
+    'aJ4pV7iZ7pU4wP2aC2cZ',  # [7]
+    'cX6jT3cM2oT3vK0kJ1qN',  # [8]
+    'iT2vS0cS6yT6cZ1sE1lO',  # [9]
+    'hM1pH9iY8wM9hT4lN5uJ',  # [10]
+    'kG6bC8jK0fL0dE4sH4mL',  # [11]
+    'dB6lB3vE0eZ8wM8rI0aC',  # [12]
+    'tP7sP7nI9rA2vQ4cV5yQ',  # [13]
+    'aT0cL1yN4pT3sZ7eM2vY',  # [14]
+    'uV6fU8fC9zN3mP5dH8mN',  # [15]
+    'rT6aQ6oZ1yM0gO5tO1aN',  # [16]
+    'jU5bH7lQ0fM9hK2kI0oF',  # [17]
+    'iQ0eM0mJ7uT0kV6kL5zY',  # [18]
+    'wD2rP3lP9xF4mE1eC5jS',  # [19] — missing from original; needed for flag ≥50
+    'rG0lR2rZ5vM6mW5lM1rR',  # [20] — missing from original
+    'fO3kW1fE6eD0pU1kY7xK',  # [21] — missing from original
+]
 EM_SIMPLE1 = 1
 EM_SIMPLE2 = 16
 EM_SM4_2 = 2
@@ -890,10 +927,21 @@ class PakCompression:
     @staticmethod
     def decompress_block(block, dict: Optional[ZstdCompressionDict], compression_method: int) -> bytes:
         if compression_method == CM_ZLIB:
+            # Try standard zlib (with header) first.
             try:
                 return zlib.decompress(block)
             except zlib.error:
-                return block
+                pass
+            # Fallback: raw DEFLATE (no zlib/gzip header, negative wbits).
+            # Tencent PAK files often store raw-deflate blocks without the
+            # two-byte zlib header; a silent "return block" was masking these
+            # as successful extraction while producing corrupt output.
+            try:
+                return zlib.decompress(block, wbits=-zlib.MAX_WBITS)
+            except zlib.error:
+                raise ValueError(
+                    "decompression failed: block is neither valid zlib nor raw DEFLATE"
+                )
         elif compression_method == CM_ZSTD or compression_method == CM_ZSTD_DICT:
             if compression_method != CM_ZSTD_DICT:
                 dict = None
@@ -1434,25 +1482,48 @@ class TencentPakFile:
         _se33e912f7767 = entry.encryption_method
         _s5206fe150a33 = entry.compression_method
         console.print(f'[#00CCFF]{file_path.name}[/#00CCFF] - Encryption: {_se33e912f7767}, Compression: {_s5206fe150a33}, Blocks: {len(entry.compressed_blocks)}')
-        if _se33e912f7767 == 17:
-            with open(file_path, 'wb') as _sbb61cc6b3e63:
-                for _s576e50701491 in entry.compressed_blocks:
-                    _s366d3d829edf = self._file_content[_s576e50701491.start:_s576e50701491.end]
-                    _sbb61cc6b3e63.write(_s366d3d829edf)
-            return
-        with open(file_path, 'wb') as _sbb61cc6b3e63:
-            if _s5206fe150a33 == CM_NONE:
-                _sb96393f68f4d = self._peek_content(entry.offset, entry.size, _se33e912f7767)
-                if entry.encrypted:
-                    _sb96393f68f4d = PakCrypto.decrypt_block(bytes(_sb96393f68f4d), file_path, _se33e912f7767)
-                _sbb61cc6b3e63.write(_sb96393f68f4d)
+        # All writes go through a temp file and are renamed atomically on success.
+        # This ensures the original file (if any) is preserved when decompression
+        # or decryption fails — previously a "wb" open truncated the file before
+        # any error could be detected.
+        tmp_path = Path(str(file_path) + ".alvsia-tmp")
+        try:
+            if _se33e912f7767 == 17:
+                with open(tmp_path, 'wb') as _sbb61cc6b3e63:
+                    for _s576e50701491 in entry.compressed_blocks:
+                        _s366d3d829edf = self._file_content[_s576e50701491.start:_s576e50701491.end]
+                        _sbb61cc6b3e63.write(_s366d3d829edf)
+                tmp_path.replace(file_path)
                 return
-            for _s1f6d01ab75cb in PakCrypto.generate_block_indices(len(entry.compressed_blocks), _se33e912f7767):
-                _sb96393f68f4d = self._peek_block_content(entry.compressed_blocks[_s1f6d01ab75cb], _se33e912f7767)
-                if entry.encrypted:
-                    _sb96393f68f4d = PakCrypto.decrypt_block(bytes(_sb96393f68f4d), file_path, _se33e912f7767)
-                _sb96393f68f4d = PakCompression.decompress_block(_sb96393f68f4d, self._zstd_dict, _s5206fe150a33)
-                _sbb61cc6b3e63.write(_sb96393f68f4d)
+            with open(tmp_path, 'wb') as _sbb61cc6b3e63:
+                if _s5206fe150a33 == CM_NONE:
+                    _sb96393f68f4d = self._peek_content(entry.offset, entry.size, _se33e912f7767)
+                    if entry.encrypted:
+                        _sb96393f68f4d = PakCrypto.decrypt_block(bytes(_sb96393f68f4d), file_path, _se33e912f7767)
+                    _sbb61cc6b3e63.write(_sb96393f68f4d)
+                    tmp_path.replace(file_path)
+                    return
+                for _s1f6d01ab75cb in PakCrypto.generate_block_indices(len(entry.compressed_blocks), _se33e912f7767):
+                    _sb96393f68f4d = self._peek_block_content(entry.compressed_blocks[_s1f6d01ab75cb], _se33e912f7767)
+                    if entry.encrypted:
+                        _sb96393f68f4d = PakCrypto.decrypt_block(bytes(_sb96393f68f4d), file_path, _se33e912f7767)
+                    _sb96393f68f4d = PakCompression.decompress_block(_sb96393f68f4d, self._zstd_dict, _s5206fe150a33)
+                    _sbb61cc6b3e63.write(_sb96393f68f4d)
+            # Validate decompressed size before committing the rename.
+            actual_size = tmp_path.stat().st_size
+            expected_size = getattr(entry, 'uncompressed_size', None)
+            if expected_size is not None and expected_size > 0 and actual_size != expected_size:
+                raise ValueError(
+                    f"decompressed size mismatch: expected {expected_size}, got {actual_size}"
+                )
+            tmp_path.replace(file_path)
+        except Exception:
+            # Clean up the temp file without touching the original.
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+            raise
 
     def dump(self, out_path: PurePath) -> None:
         debug_path = BASE_DIR / 'index_debug.txt'
@@ -2098,7 +2169,7 @@ def _dynamic_replace_single_entry(pak, target_entry, internal: str, new_plain: b
 
 
 # =============================================================================
-# SKUY PAK PHYSICAL DELETE / COMPACT ENGINE
+# ALVSIA PAK PHYSICAL DELETE / COMPACT ENGINE
 # Adopted from runtime-proven pak_compact_tools1.py test
 # =============================================================================
 
@@ -2485,7 +2556,37 @@ def run_pak_unpack(pak_path, out_dir, authorization_operation='pak.unpack'):
     pak = TencentPakFile(pak_path)
     # Prefer dump if available
     if hasattr(pak, 'dump'):
-        pak.dump(out_dir)
+        stats = pak.dump(out_dir)
+        # Validate extraction integrity: any skipped files are a hard failure.
+        # A mismatch between expected_files and actual on-disk count is also fatal —
+        # it means entries were silently dropped (corrupt block, missing decrypt key, …).
+        if isinstance(stats, dict):
+            skipped = int(stats.get('skipped_files', 0))
+            expected = int(stats.get('expected_files', 0))
+            written = int(stats.get('written_files', 0))
+            if skipped > 0:
+                return {
+                    'ok': False,
+                    'error': f'incomplete PAK extraction: {skipped} file(s) skipped out of {expected}',
+                    'stats': stats,
+                    'out': str(out_dir),
+                }
+            if expected > 0:
+                # Always count on-disk — dump()'s self-reported written_files may lie
+                # (e.g. a tool that increments the counter before confirming the write).
+                actual_on_disk = sum(1 for p in out_dir.rglob('*') if p.is_file())
+                if actual_on_disk != expected:
+                    return {
+                        'ok': False,
+                        'error': (
+                            f'output file count mismatch: expected {expected}, '
+                            f'written={written}, on-disk={actual_on_disk}'
+                        ),
+                        'stats': stats,
+                        'out': str(out_dir),
+                    }
+        n = sum(1 for p in out_dir.rglob('*') if p.is_file())
+        return {'ok': True, 'files': n, 'out': str(out_dir)}
     elif hasattr(pak, 'extract_all'):
         pak.extract_all(out_dir)
     else:

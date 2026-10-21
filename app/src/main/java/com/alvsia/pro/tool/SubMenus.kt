@@ -91,6 +91,9 @@ object SubMenus {
                 "Select file → OUT/LUA/*_xor_*.bin"),
             SubTool("lua_vm_deobfuscate", "VM Deobfuscate",  "Detect supported ALVSEAL/ALVLUA formats and report recovery results",
                 "Select protected .lua/.luac/.alvlua → OUT/LUA/*_recovered.lua or partial recovery report"),
+            SubTool("pubg_lua_convert",  "PUBG→Std Convert",  "Convert PUBG/BGMI scrambled Lua bytecode to standard Lua 5.3 using XOR key from libUE4.so",
+                "Select .luac file or folder → OUT/PUBGLUA/*_std.luac"),
+
         )
 
         // ── 6 File Scan ───────────────────────────────────────────────────
@@ -135,6 +138,11 @@ object SubMenus {
                 "Select .so → OUT/SO/aes_keys.txt  (entropy + pattern scan)"),
             SubTool("so_patch_url",   "Patch Plaintext URL", "Replace an existing URL in a .so binary",
                 "CONFIG: old_url=<existing URL> and new_url=<same-length or shorter URL>; output is written under OUT/SO/"),
+            SubTool("url_scan_so",      "URL Scanner",    "Extract all embedded URLs, IPs and host:port from .so / APK binaries",
+                "Select .so file or folder of .so files → OUT/URLSCAN/urls_found.txt"),
+            SubTool("sm4_find_all",    "SM4 Key Finder+", "Scan .so for SM4_SECRET_NEW + SM4_SECRET_4 + SM4_SECRET_2 candidates",
+                "Select folder containing arm64-v8a/*.so → OUT/SM4/sm4_all_keys.txt"),
+
         )
 
         // ── 11 Frida Tracer ───────────────────────────────────────────────
@@ -187,6 +195,8 @@ object SubMenus {
                 "sm4_config.txt required. Select .pak → OUT/PAKD/*_sm4/"),
             SubTool("pak_deep_auto",   "Deep Auto-Probe",   "Try all encryption combos",
                 "Select .pak → OUT/PAKD/probe_report.txt + first successful extract"),
+            SubTool("sm4_keyfind",     "SM4 Key Finder",    "Scan .so files for embedded SM4_SECRET_NEW candidates (aA0-pattern)",
+                "Select a folder containing arm64-v8a/*.so → OUT/SM4/sm4_keys.txt"),
         )
 
         // ── 15 String Recover ─────────────────────────────────────────────
@@ -229,6 +239,34 @@ object SubMenus {
                 "Select .lua source → OUT/LPROTECT/*.alvlua3.lua (self-executing; reversible via module 05 / VM Deobfuscate)")
         )
 
-        else -> emptyList()
+        // Module 19 — ALVSIA PRIVATE TOOL (sealed runtime required)
+    19 -> listOf(
+        SubTool("priv_zuc_decrypt",   "ZUC-128 Decrypt",       "ZUC-128 stream cipher decrypt (16-byte key + IV)",
+            "Select encrypted .bin → OUT/ALVSIA_PRIVATE/*_zuc_dec.bin"),
+        SubTool("priv_aes_scan",      "AES Key Scanner",       "Scan binary for AES S-box, Rcon, expanded key schedules, and high-entropy candidates",
+            "Select .so / .bin → OUT/ALVSIA_PRIVATE/aes_scan.txt"),
+        SubTool("priv_xor_recover",   "XOR Key Recovery",      "IC-based multi-byte XOR key recovery from ciphertext",
+            "Select encrypted .bin → OUT/ALVSIA_PRIVATE/xor_keys.txt"),
+        SubTool("priv_lua_parse",     "Lua Bytecode Parser",   "Extract all string and number constants from Lua 5.1/5.3/BGMI bytecode",
+            "Select .luac → OUT/ALVSIA_PRIVATE/*_parsed.txt"),
+        SubTool("priv_lua_convert",   "BGMI→Std Lua",          "Convert BGMI scrambled Lua bytecode to standard Lua 5.3 (XOR + opcode remap)",
+            "Select .luac file or folder → OUT/ALVSIA_PRIVATE/bgmi_std/*.luac"),
+        SubTool("priv_lua_heping",    "HePing→Std Lua",        "Convert HePing JY (和平精英) scrambled Lua bytecode to standard Lua 5.3",
+            "Select .luac file or folder → OUT/ALVSIA_PRIVATE/heping_std/*.luac"),
+        SubTool("priv_compress_fit",  "Compression Best-Fit",  "Find zlib/zstd level that fits data into a target size budget",
+            "Select .bin + set target_size in config → OUT/ALVSIA_PRIVATE/*_compressed.bin"),
+        SubTool("priv_apk_audit",     "APK Auditor",           "Structural APK audit: package, DEX count, native arches, signing block V2/V3",
+            "Select .apk → OUT/ALVSIA_PRIVATE/apk_audit.txt"),
+        SubTool("priv_apk_manifest",  "APK Manifest",          "Extract raw AndroidManifest.xml from APK and identify package name",
+            "Select .apk → OUT/ALVSIA_PRIVATE/AndroidManifest.raw.xml"),
+        SubTool("priv_str_recover",   "String Recovery",       "Multi-strategy string constant recovery: XOR, base64, reversed, raw printable",
+            "Select .bin / .so → OUT/ALVSIA_PRIVATE/strings_recovered.txt"),
+        SubTool("priv_entropy_map",   "Entropy Map",           "Per-block entropy analysis: find encrypted, compressed, code and padding regions",
+            "Select .bin / .so → OUT/ALVSIA_PRIVATE/entropy_map.txt"),
+        SubTool("priv_pak_manifest",  "PAK Manifest CSV",      "Generate CSV manifest of all entries in a TencentPak file",
+            "Select .pak → OUT/ALVSIA_PRIVATE/*_manifest.csv"),
+    )
+
+    else -> emptyList()
     }
 }
