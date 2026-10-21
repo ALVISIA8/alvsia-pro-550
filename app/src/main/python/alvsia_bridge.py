@@ -19,44 +19,18 @@ def _install_sealed_runtime():
     except Exception:
         pass
 
-def _extract_str(val) -> str:
-    """Safely extract a plain Python str from a value that may be a
-    Chaquopy PyObject wrapping a Java String, a plain Python str, or
-    anything else.  Chaquopy's PyObject.__str__() returns the Java
-    String's value, so str() is correct — but we defend against edge
-    cases where repr() leaks (e.g. a proxy object whose __str__ has
-    been overridden by a buggy Chaquopy version)."""
-    if isinstance(val, str):
-        return val.strip()
-    raw = str(val).strip()
-    # Guard against Chaquopy repr leakage like "java.lang.String@..."
-    if raw.startswith("java.") or raw.startswith("com.chaquo."):
-        # Try __str__ directly on the underlying Java object if available.
-        try:
-            return val.__str__().strip()
-        except Exception:
-            return ""
-    return raw
-
-
 def configure_runtime(token, sealed_runtime="1"):
     try:
-        token = _extract_str(token)
+        token = str(token).strip()
         if re.fullmatch(r"[0-9A-Fa-f]{64}", token) is None:
             return False
         from com.alvsia.pro.sec import SessionGate
-        gate = SessionGate
-        # Pass the plain Python str (not the original PyObject) to isTokenCurrent
-        # so Chaquopy performs a clean Java-String conversion.
-        if not bool(gate.isTokenCurrent(token)):
+        if not bool(SessionGate.isTokenCurrent(token)):
             return False
         os.environ.pop("ALVSIA_SESSION_TOKEN", None)
         os.environ["ALVSIA_APK_SESSION"] = "1"
-        os.environ["ALVSIA_SEALED_RUNTIME"] = "1" if _extract_str(sealed_runtime) == "1" else "0"
+        os.environ["ALVSIA_SEALED_RUNTIME"] = "1" if str(sealed_runtime) == "1" else "0"
         _install_sealed_runtime()
-        # Return the Python literal True so Chaquopy renders it as "True" via
-        # PyObject.toString().  Do NOT return a Java Boolean — Kotlin's receiver
-        # uses configure?.toString() != "True" as the contract check.
         return True
     except Exception:
         return False
