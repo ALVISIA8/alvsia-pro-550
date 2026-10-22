@@ -244,7 +244,7 @@ fun subToolConfig(subId: String): List<SubToolConfig> = when (subId) {
         SubToolConfig(
             field = "so_path",
             label = "Path to .so file or folder containing .so files",
-            type = ConfigType.PATH,
+            type = ConfigType.TEXT,
             hint = "/sdcard/AlvsiaWork/lib/arm64-v8a",
             required = true,
             workFileName = "so_path.txt"
@@ -256,7 +256,7 @@ fun subToolConfig(subId: String): List<SubToolConfig> = when (subId) {
         SubToolConfig(
             field = "so_folder",
             label = "Folder containing .so files",
-            type = ConfigType.PATH,
+            type = ConfigType.TEXT,
             hint = "/sdcard/AlvsiaWork/extracted_apk/lib/arm64-v8a",
             required = true,
             workFileName = "so_folder.txt"
@@ -268,7 +268,7 @@ fun subToolConfig(subId: String): List<SubToolConfig> = when (subId) {
         SubToolConfig(
             field = "input_path",
             label = "Path to .luac file or folder of .luac files",
-            type = ConfigType.PATH,
+            type = ConfigType.TEXT,
             hint = "/sdcard/AlvsiaWork/extracted_lua",
             required = true,
             workFileName = "lua_input.txt"
@@ -298,7 +298,7 @@ fun subToolConfig(subId: String): List<SubToolConfig> = when (subId) {
         SubToolConfig(
             field = "so_folder",
             label = "Folder containing .so files (or path to single .so)",
-            type = ConfigType.PATH,
+            type = ConfigType.TEXT,
             hint = "/sdcard/AlvsiaWork/extracted_apk/lib/arm64-v8a",
             required = true,
             workFileName = "so_folder.txt"
