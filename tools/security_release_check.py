@@ -56,8 +56,20 @@ if "sealed_loader.install()" not in bridge or "ALVSIA_SEALED_RUNTIME" not in bri
     fail.append("bridge bootstrap does not install the sealed loader conditionally")
 if "def run_tool(" in bridge and "import alvsia_bridge_impl as impl" not in bridge:
     fail.append("plaintext bridge must delegate tool routing to the sealed implementation")
-if len(bridge.encode("utf-8")) >= 2000 or "if mid == 1" in bridge:
-    fail.append("plaintext bridge must remain a small stub without module-routing logic")
+# Do not impose a fixed byte limit: bridge helpers may grow to handle
+# Chaquopy/PyObject conversion and safe diagnostics. Enforce the security
+# properties that matter instead: no per-module dispatch/routing in plaintext,
+# and all tool routing delegated to the sealed implementation.
+bridge_dispatch_patterns = (
+    r"(?m)^\s*if\s+mid\s*==\s*\d+\s*:",
+    r"(?m)^\s*elif\s+mid\s*==\s*\d+\s*:",
+    r"(?m)^\s*(?:if|elif)\s+module_id\s*==\s*\d+\s*:",
+    r"(?m)^\s*(?:if|elif)\s+moduleId\s*==\s*\d+\s*:",
+)
+if any(re.search(pattern, bridge) for pattern in bridge_dispatch_patterns):
+    fail.append("plaintext bridge contains per-module routing; move dispatch to the sealed implementation")
+if "def run_tool(" not in bridge or "import alvsia_bridge_impl as impl" not in bridge:
+    fail.append("plaintext bridge must delegate tool routing to the sealed implementation")
 if "isTokenCurrent(token)" not in bridge:
     fail.append("bridge must compare the supplied token with the authoritative Kotlin session")
 if "SessionGate.isSessionAuthorized()" not in loader:
