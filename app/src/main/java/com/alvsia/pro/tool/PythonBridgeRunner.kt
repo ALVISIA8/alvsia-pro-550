@@ -109,10 +109,10 @@ object PythonBridgeRunner {
             // Configure the authenticated Python session through a bridge function.
             // This avoids relying on PyObject.get(String), which is not available in
             // some Chaquopy runtimes and caused "PyObject.get" reflection failures.
-            // Distinguish a native session-gate rejection from a Python/Chaquopy bridge rejection.
-            if (!SessionGate.isTokenCurrent(token)) {
-                return false to listOf("X AUTH DIAG: Kotlin SessionGate rejected the current token before Python configuration")
-            }
+            // Do not validate the same token twice across Kotlin and Python. The
+            // second check used to race with SessionGate.lock() and reject otherwise
+            // valid tool launches. configure_runtime performs the authoritative
+            // synchronized SessionGate.isTokenCurrent(token) check immediately below.
             val configure = callAttr.invoke(
                 bridge,
                 "configure_runtime",
