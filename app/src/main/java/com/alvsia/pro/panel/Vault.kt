@@ -8,12 +8,16 @@ import okhttp3.CertificatePinner
  * Host split into two halves decoded with independent key+step pairs.
  */
 object Vault {
-    private const val PIN_SPKI = "sha256/5xvRl/EyzQlZHSgU5dDZKbqmr+rFywWYzvSEEmJgC+Q="
+    private const val PIN_LEAF = "sha256/c2R2a5MzD4I07EihvqwZxLlUul6UG4LWRGgYQP46vAo="
+    private const val PIN_INTERMEDIATE = "sha256/O/FzTSeTrRl/1rII4zJhSIfwXUJSW4FEvSZ6sEg1tJ8="
+    private const val PIN_ROOT = "sha256/B7cpNaOeyLu/vfjqnaju9PC8DpwqvNKDStaCzC0CZG0="
+    private const val PIN_ISRG_ROOT_X1 = "sha256/C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M="
 
     fun certPinner(): CertificatePinner =
         CertificatePinner.Builder()
-            .add("alvsiapro.cc.cd", PIN_SPKI)
-            .add("*.alvsiapro.cc.cd", PIN_SPKI)
+            // OkHttp CertificatePinner hashes SubjectPublicKeyInfo (SPKI).
+            .add("alvsiapro.cc.cd", PIN_LEAF, PIN_INTERMEDIATE, PIN_ROOT, PIN_ISRG_ROOT_X1)
+            .add("*.alvsiapro.cc.cd", PIN_LEAF, PIN_INTERMEDIATE, PIN_ROOT, PIN_ISRG_ROOT_X1)
             .build()
 
     fun apiBase(): String = rebuildBase()
