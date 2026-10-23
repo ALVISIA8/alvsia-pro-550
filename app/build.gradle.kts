@@ -109,10 +109,10 @@ chaquopy {
     defaultConfig {
         version = "3.11"
         pip {
-            install("pycryptodome==3.20.0")
+            install("pycryptodome==3.19.1")
             install("requests==2.32.3")
             install("rich==13.7.1")
-            install("zstandard==0.22.0")
+            install("zstandard==0.19.0")
         }
     }
 }
