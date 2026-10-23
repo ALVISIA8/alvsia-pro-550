@@ -7,7 +7,7 @@ import hmac
 from urllib.parse import urlparse
 
 PANEL_HOST = "alvsiapro.cc.cd"
-PANEL_SPKI_SHA256 = base64.b64decode("5xvRl/EyzQlZHSgU5dDZKbqmr+rFywWYzvSEEmJgC+Q=")
+PANEL_SPKI_SHA256 = base64.b64decode("c2R2a5MzD4I07EihvqwZxLlUul6UG4LWRGgYQP46vAo=")
 
 
 def _read_tlv(data: bytes, pos: int):
