@@ -7,9 +7,12 @@
     </base-config>
     <domain-config cleartextTrafficPermitted="false">
         <domain includeSubdomains="true">alvsiapro.cc.cd</domain>
-        <!-- SPKI pin from openssl; update when Cloudflare rotates -->
-        <pin-set expiration="2027-12-31">
-            <pin digest="SHA-256">5xvRl/EyzQlZHSgU5dDZKbqmr+rFywWYzvSEEmJgC+Q=</pin>
+        <!-- SHA-256 SPKI pins; normal system certificate validation remains enabled. -->
+        <pin-set expiration="2027-01-16">
+            <pin digest="SHA-256">c2R2a5MzD4I07EihvqwZxLlUul6UG4LWRGgYQP46vAo=</pin>
+            <pin digest="SHA-256">O/FzTSeTrRl/1rII4zJhSIfwXUJSW4FEvSZ6sEg1tJ8=</pin>
+            <pin digest="SHA-256">B7cpNaOeyLu/vfjqnaju9PC8DpwqvNKDStaCzC0CZG0=</pin>
+            <pin digest="SHA-256">C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M=</pin>
         </pin-set>
     </domain-config>
 </network-security-config>
