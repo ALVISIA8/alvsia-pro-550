@@ -112,7 +112,7 @@ chaquopy {
             install("pycryptodome")
             install("requests")
             install("rich")
-            install("zstandard==0.19.0")
+            install("zstandard==0.18.0")
         }
     }
 }
