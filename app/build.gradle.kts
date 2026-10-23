@@ -107,11 +107,11 @@ android {
 
 chaquopy {
     defaultConfig {
-        version = "3.11"
+        version = "3.8"
         pip {
-            install("pycryptodome==3.19.1")
-            install("requests==2.32.3")
-            install("rich==13.7.1")
+            install("pycryptodome")
+            install("requests")
+            install("rich")
             install("zstandard==0.19.0")
         }
     }
