@@ -78,6 +78,33 @@ class PrivateToolEngineTests(unittest.TestCase):
             self.assertEqual(report["native_arches"], ["arm64-v8a"])
             self.assertEqual(report["total_files"], 3)
 
+
+    def test_lua53_parser_consumes_dumped_strings_and_integer_constants(self):
+        # Minimal standard Lua 5.3 chunk with one string and one integer constant.
+        header = (
+            b"\x1bLua\x53\x00\x19\x93\r\n\x1a\n"
+            b"\x04\x08\x04\x08\x08"
+            b"\x78\x56\x00\x00\x00\x00\x00\x00"
+            + __import__("struct").pack("<d", 370.5)
+        )
+        proto = (
+            b"\x03@x\x00"                 # source string (size includes NUL)
+            + (0).to_bytes(4, "little")   # line defined
+            + (0).to_bytes(4, "little")   # last line
+            + b"\x00\x00\x02"             # params, vararg, max stack
+            + (0).to_bytes(4, "little")   # code count
+            + (2).to_bytes(4, "little")   # constant count
+            + b"\x04\x06hello\x00"         # string constant
+            + b"\x13" + (123456789).to_bytes(8, "little", signed=True)
+            + (0).to_bytes(4, "little")   # upvalues
+            + (0).to_bytes(4, "little")   # child protos
+            + (0).to_bytes(4, "little") * 3  # debug table counts
+        )
+        info = private.LuaBytecodeParser(header + proto).parse()
+        self.assertEqual(info.source_name, "@x")
+        self.assertEqual([item.value for item in info.strings], ["hello"])
+        self.assertEqual([item.value for item in info.numbers], [123456789])
+
     def test_lua_parser_rejects_non_lua_magic(self):
         with self.assertRaisesRegex(ValueError, "missing"):
             private.LuaBytecodeParser(b"not a lua file").parse()
