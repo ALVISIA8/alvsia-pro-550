@@ -109,6 +109,30 @@ class PrivateToolEngineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "missing"):
             private.LuaBytecodeParser(b"not a lua file").parse()
 
+
+    def test_compression_best_level_selects_a_fit(self):
+        source = b"ALVSIA-compression-budget-" * 100
+        level, size = private.CompressionBestFit.best_level_for_target(
+            source, target_size=128, method="zlib"
+        )
+        self.assertGreaterEqual(level, 1)
+        self.assertLessEqual(level, 9)
+        self.assertGreater(size, 0)
+        self.assertLessEqual(size, 128)
+        compressed = __import__("zlib").compress(source, level)
+        self.assertEqual(len(compressed), size)
+        self.assertEqual(__import__("zlib").decompress(compressed), source)
+
+    def test_compression_best_level_reports_impossible_budget(self):
+        level, size = private.CompressionBestFit.best_level_for_target(
+            b"not compressible enough", target_size=1, method="zlib"
+        )
+        self.assertEqual((level, size), (-1, 0))
+
+    def test_compression_best_level_rejects_unknown_method(self):
+        with self.assertRaisesRegex(ValueError, "Unknown method"):
+            private.CompressionBestFit.best_level_for_target(b"data", 32, "invalid")
+
     def test_compression_target_budget_is_respected(self):
         source = b"A" * 4096
         compressed = private.CompressionBestFit.compress(source, method="zlib", target_size=128)
