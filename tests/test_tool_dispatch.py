@@ -90,7 +90,7 @@ def test_frida_spawn_preserves_full_package_name():
 
 def test_catalog_contains_all_nineteen_modules():
     catalog = CATALOG.read_text(encoding="utf-8")
-    ids = [int(x) for x in re.findall(r'ToolItem\\((\\d+),', catalog)]
+    ids = [int(x) for x in re.findall(r'ToolItem\((\d+),', catalog)]
     assert ids == list(range(1, 20)), f"Expected module IDs 1..19 in order, got {ids}"
     assert 'ToolItem(19, "ALVSIA PRIVATE TOOL"' in catalog
 
@@ -98,10 +98,10 @@ def test_catalog_contains_all_nineteen_modules():
 def test_private_module_19_menu_and_dispatch_contract():
     menus = MENUS.read_text(encoding="utf-8")
     catalog = CATALOG.read_text(encoding="utf-8")
-    bridge = BRIDGE.read_text(encoding="utf-8") + "\\n" + BRIDGE_IMPL.read_text(encoding="utf-8")
+    bridge = BRIDGE.read_text(encoding="utf-8") + "\n" + BRIDGE_IMPL.read_text(encoding="utf-8")
     assert '19 -> "ALVSIA PRIVATE TOOL"' in menus
-    private_menu = menus.split("// Module 19 — ALVSIA PRIVATE TOOL", 1)[1].split("\\n    )", 1)[0]
-    private_ids = re.findall(r'SubTool\\(\\s*"([a-zA-Z0-9_]+)"', private_menu)
+    private_menu = menus.split("// Module 19 — ALVSIA PRIVATE TOOL", 1)[1].split("\n    )", 1)[0]
+    private_ids = re.findall(r'SubTool\(\s*"([a-zA-Z0-9_]+)"', private_menu)
     expected = [
         "priv_zuc_decrypt", "priv_aes_scan", "priv_xor_recover",
         "priv_lua_parse", "priv_lua_convert", "priv_lua_heping",
