@@ -13,6 +13,10 @@
             <pin digest="SHA-256">O/FzTSeTrRl/1rII4zJhSIfwXUJSW4FEvSZ6sEg1tJ8=</pin>
             <pin digest="SHA-256">B7cpNaOeyLu/vfjqnaju9PC8DpwqvNKDStaCzC0CZG0=</pin>
             <pin digest="SHA-256">C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M=</pin>
+            <!-- Additional SPKI values reported by the device during the failed handshake. -->
+            <pin digest="SHA-256">9SAIPOYX5EuzgKf+w3vxjzS0qg1WJOPVEQeG05Knjo=</pin>
+            <pin digest="SHA-256">kldp6NNED8wsugYyyIYFsi1yIMCED3hZbSR8ZFsa/A4=</pin>
+            <pin digest="SHA-256">mEfIZT5enoR1FuXLgYYGqnVEoZvmf9c2bVBpiOjYQ0c=</pin>
         </pin-set>
     </domain-config>
 </network-security-config>
