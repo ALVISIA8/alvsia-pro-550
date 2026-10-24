@@ -7,7 +7,13 @@ import hmac
 from urllib.parse import urlparse
 
 PANEL_HOST = "alvsiapro.cc.cd"
-PANEL_SPKI_SHA256 = base64.b64decode("c2R2a5MzD4I07EihvqwZxLlUul6UG4LWRGgYQP46vAo=")
+# Current-chain pin from alvsia_pin_doctor.py plus the leaf SPKI reported
+# by OkHttp on the affected device. The TLS CA/hostname checks remain enabled.
+# Review/refresh this set before the 2027-01-16 certificate pin expiry.
+PANEL_SPKI_SHA256_PINS = tuple(base64.b64decode(value) for value in (
+    "c2R2a5MzD4I07EihvqwZxLlUul6UG4LWRGgYQP46vAo=",
+    "9SAIPOYX5EuzgKf+w3vxjzS0qg1WJOPVEQeG05Knjo=",
+))
 
 
 def _read_tlv(data: bytes, pos: int):
@@ -77,7 +83,7 @@ def panel_post(url: str, **kwargs):
         if not cert_der:
             raise requests.exceptions.SSLError("panel peer certificate unavailable")
         actual = hashlib.sha256(extract_spki_der(cert_der)).digest()
-        if not hmac.compare_digest(actual, PANEL_SPKI_SHA256):
+        if not any(hmac.compare_digest(actual, pin) for pin in PANEL_SPKI_SHA256_PINS):
             raise requests.exceptions.SSLError("panel SPKI pin mismatch")
         # Consume only after pin validation so the response can be safely used
         # after the temporary Session is closed.
