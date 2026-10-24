@@ -34,9 +34,9 @@ def configure_runtime(token,sealed_runtime="1"):
   os.environ["ALVSIA_SEALED_RUNTIME"]="1" if _extract_str(sealed_runtime).strip()=="1" else "0"
   stage="sealed_runtime_install"
   _isr();_CD="ok";return True
- except Exception as e:
-  m=re.sub(r"[^A-Za-z0-9_.-]","",str(getattr(e,"name","") or ""))[:80]
-  d=re.sub(r"[^A-Za-z0-9_.:/ -]","?",str(e or ""))[:100].strip()
+ except Exception as exc:
+  m=re.sub(r"[^A-Za-z0-9_.-]","",str(getattr(exc, "name", "") or ""))[:80]
+  d=re.sub(r"[^A-Za-z0-9_.:/ -]","?",str(exc or ""))[:100].strip()
   _CD="config_exc:"+stage+":"+type(e).__name__+(":module="+m if m else "")+(":detail="+d if d else "")
   return False
 def run_tool(mid,sid,inp,out_root,engine_dir,jars_dir):
