@@ -460,7 +460,14 @@ class LuaBytecodeParser:
         return self._u64() if self.int_sz == 8 else self._u32()
 
     def _lua_integer(self) -> int:
-        return self._u64() if self.lua_int_sz == 8 else self._u32()
+        if self.lua_int_sz == 8:
+            value = _struct.unpack_from('<q', self._d, self._p)[0]
+        elif self.lua_int_sz == 4:
+            value = _struct.unpack_from('<i', self._d, self._p)[0]
+        else:
+            raise ValueError("Unsupported lua_Integer size")
+        self._p += self.lua_int_sz
+        return value
 
     def _size_t(self) -> int:
         return self._u64() if self.szt_sz == 8 else self._u32()
