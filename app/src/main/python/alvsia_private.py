@@ -824,26 +824,38 @@ class CompressionBestFit:
     @staticmethod
     def best_level_for_target(data: bytes, target_size: int,
                                method: str = 'zlib') -> Tuple[int, int]:
-        """Return (level, compressed_size) of the best fit within target_size."""
-        best_lvl, best_sz = -1, len(data)
-        if method == 'zlib':
-            for lvl in range(9, 0, -1):
-                try:
-                    c = _zlib.compress(data, lvl)
-                    if len(c) <= target_size and len(c) > best_sz:
-                        best_lvl = lvl; best_sz = len(c)
-                except _zlib.error:
-                    continue
-        elif method == 'zstd' and _HAS_ZSTD:
-            for lvl in list(range(22, 0, -1)) + list(range(-1, -8, -1)):
-                try:
-                    c = _ZstdC(level=lvl).compress(data)
-                    if len(c) <= target_size and len(c) > best_sz:
-                        best_lvl = lvl; best_sz = len(c)
-                except Exception:
-                    continue
-        return best_lvl, best_sz
+        """Return (level, compressed_size) for the largest result within budget.
 
+        A result of (-1, 0) means no compression level fit the requested budget.
+        """
+        if target_size < 0:
+            raise ValueError("target_size must be >= 0")
+        if method == 'zlib':
+            levels = range(9, 0, -1)
+            compress = lambda level: _zlib.compress(data, level)
+        elif method == 'zstd':
+            if not _HAS_ZSTD:
+                raise ValueError("zstandard dependency is not available")
+            levels = list(range(22, 0, -1)) + list(range(-1, -8, -1))
+            compress = lambda level: _ZstdC(level=level).compress(data)
+        else:
+            raise ValueError(f"Unknown method: {method!r} (use 'zlib' or 'zstd')")
+
+        best_lvl, best_sz = -1, 0
+        for lvl in levels:
+            try:
+                compressed = compress(lvl)
+                fits = target_size <= 0 or len(compressed) <= target_size
+                improves = (
+                    best_lvl == -1
+                    or (len(compressed) < best_sz if target_size == 0
+                        else len(compressed) > best_sz)
+                )
+                if fits and improves:
+                    best_lvl, best_sz = lvl, len(compressed)
+            except Exception:
+                continue
+        return best_lvl, best_sz
 
 # ══════════════════════════════════════════════════════════════════════════════
 # § 7  APK Auditor
