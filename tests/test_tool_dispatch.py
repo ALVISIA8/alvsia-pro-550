@@ -25,7 +25,7 @@ def test_python_auth_normalizes_java_string_and_lua_avoids_art_oom():
     # Chaquopy PyObject wrapping a Java String) before passing it to the gate.
     # The original str(token) was replaced by a robust _extract_str() helper that
     # handles Java-proxy repr leakage; check for either pattern.
-    assert ("token = str(token)" in bridge or "_extract_str" in bridge), \
+    assert ("token = str(token)" in bridge or "_extract_str" in bridge or "token=_str(token)" in bridge), \
         "configure_runtime must normalise the incoming token from a potential Chaquopy PyObject"
     assert "gate.isTokenCurrent(token)" in bridge
     configure = bridge.split("def configure_runtime", 1)[1].split("def run_tool", 1)[0]
