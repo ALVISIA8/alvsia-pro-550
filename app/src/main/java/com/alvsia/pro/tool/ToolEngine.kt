@@ -181,6 +181,16 @@ class ToolEngine(private val context: Context) {
                 // in-process unluac deliberately rejects them.
                 lines.add("... ART unluac produced no output, trying Python bridge")
                 if (PythonBridgeRunner.isReady()) {
+                    // The Lua fast-path runs before the generic bridge setup below.
+                    // Establish the same authenticated Python environment here or
+                    // the bridge rejects the fallback with AUTH despite a valid login.
+                    if (SessionGate.sessionOk) {
+                        PythonBridgeRunner.setEnv("ALVSIA_APK_SESSION", "1")
+                        PythonBridgeRunner.setEnv("ALVSIA_SEALED_RUNTIME", "1")
+                    } else {
+                        PythonBridgeRunner.clearEnv("ALVSIA_APK_SESSION")
+                        PythonBridgeRunner.clearEnv("ALVSIA_SOFT_AUTH")
+                    }
                     try {
                         val (bridgeOk, bridgeLines) = PythonBridgeRunner.runBridge(
                             moduleId = moduleId,
@@ -191,6 +201,24 @@ class ToolEngine(private val context: Context) {
                             jarsDirPath = jarsDir.absolutePath
                         )
                         lines.addAll(bridgeLines)
+
+                        // Python's streaming decompiler writes to OUT/LUA, while this
+                        // fast-path checks the module-specific OUT directory. Promote
+                        // only the bridge-reported Lua file to the expected output.
+                        val reportedOutput = bridgeLines.firstOrNull { it.startsWith("OUT -> ") }
+                            ?.substringAfter("OUT -> ")
+                            ?.takeIf { it.isNotBlank() && !it.startsWith("(see ") }
+                        if (reportedOutput != null) {
+                            val produced = File(reportedOutput)
+                            if (produced.isFile && produced.length() > 0 &&
+                                produced.extension.equals("lua", ignoreCase = true) &&
+                                produced.absoluteFile != outFile.absoluteFile) {
+                                outFile.parentFile?.mkdirs()
+                                produced.copyTo(outFile, overwrite = true)
+                                lines.add("OK promoted Python Lua output -> ${outFile.absolutePath}")
+                            }
+                        }
+
                         mirrorMsvToOut(moduleId, lines)
                         if (bridgeOk && outFile.isFile && outFile.length() > 0) {
                             lines.add("OK Python streaming decompiler -> ${outFile.absolutePath}")
