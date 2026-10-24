@@ -230,6 +230,20 @@ def test_run_unzip_rejects_zip_slip_and_extracts_safe_entries():
         assert not (base / "escaped.txt").exists()
 
 
+def test_large_lua_source_is_detected_before_bytecode_fallback():
+    source = (ROOT / "app/src/main/python/lua_engine/streaming_decompiler.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    fn = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "preflight_magic")
+    import re
+    namespace = {"Path": Path, "re": re}
+    exec(compile(ast.Module(body=[fn], type_ignores=[]), "streaming_decompiler.py", "exec"), namespace)
+    with tempfile.TemporaryDirectory() as td:
+        sample = Path(td) / "primary_BRPlayerCharacterBase.lua"
+        sample.write_text("local function main()\n  return true\nend\n" + ("-- filler\n" * 700000), encoding="utf-8")
+        assert sample.stat().st_size > 5 * 1024 * 1024
+        assert namespace["preflight_magic"](sample) == "source"
+
+
 def test_large_file_helpers_stream_and_report_hashes():
     source = (ROOT / "app/src/main/python/alvsia_features.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
@@ -263,6 +277,7 @@ if __name__ == "__main__":
         test_tool_argument_and_storage_contracts,
         test_bridge_call_signatures_match_helpers,
         test_obb_extract_normalizes_archive_paths,
+        test_large_lua_source_is_detected_before_bytecode_fallback,
         test_run_unzip_rejects_zip_slip_and_extracts_safe_entries,
         test_large_file_helpers_stream_and_report_hashes,
     )

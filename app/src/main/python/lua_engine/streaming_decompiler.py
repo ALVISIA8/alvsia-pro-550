@@ -40,10 +40,10 @@ MAX_INFLATED_BYTES = 4 * 1024 * 1024 * 1024  # 4 GiB hard cap
 
 
 def preflight_magic(path: Path) -> str:
-    """Read first 4 bytes and return a string label."""
+    """Classify common Lua formats using a bounded header read."""
     try:
         with path.open("rb") as f:
-            head = f.read(8)
+            head = f.read(8192)
         if len(head) < 4:
             return "too_small"
         if head.startswith(b"\x1bLua"):
@@ -55,10 +55,19 @@ def preflight_magic(path: Path) -> str:
             return "chunked_deflate"
         if head[0] == 0x1F and head[1] == 0x8B:
             return "gzip"
+        # Large plain-text Lua sources must be validated/copied, not sent to
+        # bytecode decompilers that cannot parse source text.
+        text = head.decode("utf-8", "ignore")
+        stripped = text.lstrip("\ufeff \t\r\n")
+        if re.search(r"^(?:#!.*\n\s*)?(?:local|return|function|if|for|while|repeat|do)\b", stripped):
+            return "source"
+        if b"function" in head[:4096] and all(
+            byte in (9, 10, 13) or 32 <= byte < 127 for byte in head[:4096]
+        ):
+            return "source"
         return "unknown_0x" + head[:4].hex()
     except Exception:
         return "preflight_failed"
-
 
 def stream_inflate_deflate_container(input_path: Path, out_path: Path) -> Tuple[bool, str]:
     """Stream-inflate a 0x78DA-chunked raw-DEFLATE Lua container.
