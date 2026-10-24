@@ -112,13 +112,13 @@ class PrivateToolEngineTests(unittest.TestCase):
         header = b"\x1bLua\x51\x00\x01\x04\x08\x04\x08\x00"
         proto = (
             b"\x00"                         # nups (Lua 5.1 only)
-            + b"\x03@x\x00"                 # source string, length includes NUL
+            + (3).to_bytes(8, "little") + b"@x\x00"  # source string
             + (0).to_bytes(4, "little")     # line defined
             + (0).to_bytes(4, "little")     # last line
             + b"\x00\x00\x02"               # params, vararg, max stack
             + (0).to_bytes(4, "little")     # code count
             + (2).to_bytes(4, "little")     # constant count
-            + b"\x04\x06hello\x00"           # string constant
+            + b"\x04" + (6).to_bytes(8, "little") + b"hello\x00"
             + b"\x03" + __import__("struct").pack("<d", 12.5)
             + (0).to_bytes(4, "little")     # child protos
             + (0).to_bytes(4, "little")     # lineinfo
