@@ -1016,11 +1016,15 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                 result = CompressionBestFit.compress(data_in, method=method,
                                                      target_size=target_sz)
                 if result:
-                    ratio = len(result) / len(data_in) * 100
                     out_f = dest / (Path(ip).stem + "_compressed.bin")
                     out_f.write_bytes(result)
-                    lines.append("%s compress: %d→%d bytes (%.1f%%)" % (
-                        method, len(data_in), len(result), ratio))
+                    if data_in:
+                        ratio = len(result) / len(data_in) * 100
+                        lines.append("%s compress: %d→%d bytes (%.1f%%)" % (
+                            method, len(data_in), len(result), ratio))
+                    else:
+                        lines.append("%s compress: 0→%d bytes (empty input)" % (
+                            method, len(result)))
                     lines.append("OUT -> %s" % out_f)
                 else:
                     lines.append("X Compression failed — no level fits target size %d" % target_sz)
