@@ -29,21 +29,52 @@ def _extract_str(val):
             return ""
     return raw
 
+# Keep only a bounded, non-secret diagnostic. Never log the token itself.
+_CONFIGURE_DIAGNOSTIC = "not called"
+
+def configure_diagnostic():
+    return _CONFIGURE_DIAGNOSTIC
+
 def configure_runtime(token, sealed_runtime="1"):
+    global _CONFIGURE_DIAGNOSTIC
     try:
         token = _extract_str(token)
         if not re.fullmatch(r"[0-9A-Fa-f]{64}", token):
+            _CONFIGURE_DIAGNOSTIC = "token_format_invalid"
             return False
-        from com.alvsia.pro.sec import SessionGate
-        gate = SessionGate
-        if not bool(gate.isTokenCurrent(token)):
+        try:
+            from com.alvsia.pro.sec import SessionGate
+        except Exception as exc:
+            _CONFIGURE_DIAGNOSTIC = "sessiongate_import_failed:%s" % type(exc).__name__
+            return False
+        try:
+            authorized = bool(SessionGate.isSessionAuthorized())
+        except Exception as exc:
+            _CONFIGURE_DIAGNOSTIC = "sessiongate_authorized_call_failed:%s" % type(exc).__name__
+            return False
+        if not authorized:
+            _CONFIGURE_DIAGNOSTIC = "sessiongate_reports_unauthorized"
+            return False
+        try:
+            current = bool(SessionGate.isTokenCurrent(token))
+        except Exception as exc:
+            _CONFIGURE_DIAGNOSTIC = "sessiongate_token_check_failed:%s" % type(exc).__name__
+            return False
+        if not current:
+            _CONFIGURE_DIAGNOSTIC = "sessiongate_token_mismatch_or_expired"
             return False
         os.environ.pop("ALVSIA_SESSION_TOKEN", None)
         os.environ["ALVSIA_APK_SESSION"] = "1"
         os.environ["ALVSIA_SEALED_RUNTIME"] = "1" if _extract_str(sealed_runtime) == "1" else "0"
-        _isr()
-        return True  # literal True; Kotlin contract: toString() == "True"
-    except Exception:
+        try:
+            _isr()
+        except Exception as exc:
+            _CONFIGURE_DIAGNOSTIC = "sealed_runtime_init_failed:%s" % type(exc).__name__
+            return False
+        _CONFIGURE_DIAGNOSTIC = "ok"
+        return True
+    except Exception as exc:
+        _CONFIGURE_DIAGNOSTIC = "configure_exception:%s" % type(exc).__name__
         return False
 
 def run_tool(mid, sid, inp, out_root, engine_dir, jars_dir):
