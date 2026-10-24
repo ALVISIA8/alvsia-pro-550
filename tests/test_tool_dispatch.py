@@ -291,7 +291,8 @@ if __name__ == "__main__":
     tests = (
         test_python_auth_normalizes_java_string_and_lua_avoids_art_oom,
         test_menu_ids_are_unique_and_reachable,
-        test_catalog_contains_all_eighteen_modules,
+        test_catalog_contains_all_nineteen_modules,
+        test_private_module_19_menu_and_dispatch_contract,
         test_frida_spawn_preserves_full_package_name,
         test_engine_surfaces_bridge_failures,
         test_tool_argument_and_storage_contracts,
