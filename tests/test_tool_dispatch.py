@@ -28,6 +28,10 @@ def test_python_auth_normalizes_java_string_and_lua_avoids_art_oom():
     assert ("token = str(token)" in bridge or "_extract_str" in bridge), \
         "configure_runtime must normalise the incoming token from a potential Chaquopy PyObject"
     assert "gate.isTokenCurrent(token)" in bridge
+    # SessionGate is loaded from Python by its fully-qualified JVM name; R8 must not rename/repackage it.
+    rules = (ROOT / "app/proguard-rules.pro").read_text(encoding="utf-8")
+    assert "-keep class com.alvsia.pro.sec.SessionGate { *; }" in rules
+    assert 'getattr(exc, "name"' in bridge, "configure diagnostics must expose the missing module name"
     configure = bridge.split("def configure_runtime", 1)[1].split("def run_tool", 1)[0]
     assert "gate.isSessionAuthorized()" not in configure, "split auth checks can race with RASP session locking"
     gate = (ROOT / "app/src/main/java/com/alvsia/pro/sec/SessionGate.kt").read_text(encoding="utf-8")

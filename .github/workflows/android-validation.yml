@@ -62,6 +62,9 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Install pinned Android NDK
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null && "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.0.12077973"
+
       - name: Build and test Android debug variant
         run: |
           chmod +x ./gradlew
