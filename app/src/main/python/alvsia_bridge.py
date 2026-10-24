@@ -12,7 +12,7 @@ def _isr():
             import sealed_loader
             sealed_loader.install()
     except Exception: pass
-_CD = "not called"
+_CD = ""
 def configure_diagnostic(): return _CD
 def configure_runtime(token, sealed_runtime="1"):
     global _CD
@@ -23,13 +23,13 @@ def configure_runtime(token, sealed_runtime="1"):
         from com.alvsia.pro.sec import SessionGate
         gate = SessionGate
         if not bool(gate.isTokenCurrent(token)):
-            _CD = "gate_rejected_token"; return False
+            _CD = "gate_reject"; return False
         os.environ.pop("ALVSIA_SESSION_TOKEN", None)
         os.environ["ALVSIA_APK_SESSION"] = "1"
         os.environ["ALVSIA_SEALED_RUNTIME"] = "1" if str(sealed_runtime).strip() == "1" else "0"
         _isr(); _CD = "ok"; return True
     except Exception as exc:
-        _CD = "configure_exception:" + type(exc).__name__; return False
+        _CD = "config_exc:" + type(exc).__name__; return False
 def run_tool(mid, sid, inp, out_root, engine_dir, jars_dir):
     if not _authorized() or os.environ.get("ALVSIA_APK_SESSION") != "1": return "X AUTH: login required"
     _isr()
