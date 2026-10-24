@@ -202,6 +202,34 @@ def test_obb_extract_normalizes_archive_paths():
         assert (out / "folder" / "file.txt").read_text(encoding="utf-8") == "hello"
 
 
+def test_run_unzip_rejects_zip_slip_and_extracts_safe_entries():
+    source = (ROOT / "app/src/main/python/alvsia_features.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    fn = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "run_unzip")
+    import shutil
+    import zipfile
+    namespace = {"Path": Path, "zipfile": zipfile, "shutil": shutil}
+    exec(compile(ast.Module(body=[fn], type_ignores=[]), str(ROOT / "app/src/main/python/alvsia_features.py"), "exec"), namespace)
+    with tempfile.TemporaryDirectory() as td:
+        base = Path(td)
+        archive, out = base / "safe.zip", base / "out"
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("nested/ok.txt", "safe")
+        result = namespace["run_unzip"](archive, out)
+        assert result.get("ok") and (out / "nested" / "ok.txt").read_text(encoding="utf-8") == "safe"
+
+        malicious, out2 = base / "malicious.zip", base / "out2"
+        with zipfile.ZipFile(malicious, "w") as zf:
+            zf.writestr("../escaped.txt", "outside")
+        try:
+            namespace["run_unzip"](malicious, out2)
+        except ValueError as exc:
+            assert "unsafe ZIP entry path" in str(exc)
+        else:
+            raise AssertionError("ZIP path traversal was not rejected")
+        assert not (base / "escaped.txt").exists()
+
+
 def test_large_file_helpers_stream_and_report_hashes():
     source = (ROOT / "app/src/main/python/alvsia_features.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
@@ -235,6 +263,7 @@ if __name__ == "__main__":
         test_tool_argument_and_storage_contracts,
         test_bridge_call_signatures_match_helpers,
         test_obb_extract_normalizes_archive_paths,
+        test_run_unzip_rejects_zip_slip_and_extracts_safe_entries,
         test_large_file_helpers_stream_and_report_hashes,
     )
     for test in tests:
