@@ -46,10 +46,10 @@ def preflight_magic(path: Path) -> str:
             head = f.read(8192)
         if len(head) < 4:
             return "too_small"
-        if head.startswith(b"\\x1bLua"):
+        if head.startswith(b"\x1bLua"):
             v = head[4] if len(head) > 4 else 0
             return f"luac_{v:02x}"
-        if head.startswith(b"\\x1bLJ"):
+        if head.startswith(b"\x1bLJ"):
             return "luajit"
         if head[0] == 0x78 and head[1] == 0xDA:
             return "chunked_deflate"
@@ -58,8 +58,8 @@ def preflight_magic(path: Path) -> str:
         # Large plain-text Lua sources must be validated/copied, not sent to
         # bytecode decompilers that cannot parse source text.
         text = head.decode("utf-8", "ignore")
-        stripped = text.lstrip("\\ufeff \\t\\r\\n")
-        if re.search(r"^(?:#!.*\\n\\s*)?(?:local|return|function|if|for|while|repeat|do)\\b", stripped):
+        stripped = text.lstrip("\ufeff \t\r\n")
+        if re.search(r"^(?:#!.*\n\s*)?(?:local|return|function|if|for|while|repeat|do)\b", stripped):
             return "source"
         if b"function" in head[:4096] and all(
             byte in (9, 10, 13) or 32 <= byte < 127 for byte in head[:4096]
