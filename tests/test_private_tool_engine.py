@@ -93,9 +93,10 @@ class PrivateToolEngineTests(unittest.TestCase):
             + (0).to_bytes(4, "little")   # last line
             + b"\x00\x00\x02"             # params, vararg, max stack
             + (0).to_bytes(4, "little")   # code count
-            + (2).to_bytes(4, "little")   # constant count
+            + (3).to_bytes(4, "little")   # constant count
             + b"\x04\x06hello\x00"         # string constant
             + b"\x13" + (123456789).to_bytes(8, "little", signed=True)
+            + b"\x13" + (-42).to_bytes(8, "little", signed=True)
             + (0).to_bytes(4, "little")   # upvalues
             + (0).to_bytes(4, "little")   # child protos
             + (0).to_bytes(4, "little") * 3  # debug table counts
@@ -103,7 +104,7 @@ class PrivateToolEngineTests(unittest.TestCase):
         info = private.LuaBytecodeParser(header + proto).parse()
         self.assertEqual(info.source_name, "@x")
         self.assertEqual([item.value for item in info.strings], ["hello"])
-        self.assertEqual([item.value for item in info.numbers], [123456789])
+        self.assertEqual([item.value for item in info.numbers], [123456789, -42])
 
 
     def test_lua51_parser_reads_header_upvalue_count_and_constants(self):
