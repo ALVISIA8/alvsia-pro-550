@@ -100,11 +100,16 @@ def main() -> int:
                     bridge_bytes = inner.read(bridge_name) if bridge_name else b""
                     check(bool(bridge_bytes), "plaintext authorization bridge packaged")
                     bridge_text = bridge_bytes.decode("utf-8", errors="ignore")
-                    required_bridge_contract = (
+                    # Chaquopy may package the bridge as source or compiled .pyc.
+                    # In bytecode, attribute access is represented as separate names
+                    # ("impl" and "run_tool"), not the source substring "impl.run_tool".
+                    compiled_bridge = bool(bridge_name and bridge_name.endswith(".pyc"))
+                    required_bridge_contract = [
                         "configure_runtime", "isTokenCurrent", "ALVSIA_APK_SESSION",
                         "ALVSIA_SEALED_RUNTIME", "sealed_loader", "run_tool",
-                        "isSessionAuthorized", "impl.run_tool"
-                    )
+                        "isSessionAuthorized",
+                    ]
+                    required_bridge_contract.append("impl" if compiled_bridge else "impl.run_tool")
                     missing_bridge_contract = [token for token in required_bridge_contract if token not in bridge_text]
                     check(not missing_bridge_contract,
                           "bridge enforces session authorization and sealed delegation" if not missing_bridge_contract
