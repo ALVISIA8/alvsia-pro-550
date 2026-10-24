@@ -62,6 +62,18 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Set up Python 3.8 for Chaquopy
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8.20'
+
+      - name: Configure Chaquopy build Python
+        run: |
+          set -euo pipefail
+          PYTHON38="$(command -v python)"
+          "$PYTHON38" --version
+          echo "CHAQUOPY_BUILD_PYTHON=$PYTHON38" >> "$GITHUB_ENV"
+
       - name: Build and test Android debug variant
         run: |
           chmod +x ./gradlew
