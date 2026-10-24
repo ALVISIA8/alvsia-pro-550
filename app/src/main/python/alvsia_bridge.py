@@ -29,7 +29,8 @@ def configure_runtime(token, sealed_runtime="1"):
         os.environ["ALVSIA_SEALED_RUNTIME"] = "1" if str(sealed_runtime).strip() == "1" else "0"
         _isr(); _CD = "ok"; return True
     except Exception as exc:
-        _CD = "config_exc:" + type(exc).__name__; return False
+        missing = re.sub(r"[^A-Za-z0-9_.-]", "", str(getattr(exc, "name", "") or ""))[:100]
+        _CD = "config_exc:" + type(exc).__name__ + (":" + missing if missing else ""); return False
 def run_tool(mid, sid, inp, out_root, engine_dir, jars_dir):
     if not _authorized() or os.environ.get("ALVSIA_APK_SESSION") != "1": return "X AUTH: login required"
     _isr()
