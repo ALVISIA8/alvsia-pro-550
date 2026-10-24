@@ -164,8 +164,8 @@ class ZUCCipher:
         w   = ((self.x[0] ^ self.r1) + self.r2) & 0xFFFFFFFF
         w1  = (self.r1 + self.x[1]) & 0xFFFFFFFF
         w2  = (self.r2 ^ self.x[2]) & 0xFFFFFFFF
-        u   = _zuc_l1((w1 << 16) | (w2 >> 16))
-        v   = _zuc_l2((w2 << 16) | (w1 >> 16))
+        u   = _zuc_l1(((w1 << 16) | (w2 >> 16)) & 0xFFFFFFFF)
+        v   = _zuc_l2(((w2 << 16) | (w1 >> 16)) & 0xFFFFFFFF)
         self.r1 = _zuc_sbox(u)
         self.r2 = _zuc_sbox(v)
         return w
