@@ -7,12 +7,10 @@
     </base-config>
     <domain-config cleartextTrafficPermitted="false">
         <domain includeSubdomains="true">alvsiapro.cc.cd</domain>
-        <!-- SHA-256 SPKI pins; normal system certificate validation remains enabled. -->
-        <pin-set expiration="2027-01-16">
-            <pin digest="SHA-256">c2R2a5MzD4I07EihvqwZxLlUul6UG4LWRGgYQP46vAo=</pin>
-            <pin digest="SHA-256">O/FzTSeTrRl/1rII4zJhSIfwXUJSW4FEvSZ6sEg1tJ8=</pin>
-            <pin digest="SHA-256">B7cpNaOeyLu/vfjqnaju9PC8DpwqvNKDStaCzC0CZG0=</pin>
-            <pin digest="SHA-256">C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M=</pin>
+        <!-- SHA-256 SPKI pins from the verified live TLS chain. -->
+        <pin-set expiration="2027-12-31">
+            <pin digest="SHA-256">9SAlPOYX5EuzgKf+w3vxjzS0qgl1WJOPVEQeGO5Knjo=</pin>
+            <pin digest="SHA-256">kIdp6NNEd8wsugYyyIYFsi1ylMCED3hZbSR8ZFsa/A4=</pin>
         </pin-set>
     </domain-config>
 </network-security-config>
