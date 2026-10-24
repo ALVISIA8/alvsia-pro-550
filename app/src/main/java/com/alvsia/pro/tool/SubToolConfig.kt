@@ -27,8 +27,7 @@ enum class ConfigType {
     MULTILINE,   // multiline text (for Lua source, etc.)
     FILE_PICK,   // file picker button
     INT,         // integer input
-    BOOL,         // toggle switch
-    PATH          // file/folder path input
+    BOOL          // toggle switch
 }
 
 /**

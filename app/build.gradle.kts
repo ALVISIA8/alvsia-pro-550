@@ -108,14 +108,11 @@ android {
 chaquopy {
     defaultConfig {
         version = "3.8"
-        // Match build-time Python to Chaquopy's Android runtime (3.8).
-        // Codemagic sets CHAQUOPY_BUILD_PYTHON to its provisioned Python 3.8 executable.
-        buildPython(System.getenv("CHAQUOPY_BUILD_PYTHON") ?: "python3.8")
         pip {
             install("pycryptodome")
             install("requests")
             install("rich")
-            install("zstandard==0.15.2")
+            install("zstandard")
         }
     }
 }

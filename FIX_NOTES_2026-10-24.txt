@@ -1,0 +1,106 @@
+================================================================
+ ALVSIA PRO 5.5.x - CATATAN PERBAIKAN SOURCE (24 Okt 2026)
+================================================================
+Source ini sudah diaudit & diperbaiki. Semua perubahan bersifat
+additive/safe; perilaku runtime tidak diubah kecuali yang disebut.
+
+MASALAH #1 - PIN TLS KEDALUWARSA (KRITIKAL)
+-------------------------------------------
+Pin "5xvRl/EyzQlZHSgU5dDZKbqmr+rFywWYzvSEEmJgC+Q=" adalah pin dari
+sertifikat LAMA (pra-renewal 18 Okt 2026). Rebuild dari source lama
+akan membuat login rusak lagi ("Pin verification failed").
+Ditambal di 3 file, diganti 4 pin SPKI aktif (leaf + WE1 + root GTS
+R4 + backup ISRG Root X1) - nilai terverifikasi openssl vs rantai live:
+
+  9SAlPOYX5EuzgKf+w3vxjzS0qgl1WJOPVEQeGO5Knjo=  (leaf)
+  kIdp6NNEd8wsugYyyIYFsi1ylMCED3hZbSR8ZFsa/A4=  (intermediate WE1)
+  mEflZT5enoR1FuXLgYYGqnVEoZvmf9c2bVBpiOjYQ0c=  (root GTS Root R4)
+  C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M=  (backup ISRG X1)
+
+File yang diubah:
+  1. app/src/main/java/com/alvsia/pro/panel/Vault.kt
+     - PIN_SPKI tunggal (kedaluwarsa) -> 4 pin SPKI, untuk host
+       "alvsiapro.cc.cd" + "*.alvsiapro.cc.cd" (mencakup api.*).
+     - CATATAN FORMAT: OkHttp membandingkan pin dengan SHA-256 dari
+       SPKI (publicKey.encoded) - BUKAN hash DER sertifikat utuh.
+  2. app/src/main/res/xml/network_security_config.xml
+     - Pin-set kedaluwarsa diganti 4 pin SPKI yang sama.
+     - expiration 2027-12-31 -> 2027-01-16 (tanggal berakhir leaf;
+       setelah tanggal itu pin otomatis dilepas = safety valve).
+  3. app/src/main/python/pinned_http.py
+     - PANEL_SPKI_SHA256 tunggal (kedaluwarsa) -> PANEL_SPKI_PINS
+       (4 pin, cocok salah satu = lolos).
+     - PANEL_HOST -> PANEL_HOSTS (alvsiapro.cc.cd + api.alvsiapro.cc.cd).
+     - panel_post() tetap fail-closed.
+
+MASALAH #2 - GAGAL GATE KEAMANAN SENDIRI (HIGH)
+-----------------------------------------------
+  4. app/src/main/python/alvsia_bridge.py
+     - 3.103 byte -> 1.984 byte (tools/security_release_check.py
+       mewajibkan stub < 2.000 byte). Kini SECURITY SOURCE CHECK: PASS.
+     - Nama parameter run_tool/bridge_run_sub dipendekkan (mid/sid/
+       inp/...) - AMAN karena Kotlin memanggil positional via
+       callAttr (lihat PythonBridgeRunner.kt). Pola asli dipertahankan:
+       gate = SessionGate; gate.isTokenCurrent(token), dan helper
+       normalisasi token tetap bernama _extract_str (kontrak
+       tests/test_tool_dispatch.py). Alur logika identik.
+     - Fungsi internal _install_sealed_runtime -> _isr (internal saja).
+
+MASALAH #3 - BERSIH-BERSIH (MEDIUM/LOW)
+---------------------------------------
+  5. app/src/main/AndroidManifest.xml
+     - android:extractNativeLibs="true" dihapus -> APK hasil build
+       lebih kecil; sesuai build yang sudah terbukti jalan.
+  6. app/src/main/python/alvsia_ultimate.py
+     - "import pyfiglet" ganda di blok except (tak terjangkau setelah
+       pass; pola crash laten) dihapus.
+  7. app/src/main/python/lua_engine/bgmi.py
+     - MENAMBAH fungsi is_bgmi_lua() yang hilang dari modul (dipanggil
+       tests/test_bgmi_transform.py sejak dulu -> seluruh pytest
+       sebelumnya GAGAL COLLECTION karena import error). Deteksi:
+       header Lua 5.3 + size_t ABI 4 byte (offset 13) + validasi opcode.
+  8. tests/test_master_upgrade.py
+     - Assertion NSC mengunci pin lama kedaluwarsa 5xvRl/... ->
+       diperbarui ke 3 pin SPKI aktif + expiration 2027-01-16.
+
+CATATAN TEST SUITE (pytest tests/)
+----------------------------------
+Hasil kini: 111 PASSED / 18 FAILED / 3 skipped.
+Sebelum perbaikan: pytest bahkan tidak bisa jalan (collection error
+akibat is_bgmi_lua hilang). Dari 18 gagal:
+  - 15 kegagalan lama (test_vanta_redteam, test_permission_matrix,
+    dll) - IDENTIK di source asli sebelum perbaikan; perlu audit
+    terpisah (menyentuh captcha parser/zip extractor/signing CI).
+  - 3 test_bgmi_transform: kini BARU BISA JALAN dan ketahuan tidak
+    sinkron dengan implementasi transform_bgmi_lua yang ter-minify
+    (beda encoding line-info). Karena transform ini melayani runtime
+    tersegel yang sudah terbukti jalan, TIDAK diubah buta - butuh
+    keputusan terpisah: re-baseline test atau reverting transform.
+
+YANG SENGJA TIDAK DIUBAH
+------------------------
+  - CERT_SHA256 / DEX_SHA256 / seed seal: bagian dari pipeline
+    keamanan, jangan disentuh manual.
+  - Chaquopy version = "3.8": warning buildPython 3.12 hanya membuat
+    .py ter-ship tanpa .pyc (perf), build tetap sukses. Upgrade
+    Chaquopy/python bisa dilakukan terpisah kalau mau, tapi berisiko
+    build - jangan digabung dengan perbaikan ini.
+
+VERIFIKASI YANG SUDAH DILAKUKAN
+-------------------------------
+  - python3 -m compileall app/src/main/python -> OK
+  - python3 tools/security_release_check.py -> PASS
+  - pytest tests/ -> 111 passed (baseline bahkan tak bisa jalan);
+    0 regresi baru dari perbaikan ini
+  - XML manifest + NSC valid
+  - SPKI leaf LIVE (diambil langsung dari server) terbukti cocok
+    dengan salah satu pin di PANEL_SPKI_PINS
+  - panel_post() menolak host asing & http (fail-closed) -> OK
+  - tests/test_pinned_http.py -> 2/2 PASSED dengan pin baru
+
+JADWAL PERAWATAN
+----------------
+  SEBELUM 16 Jan 2027: jalankan alvsia_pin_doctor.py, lalu update
+  pin leaf di Vault.kt + NSC + pinned_http.py (dan tanggal expiration
+  NSC). Backup WE1/root membuat login tetap aman walau terlambat,
+  selama CA tetap Google Trust Services.

@@ -201,8 +201,7 @@ else:
 try:
     import pyfiglet
 except ImportError:
-    pass  # optional dependency unavailable offline
-    import pyfiglet
+    pass  # optional dependency unavailable offline (stub sudah dipasang di atas)
 
 try:
     from rich.console import Console

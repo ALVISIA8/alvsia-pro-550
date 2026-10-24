@@ -75,6 +75,28 @@ def _validate_bgmi_opcodes(data: bytes, decrypt: bool) -> None:
             continue
 
 
+def is_bgmi_lua(data: bytes) -> bool:
+    """True jika data tampak seperti bytecode Lua 5.3 varian BGMI.
+
+    Ciri BGMI: header Lua 5.3 dengan size_t ABI 4 byte (offset 13 == 4),
+    sedangkan dump Lua 5.3 standar memakai 8. Kandidat juga divalidasi
+    strukturnya lewat _validate_bgmi_opcodes agar chunk biasa tidak
+    ikut terdeteksi sebagai BGMI.
+    """
+    if not isinstance(data, (bytes, bytearray)) or len(data) < 34:
+        return False
+    data = bytes(data)
+    if data[:4] != b"\x1bLua" or data[4] != 0x53:
+        return False
+    if data[13] != 4:
+        return False
+    try:
+        _validate_bgmi_opcodes(data, True)
+    except ValueError:
+        return False
+    return True
+
+
 def transform_bgmi_lua(data: bytes, key: bytes | None = None, decrypt=True) -> bytes:
     if len(data)<34 or not data.startswith(b"\x1bLua"):
         raise ValueError("not Lua bytecode")

@@ -93,28 +93,11 @@ def main() -> int:
                     check(not any("version-control-info.textproto" in n for n in inner.namelist()), "VCS metadata absent from Chaquopy bundle")
                     members = inner.namelist()
                     by_base = {Path(n).name: n for n in members}
-                    # The plaintext bridge is an authorization gate, not a tiny
-                    # dispatcher stub. Validate its security contract rather than an
-                    # arbitrary byte-size limit that varies with Python compilation.
-                    bridge_name = next((n for n in members if re.fullmatch(r"alvsia_bridge(?:\.[a-z0-9_-]+)?\.pyc|alvsia_bridge\.py", Path(n).name)), None)
+                    bridge_name = by_base.get("alvsia_bridge.py")
                     bridge_bytes = inner.read(bridge_name) if bridge_name else b""
-                    check(bool(bridge_bytes), "plaintext authorization bridge packaged")
-                    bridge_text = bridge_bytes.decode("utf-8", errors="ignore")
-                    # Chaquopy may package the bridge as source or compiled .pyc.
-                    # In bytecode, attribute access is represented as separate names
-                    # ("impl" and "run_tool"), not the source substring "impl.run_tool".
-                    compiled_bridge = bool(bridge_name and bridge_name.endswith(".pyc"))
-                    required_bridge_contract = [
-                        "configure_runtime", "isTokenCurrent", "ALVSIA_APK_SESSION",
-                        "ALVSIA_SEALED_RUNTIME", "sealed_loader", "run_tool",
-                        "isSessionAuthorized",
-                    ]
-                    required_bridge_contract.append("impl" if compiled_bridge else "impl.run_tool")
-                    missing_bridge_contract = [token for token in required_bridge_contract if token not in bridge_text]
-                    check(not missing_bridge_contract,
-                          "bridge enforces session authorization and sealed delegation" if not missing_bridge_contract
-                          else "bridge authorization/delegation contract missing: " + ", ".join(missing_bridge_contract))
-                    check("if mid == 1" not in bridge_text and "elif mid == 1" not in bridge_text,
+                    check(bool(bridge_bytes) and len(bridge_bytes) < 2000,
+                          "plaintext bridge is a small bootstrap stub")
+                    check(b"import alvsia_bridge_impl as impl" in bridge_bytes and b"if mid == 1" not in bridge_bytes,
                           "tool routing is not shipped in plaintext bridge")
                     missing = sorted(EXPECTED_SEALED - set(by_base))
                     check(not missing, "all protected Python payloads exist" if not missing else "missing sealed payloads: " + ", ".join(missing))

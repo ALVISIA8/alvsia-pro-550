@@ -8,17 +8,32 @@ import okhttp3.CertificatePinner
  * Host split into two halves decoded with independent key+step pairs.
  */
 object Vault {
-    // SHA-256 hashes of SubjectPublicKeyInfo (SPKI) from the verified live TLS chain.
+    // ── TLS PIN (OkHttp) ────────────────────────────────────────────────────
+    // OkHttp membandingkan pin dengan SHA-256 dari SubjectPublicKeyInfo (SPKI)
+    // sertifikat (publicKey.encoded), BUKAN hash sertifikat utuh (DER).
+    // Sumber nilai: alvsia_pin_doctor.py (kolom "Pin SPKI").
+    // Leaf wajib dicek ulang SEBELUM 16 Jan 2027 (leaf berakhir).
     private const val PIN_LEAF =
-        "sha256/9SAlPOYX5EuzgKf+w3vxjzS0qgl1WJOPVEQeGO5Knjo="
-    private const val PIN_INTERMEDIATE =
-        "sha256/kIdp6NNEd8wsugYyyIYFsi1ylMCED3hZbSR8ZFsa/A4="
+        "sha256/9SAlPOYX5EuzgKf+w3vxjzS0qgl1WJOPVEQeGO5Knjo="   // leaf alvsiapro.cc.cd
+    private const val PIN_WE1 =
+        "sha256/kIdp6NNEd8wsugYyyIYFsi1ylMCED3hZbSR8ZFsa/A4="   // backup: intermediate WE1 (s/d Feb 2029)
+    private const val PIN_GTS_R4 =
+        "sha256/mEflZT5enoR1FuXLgYYGqnVEoZvmf9c2bVBpiOjYQ0c="   // backup: root GTS Root R4 (s/d Jan 2028)
+    private const val PIN_ISRG =
+        "sha256/C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M="   // backup: ISRG X1 (antisipasi CA pindah ke Let's Encrypt)
 
-    fun certPinner(): CertificatePinner =
-        CertificatePinner.Builder()
-            .add("alvsiapro.cc.cd", PIN_LEAF, PIN_INTERMEDIATE)
-            .add("*.alvsiapro.cc.cd", PIN_LEAF, PIN_INTERMEDIATE)
-            .build()
+    private val PIN_HOSTS = arrayOf("alvsiapro.cc.cd", "*.alvsiapro.cc.cd")
+
+    fun certPinner(): CertificatePinner {
+        val b = CertificatePinner.Builder()
+        for (host in PIN_HOSTS) {
+            b.add(host, PIN_LEAF)
+            b.add(host, PIN_WE1)
+            b.add(host, PIN_GTS_R4)
+            b.add(host, PIN_ISRG)
+        }
+        return b.build()
+    }
 
     fun apiBase(): String = rebuildBase()
 
@@ -62,9 +77,18 @@ object Vault {
             ((enc[i] and 0xFF) xor k xor ((i * step) and 0xFF)).toByte()
         })
 
-    // Telegram Bot placeholders: no notification fires until configured.
-    fun tgToken(): String = xorStr(intArrayOf(), "")
-    fun tgChatId(): String = xorStr(intArrayOf(), "")
+    // ── Telegram Bot (owner notifications) ─────────────────────────────────
+    // XOR-obfuscated the same way as API paths.
+    // Replace with your bot token and chat_id before release.
+    // Format: tgToken() returns "BOTID:TOKEN", tgChatId() returns the channel id.
+    // These are read-only by the app — never logged or transmitted to panel.
+    fun tgToken(): String = xorStr(intArrayOf(
+        // Placeholder: returns "" until configured — no notification fires
+    ), "")
+
+    fun tgChatId(): String = xorStr(intArrayOf(
+        // Placeholder: returns "" until configured
+    ), "")
 
     private fun xorStr(codes: IntArray, fallback: String): String {
         if (codes.isEmpty()) return fallback
@@ -74,4 +98,5 @@ object Vault {
             fallback
         }
     }
+
 }

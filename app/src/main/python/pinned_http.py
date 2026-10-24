@@ -6,14 +6,19 @@ import hashlib
 import hmac
 from urllib.parse import urlparse
 
-PANEL_HOST = "alvsiapro.cc.cd"
-# Current-chain pin from alvsia_pin_doctor.py plus the leaf SPKI reported
-# by OkHttp on the affected device. The TLS CA/hostname checks remain enabled.
-# Review/refresh this set before the 2027-01-16 certificate pin expiry.
-PANEL_SPKI_SHA256_PINS = tuple(base64.b64decode(value) for value in (
-    "c2R2a5MzD4I07EihvqwZxLlUul6UG4LWRGgYQP46vAo=",
-    "9SAIPOYX5EuzgKf+w3vxjzS0qg1WJOPVEQeG05Knjo=",
-))
+PANEL_HOSTS = frozenset(("alvsiapro.cc.cd", "api.alvsiapro.cc.cd"))
+# Pin SPKI aktif + backup. OkHttp membandingkan SHA-256 dari SPKI
+# (publicKey.encoded) -- format yang sama dipakai di sini.
+# Sumber nilai: alvsia_pin_doctor.py. Leaf dicek ulang sebelum 16 Jan 2027.
+PANEL_SPKI_PINS = tuple(
+    base64.b64decode(p)
+    for p in (
+        "9SAlPOYX5EuzgKf+w3vxjzS0qgl1WJOPVEQeGO5Knjo=",  # leaf alvsiapro.cc.cd
+        "kIdp6NNEd8wsugYyyIYFsi1ylMCED3hZbSR8ZFsa/A4=",  # intermediate WE1
+        "mEflZT5enoR1FuXLgYYGqnVEoZvmf9c2bVBpiOjYQ0c=",  # root GTS Root R4
+        "C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M=",  # backup ISRG Root X1
+    )
+)
 
 
 def _read_tlv(data: bytes, pos: int):
@@ -63,7 +68,7 @@ def extract_spki_der(cert_der: bytes) -> bytes:
 def panel_post(url: str, **kwargs):
     """POST only to the configured panel, verify system TLS and pin the peer SPKI."""
     parsed = urlparse(url)
-    if parsed.scheme != "https" or parsed.hostname != PANEL_HOST:
+    if parsed.scheme != "https" or parsed.hostname not in PANEL_HOSTS:
         raise ValueError("Python panel client refuses an unpinned host")
     import requests
     session = requests.Session()
@@ -83,7 +88,7 @@ def panel_post(url: str, **kwargs):
         if not cert_der:
             raise requests.exceptions.SSLError("panel peer certificate unavailable")
         actual = hashlib.sha256(extract_spki_der(cert_der)).digest()
-        if not any(hmac.compare_digest(actual, pin) for pin in PANEL_SPKI_SHA256_PINS):
+        if not any(hmac.compare_digest(actual, pin) for pin in PANEL_SPKI_PINS):
             raise requests.exceptions.SSLError("panel SPKI pin mismatch")
         # Consume only after pin validation so the response can be safely used
         # after the temporary Session is closed.

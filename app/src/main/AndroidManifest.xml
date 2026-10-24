@@ -52,7 +52,6 @@
 
     <application
         android:name=".AlvisiaApp"
-        android:extractNativeLibs="true"
         android:allowBackup="false"
         android:requestLegacyExternalStorage="true"
         android:icon="@mipmap/ic_launcher"

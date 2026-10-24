@@ -327,7 +327,14 @@ class TestS7SecurityPreserved(unittest.TestCase):
     def test_network_security_config_keeps_pin(self):
         nsc = read(APP / "src" / "main" / "res" / "xml" / "network_security_config.xml")
         self.assertIn("alvsiapro.cc.cd", nsc)
-        self.assertIn("5xvRl/EyzQlZHSgU5dDZKbqmr+rFywWYzvSEEmJgC+Q=", nsc)
+        # Pin SPKI aktif (leaf) + backup intermediate/root. Update bersamaan
+        # dengan Vault.kt & pinned_http.py saat Cloudflare memperbarui leaf
+        # (cek ulang sebelum 16 Jan 2027). Pin lama 5xvRl/... sudah
+        # kedaluwarsa (sertifikat pra-renewal 18 Okt 2026) dan dihapus.
+        self.assertIn("9SAlPOYX5EuzgKf+w3vxjzS0qgl1WJOPVEQeGO5Knjo=", nsc)
+        self.assertIn("kIdp6NNEd8wsugYyyIYFsi1ylMCED3hZbSR8ZFsa/A4=", nsc)
+        self.assertIn("mEflZT5enoR1FuXLgYYGqnVEoZvmf9c2bVBpiOjYQ0c=", nsc)
+        self.assertIn('expiration="2027-01-16"', nsc)
 
 
 class TestS8Coverage(unittest.TestCase):
