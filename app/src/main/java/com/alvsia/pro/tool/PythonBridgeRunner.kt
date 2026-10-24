@@ -131,9 +131,16 @@ object PythonBridgeRunner {
             if (!configureOk) {
                 val returnedType = configure?.javaClass?.simpleName ?: "null"
                 val returnedValue = configure?.toString()?.take(80) ?: "null"
+                val pythonDiagnostic = try {
+                    val diag = callAttr.invoke(bridge, "configure_diagnostic", emptyArray<Any?>())
+                    diag?.toString()?.take(180) ?: "diagnostic_unavailable"
+                } catch (diagError: Throwable) {
+                    "diagnostic_call_failed:" + ((diagError.cause ?: diagError).javaClass.simpleName)
+                }
                 return false to listOf(
                     "X AUTH DIAG: Kotlin SessionGate accepted token, but Python configure_runtime did not return True",
-                    "diagnostic: return_type=$returnedType; return_value=$returnedValue; chaquopy_started=$isStarted; token_shape=64_hex"
+                    "diagnostic: return_type=$returnedType; return_value=$returnedValue; chaquopy_started=$isStarted; token_shape=64_hex",
+                    "Python configure stage: $pythonDiagnostic"
                 )
             }
             val rawResult = callAttr.invoke(
