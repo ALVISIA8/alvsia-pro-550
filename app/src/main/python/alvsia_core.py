@@ -1,7 +1,7 @@
 """ALVSIA PRO 5.5 — pure PAK core (non-interactive).
 
 Source: cleaned PakCore engine. Branding ALVSIA.
-Auth: ALVSIA_APK_SESSION=1 bypasses RSA operation proof (panel key login already verified).
+Auth: ALVSIA_APK_SESSION=1 permits low-privilege calls only; protected operations require a valid server-signed RSA grant.
 """
 from __future__ import annotations
 from __future__ import annotations
