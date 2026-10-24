@@ -497,6 +497,7 @@ class LuaBytecodeParser:
             self._p += self.lua_int_sz  # LUAC_INT
             self._p += lua_num_sz       # LUAC_NUM
         elif self.ver == 0x51:
+            self._u8()  # endianness flag; supported chunks are decoded little-endian
             self.int_sz  = self._u8()
             self.szt_sz  = self._u8()
             self.ins_sz  = self._u8()
@@ -508,93 +509,111 @@ class LuaBytecodeParser:
         return True
 
     def _parse_proto(self) -> LuaProtoInfo:
-        """Parse one Lua proto (function prototype).
-
-        Lua 5.3 proto layout (ldump.c DumpFunction):
-        source_string | linedefined | lastlinedefined |
-        numparams | is_vararg | maxstacksize |
-        sizecode + code[] | sizek + constants[] |
-        sizeupvalues + upvalues[] | sizep + sub-protos[] |
-        sizelineinfo + [...] | sizelocvars + [...] | sizeupvalnames + [...]
-
-        There is NO leading upvalue-count byte at the top of a proto —
-        that was a Lua 5.1 artefact.  Lua 5.1 also uses different size
-        fields; we handle both versions via self.ver.
-        """
+        """Parse one Lua function prototype for standard Lua 5.1 or 5.3 chunks."""
         info = LuaProtoInfo(source_name='', line_defined=0, last_line=0)
         try:
-            # Source name string (first field in all Lua versions)
+            # Lua 5.1 stores nups before source; Lua 5.3 does not.
+            if self.ver == 0x51:
+                self._u8()  # nups
             src = self._lua_string() or ''
             info.source_name = src
-
-            # Line numbers
             info.line_defined = self._int()
-            info.last_line    = self._int()
+            info.last_line = self._int()
 
-            # Proto header flags
-            info.num_params = self._u8()   # numparams
-            self._u8()                     # is_vararg
-            info.max_stack  = self._u8()   # maxstacksize
+            info.num_params = self._u8()
+            self._u8()  # is_vararg
+            info.max_stack = self._u8()
 
-            # Instruction array
             n_ins = self._u32()
             info.n_instructions = n_ins
             self._p += n_ins * self.ins_sz
 
-            # Constant array
             n_const = self._u32()
             info.n_constants = n_const
             for _ in range(n_const):
                 ct = self._u8()
-                if   ct == 0:       pass                    # LUA_TNIL
-                elif ct == 1:       self._u8()              # LUA_TBOOLEAN
-                elif ct == 3:                              # LUA_TNUMFLT
+                if ct == 0:  # nil
+                    continue
+                if ct == 1:  # boolean
+                    self._u8()
+                elif ct == 3:  # number (Lua 5.1) / float (Lua 5.3)
                     off = self._p
-                    v   = self._dbl()
-                    info.numbers.append(LuaNumberConst(off, v))
-                elif ct == 19:                             # LUA_TNUMINT (Lua 5.3)
+                    if self.ver == 0x51 and self.int_is_float:
+                        if self.num_sz == 4:
+                            value = _struct.unpack_from('<i', self._d, self._p)[0]
+                        elif self.num_sz == 8:
+                            value = _struct.unpack_from('<q', self._d, self._p)[0]
+                        else:
+                            raise ValueError("Unsupported Lua 5.1 number size")
+                        self._p += self.num_sz
+                    else:
+                        if self.num_sz == 4:
+                            value = _struct.unpack_from('<f', self._d, self._p)[0]
+                        elif self.num_sz == 8:
+                            value = _struct.unpack_from('<d', self._d, self._p)[0]
+                        else:
+                            raise ValueError("Unsupported Lua number size")
+                        self._p += self.num_sz
+                    info.numbers.append(LuaNumberConst(off, value))
+                elif ct == 19 and self.ver == 0x53:  # Lua 5.3 integer
                     off = self._p
-                    v   = self._lua_integer()
-                    info.numbers.append(LuaNumberConst(off, v))
-                elif ct == 2:       self._int()             # legacy integer-like tag
-                elif ct in (4,20):                          # LUA_TSTRING
+                    value = self._lua_integer()
+                    info.numbers.append(LuaNumberConst(off, value))
+                elif ct == 2 and self.ver == 0x51:  # legacy integer number
                     off = self._p
-                    s   = self._lua_string()
-                    if s: info.strings.append(LuaStringConst(off, s))
+                    value = _struct.unpack_from('<i', self._d, self._p)[0]
+                    self._p += 4
+                    info.numbers.append(LuaNumberConst(off, value))
+                elif ct in ((4,) if self.ver == 0x51 else (4, 20)):
+                    off = self._p
+                    value = self._lua_string()
+                    if value is not None:
+                        info.strings.append(LuaStringConst(off, value))
+                else:
+                    raise ValueError(f"Unsupported Lua constant tag {ct} for version {self.ver:#x}")
 
-            # Upvalue array  [instack(1) idx(1)]  ×  n
-            n_up = self._u32()
-            self._p += n_up * 2
+            if self.ver == 0x51:
+                n_sub = self._u32()
+                info.n_protos = n_sub
+                for _ in range(n_sub):
+                    sub = self._parse_proto()
+                    info.strings.extend(sub.strings)
+                    info.numbers.extend(sub.numbers)
 
-            # Sub-proto array (recurse)
-            n_proto = self._u32()
-            info.n_protos = n_proto
-            for _ in range(n_proto):
-                sub = self._parse_proto()
-                info.strings.extend(sub.strings)
-                info.numbers.extend(sub.numbers)
+                n_line = self._u32()
+                self._p += n_line * self.int_sz
+                n_loc = self._u32()
+                for _ in range(n_loc):
+                    self._lua_string()
+                    self._int()
+                    self._int()
+                n_names = self._u32()
+                for _ in range(n_names):
+                    self._lua_string()
+            else:
+                n_up = self._u32()
+                self._p += n_up * 2
+                n_proto = self._u32()
+                info.n_protos = n_proto
+                for _ in range(n_proto):
+                    sub = self._parse_proto()
+                    info.strings.extend(sub.strings)
+                    info.numbers.extend(sub.numbers)
 
-            # Debug info — skip all three tables
-            for _ in range(3):
-                cnt = self._u32()
-                if cnt == 0: continue
-                # lineinfo: cnt × 4 bytes; locvars: cnt × (str + 2 ints);
-                # upvalnames: cnt × str — just skip by reading the right types
-                # For safety, break after reading count to avoid over-reading
-                # on malformed / BGMI-modified debug sections.
-                # We don't use debug info, so abandon the rest on any error.
-                try:
-                    for _ in range(cnt):
-                        # Attempt cheapest skip: assume 4-byte entries for lineinfo
-                        # and string entries for the other two. This is best-effort.
-                        self._u32()
-                except (IndexError, _struct.error):
-                    break
-
-        except (IndexError, _struct.error):
-            pass
+                # Lua 5.3 debug tables: lineinfo ints, local variables, upvalue names.
+                n_line = self._u32()
+                self._p += n_line * self.int_sz
+                n_loc = self._u32()
+                for _ in range(n_loc):
+                    self._lua_string()
+                    self._int()
+                    self._int()
+                n_names = self._u32()
+                for _ in range(n_names):
+                    self._lua_string()
+        except (IndexError, _struct.error) as exc:
+            raise ValueError("Truncated or malformed Lua prototype") from exc
         return info
-
     def parse(self) -> LuaProtoInfo:
         """Parse the file and return a ``LuaProtoInfo`` with all constants."""
         if not self._parse_header():
