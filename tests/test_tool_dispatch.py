@@ -1,4 +1,4 @@
-"""Static regression checks for the 18-module Android tool menu/bridge contract."""
+"""Static regression checks for the 19-module Android tool menu/bridge contract."""
 from pathlib import Path
 import re
 import ast
@@ -88,10 +88,30 @@ def test_frida_spawn_preserves_full_package_name():
         assert "-f com.tencent " not in output, output
 
 
-def test_catalog_contains_all_eighteen_modules():
+def test_catalog_contains_all_nineteen_modules():
     catalog = CATALOG.read_text(encoding="utf-8")
-    ids = [int(x) for x in re.findall(r'ToolItem\((\d+),', catalog)]
-    assert ids == list(range(1, 19)), f"Expected module IDs 1..18 in order, got {ids}"
+    ids = [int(x) for x in re.findall(r'ToolItem\\((\\d+),', catalog)]
+    assert ids == list(range(1, 20)), f"Expected module IDs 1..19 in order, got {ids}"
+    assert 'ToolItem(19, "ALVSIA PRIVATE TOOL"' in catalog
+
+
+def test_private_module_19_menu_and_dispatch_contract():
+    menus = MENUS.read_text(encoding="utf-8")
+    catalog = CATALOG.read_text(encoding="utf-8")
+    bridge = BRIDGE.read_text(encoding="utf-8") + "\\n" + BRIDGE_IMPL.read_text(encoding="utf-8")
+    assert '19 -> "ALVSIA PRIVATE TOOL"' in menus
+    private_menu = menus.split("// Module 19 — ALVSIA PRIVATE TOOL", 1)[1].split("\\n    )", 1)[0]
+    private_ids = re.findall(r'SubTool\\(\\s*"([a-zA-Z0-9_]+)"', private_menu)
+    expected = [
+        "priv_zuc_decrypt", "priv_aes_scan", "priv_xor_recover",
+        "priv_lua_parse", "priv_lua_convert", "priv_lua_heping",
+        "priv_compress_fit", "priv_apk_audit", "priv_apk_manifest",
+        "priv_str_recover", "priv_entropy_map", "priv_pak_manifest",
+    ]
+    assert private_ids == expected, f"Module 19 menu changed unexpectedly: {private_ids}"
+    missing = [sid for sid in expected if f'"{sid}"' not in bridge]
+    assert not missing, f"Module 19 items lack bridge dispatch routes: {missing}"
+    assert "sealed runtime required" in menus.lower()
 
 
 def test_engine_surfaces_bridge_failures():
