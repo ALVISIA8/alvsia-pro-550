@@ -56,6 +56,18 @@ workflows:
           chmod +x ./gradlew
           java -version
 
+      - name: Install matching Python 3.8 for Chaquopy
+        script: |
+          set -euo pipefail
+          if ! command -v uv >/dev/null 2>&1; then
+            brew install uv
+          fi
+          uv python install 3.8.20
+          PYTHON38="$(uv python find 3.8.20)"
+          test -x "$PYTHON38" || { echo "ERROR: Python 3.8 executable unavailable"; exit 1; }
+          "$PYTHON38" --version
+          echo "CHAQUOPY_BUILD_PYTHON=$PYTHON38" >> "$CM_ENV"
+
       - name: Generate per-build seal seed
         script: |
           set -e
