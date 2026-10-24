@@ -127,13 +127,33 @@ def run_zip_tree(src_dir, dest_zip):
 
 
 def run_unzip(src, dest_dir):
+    """Extract ZIP entries only beneath dest_dir; reject traversal and symlinks."""
     src = Path(src)
     dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
+    root = dest_dir.resolve()
     with zipfile.ZipFile(src, "r") as z:
-        z.extractall(dest_dir)
-    n = sum(1 for _ in dest_dir.rglob("*") if _.is_file())
-    return {"ok": True, "out": str(dest_dir), "files": n}
+        for info in z.infolist():
+            # ZIP paths use '/', but reject Windows separators too.
+            name = info.filename.replace("\\", "/")
+            member = Path(name)
+            if member.is_absolute() or any(part == ".." for part in member.parts):
+                raise ValueError(f"unsafe ZIP entry path: {info.filename!r}")
+            target = (root / member).resolve()
+            if target != root and root not in target.parents:
+                raise ValueError(f"ZIP entry escapes destination: {info.filename!r}")
+            # ZIP archives can encode Unix symlinks in external attributes.
+            mode = (info.external_attr >> 16) & 0o170000
+            if mode == 0o120000:
+                raise ValueError(f"symlink ZIP entry is not allowed: {info.filename!r}")
+            if info.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with z.open(info, "r") as src_file, target.open("wb") as dst_file:
+                shutil.copyfileobj(src_file, dst_file, length=1024 * 1024)
+    n = sum(1 for item in root.rglob("*") if item.is_file())
+    return {"ok": True, "out": str(root), "files": n}
 
 
 def run_hash_file(path, out_txt=None):
