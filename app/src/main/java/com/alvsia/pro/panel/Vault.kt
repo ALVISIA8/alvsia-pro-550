@@ -8,20 +8,16 @@ import okhttp3.CertificatePinner
  * Host split into two halves decoded with independent key+step pairs.
  */
 object Vault {
-    private const val PIN_LEAF = "sha256/c2R2a5MzD4I07EihvqwZxLlUul6UG4LWRGgYQP46vAo="
-    private const val PIN_INTERMEDIATE = "sha256/O/FzTSeTrRl/1rII4zJhSIfwXUJSW4FEvSZ6sEg1tJ8="
-    private const val PIN_ROOT = "sha256/B7cpNaOeyLu/vfjqnaju9PC8DpwqvNKDStaCzC0CZG0="
-    private const val PIN_ISRG_ROOT_X1 = "sha256/C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M="
-    // Additional SPKI values reported by OkHttp from the device's failed handshake.
-    private const val PIN_OBSERVED_LEAF = "sha256/9SAIPOYX5EuzgKf+w3vxjzS0qg1WJOPVEQeG05Knjo="
-    private const val PIN_OBSERVED_INTERMEDIATE = "sha256/kldp6NNED8wsugYyyIYFsi1yIMCED3hZbSR8ZFsa/A4="
-    private const val PIN_OBSERVED_ROOT = "sha256/mEfIZT5enoR1FuXLgYYGqnVEoZvmf9c2bVBpiOjYQ0c="
+    // SHA-256 hashes of SubjectPublicKeyInfo (SPKI) from the verified live TLS chain.
+    private const val PIN_LEAF =
+        "sha256/9SAlPOYX5EuzgKf+w3vxjzS0qgl1WJOPVEQeGO5Knjo="
+    private const val PIN_INTERMEDIATE =
+        "sha256/kIdp6NNEd8wsugYyyIYFsi1ylMCED3hZbSR8ZFsa/A4="
 
     fun certPinner(): CertificatePinner =
         CertificatePinner.Builder()
-            // OkHttp CertificatePinner hashes SubjectPublicKeyInfo (SPKI).
-            .add("alvsiapro.cc.cd", PIN_LEAF, PIN_INTERMEDIATE, PIN_ROOT, PIN_ISRG_ROOT_X1, PIN_OBSERVED_LEAF, PIN_OBSERVED_INTERMEDIATE, PIN_OBSERVED_ROOT)
-            .add("*.alvsiapro.cc.cd", PIN_LEAF, PIN_INTERMEDIATE, PIN_ROOT, PIN_ISRG_ROOT_X1, PIN_OBSERVED_LEAF, PIN_OBSERVED_INTERMEDIATE, PIN_OBSERVED_ROOT)
+            .add("alvsiapro.cc.cd", PIN_LEAF, PIN_INTERMEDIATE)
+            .add("*.alvsiapro.cc.cd", PIN_LEAF, PIN_INTERMEDIATE)
             .build()
 
     fun apiBase(): String = rebuildBase()
@@ -66,18 +62,9 @@ object Vault {
             ((enc[i] and 0xFF) xor k xor ((i * step) and 0xFF)).toByte()
         })
 
-    // ── Telegram Bot (owner notifications) ─────────────────────────────────
-    // XOR-obfuscated the same way as API paths.
-    // Replace with your bot token and chat_id before release.
-    // Format: tgToken() returns "BOTID:TOKEN", tgChatId() returns the channel id.
-    // These are read-only by the app — never logged or transmitted to panel.
-    fun tgToken(): String = xorStr(intArrayOf(
-        // Placeholder: returns "" until configured — no notification fires
-    ), "")
-
-    fun tgChatId(): String = xorStr(intArrayOf(
-        // Placeholder: returns "" until configured
-    ), "")
+    // Telegram Bot placeholders: no notification fires until configured.
+    fun tgToken(): String = xorStr(intArrayOf(), "")
+    fun tgChatId(): String = xorStr(intArrayOf(), "")
 
     private fun xorStr(codes: IntArray, fallback: String): String {
         if (codes.isEmpty()) return fallback
@@ -87,5 +74,4 @@ object Vault {
             fallback
         }
     }
-
 }
