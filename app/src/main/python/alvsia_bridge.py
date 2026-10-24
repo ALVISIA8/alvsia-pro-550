@@ -14,23 +14,48 @@ def _isr():
     except Exception: pass
 _CD = ""
 def configure_diagnostic(): return _CD
+def _extract_str(value):
+    """Convert Python strings and Java String proxies without exposing token data."""
+    if isinstance(value, str):
+        return value
+    try:
+        java_value = value.toString()
+        if java_value is not None:
+            return str(java_value)
+    except Exception:
+        pass
+    return str(value)
+
 def configure_runtime(token, sealed_runtime="1"):
     global _CD
+    stage = "token_normalize"
     try:
-        token = str(token).strip()
+        token = _extract_str(token).strip()
         if not re.fullmatch(r"[0-9A-Fa-f]{64}", token):
             _CD = "bad_token"; return False
+        stage = "session_gate_import"
         from com.alvsia.pro.sec import SessionGate
         gate = SessionGate
+        stage = "session_token_check"
         if not bool(gate.isTokenCurrent(token)):
             _CD = "gate_reject"; return False
+        stage = "runtime_setup"
         os.environ.pop("ALVSIA_SESSION_TOKEN", None)
         os.environ["ALVSIA_APK_SESSION"] = "1"
-        os.environ["ALVSIA_SEALED_RUNTIME"] = "1" if str(sealed_runtime).strip() == "1" else "0"
-        _isr(); _CD = "ok"; return True
+        os.environ["ALVSIA_SEALED_RUNTIME"] = "1" if _extract_str(sealed_runtime).strip() == "1" else "0"
+        stage = "sealed_runtime_install"
+        _isr()
+        _CD = "ok"; return True
     except Exception as exc:
         missing = re.sub(r"[^A-Za-z0-9_.-]", "", str(getattr(exc, "name", "") or ""))[:100]
-        _CD = "config_exc:" + type(exc).__name__ + (":" + missing if missing else ""); return False
+        detail = re.sub(r"[^A-Za-z0-9_.:/ -]", "?", str(exc or ""))[:140].strip()
+        parts = ["config_exc", stage, type(exc).__name__]
+        if missing:
+            parts.append("module=" + missing)
+        if detail:
+            parts.append("detail=" + detail)
+        _CD = ":".join(parts)
+        return False
 def run_tool(mid, sid, inp, out_root, engine_dir, jars_dir):
     if not _authorized() or os.environ.get("ALVSIA_APK_SESSION") != "1": return "X AUTH: login required"
     _isr()
