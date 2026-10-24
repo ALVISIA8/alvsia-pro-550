@@ -14,7 +14,7 @@ def _isr():
  except Exception:pass
 _CD=""
 def configure_diagnostic():return _CD
-def _s(v):
+def _extract_str(v):
  if isinstance(v,str):return v
  try:return str(v.toString())
  except Exception:return str(v)
@@ -22,7 +22,7 @@ def configure_runtime(token,sealed_runtime="1"):
  global _CD
  stage="token_normalize"
  try:
-  token=_s(token).strip()
+  token=_extract_str(token).strip()
   if not re.fullmatch(r"[0-9A-Fa-f]{64}",token):_CD="bad_token";return False
   stage="session_gate_import"
   from com.alvsia.pro.sec import SessionGate
@@ -31,7 +31,7 @@ def configure_runtime(token,sealed_runtime="1"):
   stage="runtime_setup"
   os.environ.pop("ALVSIA_SESSION_TOKEN",None)
   os.environ["ALVSIA_APK_SESSION"]="1"
-  os.environ["ALVSIA_SEALED_RUNTIME"]="1" if _s(sealed_runtime).strip()=="1" else "0"
+  os.environ["ALVSIA_SEALED_RUNTIME"]="1" if _extract_str(sealed_runtime).strip()=="1" else "0"
   stage="sealed_runtime_install"
   _isr();_CD="ok";return True
  except Exception as e:
