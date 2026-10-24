@@ -15,6 +15,9 @@
 
 # ── ALVISIA security layer — hard keep ───────────────────────────────
 -keep class com.alvsia.pro.sec.NativeGuard { *; }
+# Python/Chaquopy resolves this Kotlin object by its fully-qualified JVM name.
+# Preserve the class and @JvmStatic bridge methods in minified release builds.
+-keep class com.alvsia.pro.sec.SessionGate { *; }
 
 # Sprint 1: Keep DexGuardian + AntiHook (referenced by RaspEngine)
 -keep class com.alvsia.pro.sec.DexGuardian { *; }
