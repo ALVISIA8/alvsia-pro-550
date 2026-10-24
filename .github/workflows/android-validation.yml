@@ -62,15 +62,15 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Python 3.8 for Chaquopy
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.8.20'
+      - name: Set up uv for Chaquopy Python
+        uses: astral-sh/setup-uv@v6
 
-      - name: Configure Chaquopy build Python
+      - name: Install Python 3.8 for Chaquopy
         run: |
           set -euo pipefail
-          PYTHON38="$(command -v python)"
+          uv python install 3.8.20
+          PYTHON38="$(uv python find 3.8.20)"
+          test -x "$PYTHON38"
           "$PYTHON38" --version
           echo "CHAQUOPY_BUILD_PYTHON=$PYTHON38" >> "$GITHUB_ENV"
 
