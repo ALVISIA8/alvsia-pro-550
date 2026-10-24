@@ -45,5 +45,50 @@ class PrivateToolEngineTests(unittest.TestCase):
         self.assertEqual(__import__("zlib").decompress(result), source)
 
 
+    def test_zuc_encrypt_decrypt_round_trip_with_fresh_instances(self):
+        key = bytes(range(16))
+        iv = bytes(range(16, 32))
+        plaintext = b"ALVSIA ZUC regression payload"
+        ciphertext = private.ZUCCipher(key, iv).encrypt(plaintext)
+        recovered = private.ZUCCipher(key, iv).decrypt(ciphertext)
+        self.assertEqual(recovered, plaintext)
+
+    def test_xor_recovery_returns_empty_for_short_input(self):
+        self.assertEqual(private.XORKeyRecovery.recover(b"too short"), [])
+
+    def test_entropy_analyze_reports_offsets_and_bounds(self):
+        data = bytes(64) + bytes(range(256))
+        blocks = private.EntropyAnalyzer.analyze(data, block_size=64)
+        self.assertEqual([offset for offset, _ in blocks], [0, 64, 128, 192, 256])
+        self.assertTrue(all(0.0 <= entropy <= 8.0 for _, entropy in blocks))
+        self.assertEqual(blocks[0][1], 0.0)
+
+    def test_apk_auditor_reports_zip_structure(self):
+        import tempfile
+        import zipfile
+        with tempfile.TemporaryDirectory() as td:
+            apk = Path(td) / "sample.apk"
+            with zipfile.ZipFile(apk, "w") as zf:
+                zf.writestr("AndroidManifest.xml", b"binary-manifest-placeholder")
+                zf.writestr("classes.dex", b"dex\n035\x00")
+                zf.writestr("lib/arm64-v8a/libsample.so", b"\x7fELF")
+            report = private.APKAuditor.audit(str(apk))
+            self.assertTrue(report["manifest_present"])
+            self.assertEqual(report["dex_count"], 1)
+            self.assertEqual(report["native_arches"], ["arm64-v8a"])
+            self.assertEqual(report["total_files"], 3)
+
+    def test_lua_parser_rejects_non_lua_magic(self):
+        with self.assertRaisesRegex(ValueError, "missing"):
+            private.LuaBytecodeParser(b"not a lua file").parse()
+
+    def test_compression_target_budget_is_respected(self):
+        source = b"A" * 4096
+        compressed = private.CompressionBestFit.compress(source, method="zlib", target_size=128)
+        self.assertIsNotNone(compressed)
+        self.assertLessEqual(len(compressed), 128)
+        self.assertEqual(__import__("zlib").decompress(compressed), source)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
