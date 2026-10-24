@@ -318,6 +318,18 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                         r = decompile_large(Path(ip), dest_lua, jars_dir=jars)
                         r.setdefault("lines", 0)
                         r.setdefault("mode", "streaming_fallback")
+                        # BGMI-VM structural recovery writes useful diagnostics but does
+                        # not recover original Lua source. Do not report it as a successful
+                        # decompile just because the analyzer produced recovery artifacts.
+                        if r.get("mode") == "bgmi_vm_partial" or r.get("recovered") is False:
+                            lines.append("PARTIAL mode=%s lines=0" % (r.get("mode", "partial")))
+                            report_path = r.get("report_out") or r.get("out")
+                            if report_path:
+                                lines.append("OUT -> %s" % report_path)
+                            if r.get("note"):
+                                lines.append("NOTE: %s" % r.get("note"))
+                            lines.append("NOTE: structural/constant recovery only; no validated Lua source was produced")
+                            return "\n".join(lines)
                         if r.get("ok"):
                             lines.append("OK mode=%s lines=%s" % (r.get("mode","?"), r.get("lines",0)))
                             lines.append("OUT -> %s" % r.get("out","(see OUT/LUA/)"))
