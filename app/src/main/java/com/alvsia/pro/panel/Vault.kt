@@ -12,12 +12,16 @@ object Vault {
     private const val PIN_INTERMEDIATE = "sha256/O/FzTSeTrRl/1rII4zJhSIfwXUJSW4FEvSZ6sEg1tJ8="
     private const val PIN_ROOT = "sha256/B7cpNaOeyLu/vfjqnaju9PC8DpwqvNKDStaCzC0CZG0="
     private const val PIN_ISRG_ROOT_X1 = "sha256/C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M="
+    // Additional SPKI values reported by OkHttp from the device's failed handshake.
+    private const val PIN_OBSERVED_LEAF = "sha256/9SAIPOYX5EuzgKf+w3vxjzS0qg1WJOPVEQeG05Knjo="
+    private const val PIN_OBSERVED_INTERMEDIATE = "sha256/kldp6NNED8wsugYyyIYFsi1yIMCED3hZbSR8ZFsa/A4="
+    private const val PIN_OBSERVED_ROOT = "sha256/mEfIZT5enoR1FuXLgYYGqnVEoZvmf9c2bVBpiOjYQ0c="
 
     fun certPinner(): CertificatePinner =
         CertificatePinner.Builder()
             // OkHttp CertificatePinner hashes SubjectPublicKeyInfo (SPKI).
-            .add("alvsiapro.cc.cd", PIN_LEAF, PIN_INTERMEDIATE, PIN_ROOT, PIN_ISRG_ROOT_X1)
-            .add("*.alvsiapro.cc.cd", PIN_LEAF, PIN_INTERMEDIATE, PIN_ROOT, PIN_ISRG_ROOT_X1)
+            .add("alvsiapro.cc.cd", PIN_LEAF, PIN_INTERMEDIATE, PIN_ROOT, PIN_ISRG_ROOT_X1, PIN_OBSERVED_LEAF, PIN_OBSERVED_INTERMEDIATE, PIN_OBSERVED_ROOT)
+            .add("*.alvsiapro.cc.cd", PIN_LEAF, PIN_INTERMEDIATE, PIN_ROOT, PIN_ISRG_ROOT_X1, PIN_OBSERVED_LEAF, PIN_OBSERVED_INTERMEDIATE, PIN_OBSERVED_ROOT)
             .build()
 
     fun apiBase(): String = rebuildBase()
