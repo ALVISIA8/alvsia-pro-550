@@ -96,13 +96,13 @@ def main() -> int:
                     # The plaintext bridge is an authorization gate, not a tiny
                     # dispatcher stub. Validate its security contract rather than an
                     # arbitrary byte-size limit that varies with Python compilation.
-                    bridge_name = next((n for n in members if Path(n).name == "alvsia_bridge.py"), None)
+                    bridge_name = next((n for n in members if re.fullmatch(r"alvsia_bridge(?:\.[a-z0-9_-]+)?\.pyc|alvsia_bridge\.py", Path(n).name)), None)
                     bridge_bytes = inner.read(bridge_name) if bridge_name else b""
                     check(bool(bridge_bytes), "plaintext authorization bridge packaged")
                     bridge_text = bridge_bytes.decode("utf-8", errors="ignore")
                     required_bridge_contract = (
-                        "def configure_runtime", "isTokenCurrent", "ALVSIA_APK_SESSION",
-                        "ALVSIA_SEALED_RUNTIME", "sealed_loader", "def run_tool",
+                        "configure_runtime", "isTokenCurrent", "ALVSIA_APK_SESSION",
+                        "ALVSIA_SEALED_RUNTIME", "sealed_loader", "run_tool",
                         "isSessionAuthorized", "impl.run_tool"
                     )
                     missing_bridge_contract = [token for token in required_bridge_contract if token not in bridge_text]
