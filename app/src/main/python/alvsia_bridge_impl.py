@@ -969,6 +969,9 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
 
             # ── Lua BGMI opcode converter ────────────────────────────────────
             elif sid == "priv_lua_convert":
+                if not ip or not (Path(ip).is_file() or Path(ip).is_dir()):
+                    lines.append("X input must be a Lua bytecode file or a folder")
+                    return "\n".join(lines)
                 target = dest / "bgmi_std"
                 conv = LuaOpcodeConverter(variant="bgmi")
                 if Path(ip).is_dir():
@@ -984,6 +987,9 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
 
             # ── Lua HePing opcode converter ──────────────────────────────────
             elif sid == "priv_lua_heping":
+                if not ip or not (Path(ip).is_file() or Path(ip).is_dir()):
+                    lines.append("X input must be a Lua bytecode file or a folder")
+                    return "\n".join(lines)
                 target = dest / "heping_std"
                 conv = LuaOpcodeConverter(variant="heping")
                 if Path(ip).is_dir():
