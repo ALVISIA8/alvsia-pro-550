@@ -25,9 +25,9 @@ def configure_runtime(token,sealed_runtime="1"):
   token=_extract_str(token).strip()
   if not re.fullmatch(r"[0-9A-Fa-f]{64}",token):_CD="bad_token";return False
   stage="session_gate_import"
-  from com.alvsia.pro.sec import SessionGate
+  from com.alvsia.pro.sec import SessionGate as gate
   stage="session_token_check"
-  if not bool(SessionGate.isTokenCurrent(token)):_CD="gate_reject";return False
+  if not bool(gate.isTokenCurrent(token)):_CD="gate_reject";return False
   stage="runtime_setup"
   os.environ.pop("ALVSIA_SESSION_TOKEN",None)
   os.environ["ALVSIA_APK_SESSION"]="1"
