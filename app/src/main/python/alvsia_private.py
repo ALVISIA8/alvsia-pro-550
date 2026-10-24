@@ -846,7 +846,12 @@ class CompressionBestFit:
             try:
                 compressed = compress(lvl)
                 fits = target_size <= 0 or len(compressed) <= target_size
-                if fits and len(compressed) > best_sz:
+                improves = (
+                    best_lvl == -1
+                    or (len(compressed) < best_sz if target_size == 0
+                        else len(compressed) > best_sz)
+                )
+                if fits and improves:
                     best_lvl, best_sz = lvl, len(compressed)
             except Exception:
                 continue
