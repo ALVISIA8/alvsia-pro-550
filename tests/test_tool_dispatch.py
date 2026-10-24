@@ -211,7 +211,7 @@ def test_large_lua_source_is_detected_before_bytecode_fallback():
     exec(compile(ast.Module(body=[fn], type_ignores=[]), "streaming_decompiler.py", "exec"), namespace)
     with tempfile.TemporaryDirectory() as td:
         sample = Path(td) / "primary_BRPlayerCharacterBase.lua"
-        sample.write_text("local function main()\\n  return true\\nend\\n" + ("-- filler\\n" * 700000), encoding="utf-8")
+        sample.write_text("local function main()\n  return true\nend\n" + ("-- filler\n" * 700000), encoding="utf-8")
         assert sample.stat().st_size > 5 * 1024 * 1024
         assert namespace["preflight_magic"](sample) == "source"
 
