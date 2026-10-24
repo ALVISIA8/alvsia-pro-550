@@ -437,9 +437,10 @@ class LuaBytecodeParser:
         self._d  = bytearray(data)
         self._p  = 0
         self.ver = 0
-        self.int_sz = 4
+        self.int_sz = 4          # sizeof(int), used by line-number fields
         self.szt_sz = 8
         self.ins_sz = 4
+        self.lua_int_sz = 8      # sizeof(lua_Integer), used by integer constants
         self.num_sz = 8
         self.int_is_float = False
 
@@ -458,19 +459,26 @@ class LuaBytecodeParser:
     def _int(self) -> int:
         return self._u64() if self.int_sz == 8 else self._u32()
 
+    def _lua_integer(self) -> int:
+        return self._u64() if self.lua_int_sz == 8 else self._u32()
+
     def _size_t(self) -> int:
         return self._u64() if self.szt_sz == 8 else self._u32()
 
     def _lua_string(self) -> Optional[str]:
+        # DumpString stores the byte length INCLUDING the trailing NUL.
+        # For Lua 5.3+, a 0xFF size byte means the actual size follows as size_t.
         if self.ver in (0x53, 0x54):
             sz_byte = self._u8()
-            if sz_byte == 0: return None
-            if sz_byte == 0xFF: size = self._size_t()
-            else: size = sz_byte - 1
+            if sz_byte == 0:
+                return None
+            size = self._size_t() if sz_byte == 0xFF else sz_byte
         else:
             size = self._size_t()
-            if size == 0: return None
-        raw = bytes(self._d[self._p:self._p + size]); self._p += size
+            if size == 0:
+                return None
+        raw = bytes(self._d[self._p:self._p + size])
+        self._p += size
         return raw.decode('utf-8', errors='replace').rstrip('\x00')
 
     def _parse_header(self) -> bool:
@@ -481,14 +489,13 @@ class LuaBytecodeParser:
         self._u8()                      # format
         if self.ver == 0x53:
             self._p += 6               # LUAC_DATA
-            self.int_sz  = self._u8()
+            self.int_sz  = self._u8()  # sizeof(int): line-defined fields
             self.szt_sz  = self._u8()
             self.ins_sz  = self._u8()
-            lua_int_sz   = self._u8()
+            self.lua_int_sz = self._u8()
             lua_num_sz   = self._u8()
-            self._p += lua_int_sz      # LUAC_INT
-            self._p += lua_num_sz      # LUAC_NUM
-            self.int_sz  = lua_int_sz
+            self._p += self.lua_int_sz  # LUAC_INT
+            self._p += lua_num_sz       # LUAC_NUM
         elif self.ver == 0x51:
             self.int_sz  = self._u8()
             self.szt_sz  = self._u8()
@@ -541,11 +548,15 @@ class LuaBytecodeParser:
                 ct = self._u8()
                 if   ct == 0:       pass                    # LUA_TNIL
                 elif ct == 1:       self._u8()              # LUA_TBOOLEAN
-                elif ct in (3,19):                          # LUA_TNUMFLT
+                elif ct == 3:                              # LUA_TNUMFLT
                     off = self._p
                     v   = self._dbl()
                     info.numbers.append(LuaNumberConst(off, v))
-                elif ct == 2:       self._int()             # LUA_TNUMINT (5.3)
+                elif ct == 19:                             # LUA_TNUMINT (Lua 5.3)
+                    off = self._p
+                    v   = self._lua_integer()
+                    info.numbers.append(LuaNumberConst(off, v))
+                elif ct == 2:       self._int()             # legacy integer-like tag
                 elif ct in (4,20):                          # LUA_TSTRING
                     off = self._p
                     s   = self._lua_string()
