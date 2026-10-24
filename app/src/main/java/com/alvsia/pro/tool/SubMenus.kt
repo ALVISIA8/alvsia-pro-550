@@ -28,6 +28,7 @@ object SubMenus {
         16 -> "Lua Inject"
         17 -> "Anti-RE Audit"
         18 -> "Lua Protector"
+        19 -> "ALVSIA PRIVATE TOOL"
         else -> "Module $moduleId"
     }
 
