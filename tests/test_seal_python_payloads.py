@@ -53,6 +53,12 @@ class ProductionSealPayloadTests(unittest.TestCase):
         self.assertEqual(len(MODULES), len(set(MODULES)))
         self.assertTrue(all((ROOT / "app/src/main/python" / rel).is_file() for rel in MODULES))
 
+    def test_large_lua_streaming_module_is_sealed_and_mapped(self):
+        rel = "lua_engine/streaming_decompiler.py"
+        self.assertIn(rel, MODULES)
+        loader = (ROOT / "app/src/main/python" / "sealed_loader.py").read_text(encoding="utf-8")
+        self.assertIn('"lua_engine.streaming_decompiler": "lua_engine_streaming_decompiler.alv"', loader)
+
 
 if __name__ == "__main__":
     unittest.main()
