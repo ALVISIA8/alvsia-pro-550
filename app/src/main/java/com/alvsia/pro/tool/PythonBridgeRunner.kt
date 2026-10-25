@@ -123,7 +123,7 @@ object PythonBridgeRunner {
             val configure = callAttr.invoke(
                 bridge,
                 "configure_runtime",
-                arrayOf<Any?>(token, "1", deviceId)
+                arrayOf<Any?>(token, "1")
             )
             // Chaquopy wraps Python bool True as a PyObject whose toString() == "True".
             // Some Chaquopy runtime versions (especially 3.x under AGP 8.x) may unbox
@@ -149,6 +149,21 @@ object PythonBridgeRunner {
                     "diagnostic: return_type=$returnedType; return_value=$returnedValue; chaquopy_started=$isStarted; token_shape=64_hex",
                     "Python configure stage: $pythonDiagnostic"
                 )
+            }
+            val coreModule = getModule.invoke(py, "alvsia_core")
+                ?: return false to listOf("X AUTH: core grant verifier unavailable")
+            val identityResult = callAttr.invoke(
+                coreModule,
+                "_alvsia_set_expected_operation_identity",
+                arrayOf<Any?>(token, deviceId)
+            )
+            val identityOk = when {
+                identityResult == null -> false
+                identityResult is Boolean -> identityResult
+                else -> identityResult.toString().trim().equals("True", ignoreCase = true)
+            }
+            if (!identityOk) {
+                return false to listOf("X AUTH: trusted device/session identity could not be installed")
             }
             val rawResult = callAttr.invoke(
                 bridge,
