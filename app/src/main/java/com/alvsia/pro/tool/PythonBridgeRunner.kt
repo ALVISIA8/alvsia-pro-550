@@ -1,6 +1,7 @@
 package com.alvsia.pro.tool
 
 import com.alvsia.pro.sec.SessionGate
+import com.alvsia.pro.panel.Hwid
 import android.content.Context
 import java.io.File
 import java.io.FileOutputStream
@@ -113,6 +114,12 @@ object PythonBridgeRunner {
             if (!SessionGate.isTokenCurrent(token)) {
                 return false to listOf("X AUTH DIAG: Kotlin SessionGate rejected the current token before Python configuration")
             }
+            val context = appContext
+                ?: return false to listOf("X AUTH: application context unavailable for device binding")
+            val deviceId = Hwid.deviceId(context).trim()
+            if (!deviceId.matches(Regex("^[0-9A-Fa-f]{64}$"))) {
+                return false to listOf("X AUTH: device identity unavailable for protected-operation binding")
+            }
             val configure = callAttr.invoke(
                 bridge,
                 "configure_runtime",
@@ -142,6 +149,21 @@ object PythonBridgeRunner {
                     "diagnostic: return_type=$returnedType; return_value=$returnedValue; chaquopy_started=$isStarted; token_shape=64_hex",
                     "Python configure stage: $pythonDiagnostic"
                 )
+            }
+            val coreModule = getModule.invoke(py, "alvsia_core")
+                ?: return false to listOf("X AUTH: core grant verifier unavailable")
+            val identityResult = callAttr.invoke(
+                coreModule,
+                "_alvsia_set_expected_operation_identity",
+                arrayOf<Any?>(token, deviceId)
+            )
+            val identityOk = when {
+                identityResult == null -> false
+                identityResult is Boolean -> identityResult
+                else -> identityResult.toString().trim().equals("True", ignoreCase = true)
+            }
+            if (!identityOk) {
+                return false to listOf("X AUTH: trusted device/session identity could not be installed")
             }
             val rawResult = callAttr.invoke(
                 bridge,

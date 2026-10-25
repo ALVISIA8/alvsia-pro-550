@@ -156,6 +156,16 @@ def _alvsia_install_operation_proof(proof):
         required = ('grant_id','nonce','build_id','manifest_hash','tool_hash','device_id','session_id','operation_id','issued_at','expires_at')
         if any(not str(p.get(k, '')).strip() for k in required):
             raise ValueError
+        # On Android, bind the signed grant to the exact SessionGate token and
+        # HWID supplied by the trusted Kotlin bridge. Never accept a grant minted
+        # for another device/session, even when its RSA signature is valid.
+        if __import__('os').environ.get('ALVSIA_APK_SESSION') == '1':
+            expected_device = __import__('os').environ.get('ALVSIA_EXPECTED_DEVICE_ID', '').strip()
+            expected_session = __import__('os').environ.get('ALVSIA_EXPECTED_SESSION_ID', '').strip()
+            if not expected_device or not expected_session:
+                raise ValueError
+            if str(p['device_id']) != expected_device or str(p['session_id']) != expected_session:
+                raise ValueError
         if str(p['build_id']) != _ALVSIA_CORE_BUILD_ID:
             raise ValueError
         measurement = _alvsia_core_live_measurement()
@@ -182,6 +192,20 @@ def _alvsia_clear_operation_proof():
     global _ALVSIA_CORE_ACTIVE_PROOF
     _ALVSIA_CORE_ACTIVE_PROOF = None
 
+def _alvsia_set_expected_operation_identity(session_id, device_id):
+    """Install the trusted Android identity supplied by Kotlin before tool dispatch."""
+    import os as _os, re as _re
+    session = str(session_id or '').strip()
+    device = str(device_id or '').strip().lower()
+    if not _re.fullmatch(r'[0-9A-Fa-f]{64}', session) or not _re.fullmatch(r'[0-9a-f]{64}', device):
+        _os.environ.pop('ALVSIA_EXPECTED_SESSION_ID', None)
+        _os.environ.pop('ALVSIA_EXPECTED_DEVICE_ID', None)
+        _alvsia_clear_operation_proof()
+        return False
+    _os.environ['ALVSIA_EXPECTED_SESSION_ID'] = session
+    _os.environ['ALVSIA_EXPECTED_DEVICE_ID'] = device
+    return True
+
 def _alvsia_require_operation(allowed_operations):
     import os as _os
     p = _ALVSIA_CORE_ACTIVE_PROOF
@@ -205,6 +229,12 @@ def _alvsia_require_operation(allowed_operations):
         return True
     if not isinstance(p, dict):
         raise RuntimeError('Operation authorization failed: signed grant missing; grant provider/installer did not supply a proof')
+    if _os.environ.get('ALVSIA_APK_SESSION') == '1':
+        expected_device = _os.environ.get('ALVSIA_EXPECTED_DEVICE_ID', '').strip()
+        expected_session = _os.environ.get('ALVSIA_EXPECTED_SESSION_ID', '').strip()
+        if not expected_device or not expected_session or str(p.get('device_id', '')) != expected_device or str(p.get('session_id', '')) != expected_session:
+            _alvsia_clear_operation_proof()
+            raise RuntimeError('Operation authorization failed: grant device/session binding mismatch')
     operation_id = str(p.get('operation_id', ''))
     if operation_id not in allowed:
         raise RuntimeError('Operation authorization failed: grant operation_id does not match requested operation')
