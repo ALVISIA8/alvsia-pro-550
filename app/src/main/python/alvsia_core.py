@@ -166,7 +166,7 @@ def _alvsia_install_operation_proof(proof):
         now = __import__('time').time()
         issued = _alvsia_core_parse_utc(p['issued_at'])
         expires = _alvsia_core_parse_utc(p['expires_at'])
-        if expires <= issued or now < issued - 30 or now >= expires:
+        if expires <= issued or expires - issued > 180 or now < issued - 30 or now >= expires:
             raise ValueError
         if not _alvsia_core_verify_rs256(_alvsia_core_message(p), str(sig.get('value',''))):
             raise ValueError
