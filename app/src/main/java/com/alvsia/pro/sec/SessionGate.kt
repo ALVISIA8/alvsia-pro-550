@@ -65,6 +65,12 @@ object SessionGate {
         }
     }
 
+    /** Returns the license bound to the current in-memory authenticated session. */
+    @JvmStatic
+    fun currentLicense(): String = synchronized(this) {
+        if (sessionOk) license else ""
+    }
+
     // ── Token HMAC ────────────────────────────────────────────────────────
     private fun computeMac(tok: String): String {
         return try {
