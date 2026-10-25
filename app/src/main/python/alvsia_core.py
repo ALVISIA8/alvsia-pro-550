@@ -204,12 +204,17 @@ def _alvsia_require_operation(allowed_operations):
         # Session marker is sufficient for low-privilege informational ops.
         return True
     if not isinstance(p, dict):
-        raise RuntimeError('Operation authorization failed')
-    if str(p.get('operation_id', '')) not in allowed:
-        raise RuntimeError('Operation authorization failed')
-    if __import__('time').time() >= float(p.get('_expires_epoch', 0) or 0):
+        raise RuntimeError('Operation authorization failed: signed grant missing; grant provider/installer did not supply a proof')
+    operation_id = str(p.get('operation_id', ''))
+    if operation_id not in allowed:
+        raise RuntimeError('Operation authorization failed: grant operation_id does not match requested operation')
+    try:
+        expires_epoch = float(p.get('_expires_epoch', 0) or 0)
+    except (TypeError, ValueError):
+        expires_epoch = 0
+    if __import__('time').time() >= expires_epoch:
         _alvsia_clear_operation_proof()
-        raise RuntimeError('Operation authorization failed')
+        raise RuntimeError('Operation authorization failed: signed grant expired')
     return True
 
 class _AlvsiaPakConsole:
