@@ -5,7 +5,7 @@ workflows:
     instance_type: mac_mini_m2
     # Branch restriction — release only from main
     triggering:
-      events: [push, pull_request]
+      events: [push]
       branch_patterns:
         - pattern: main
           include: true
