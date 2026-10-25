@@ -1,6 +1,6 @@
-# Setup Codemagic — ALVISIA PRO 5.5.0
+# Setup CodeMagic — ALVSIA PRO 5.5.1-hardened
 
-Workflow: `alvisia-android`  
+Workflow: `alvisia-android` (`ALVSIA PRO 5.5.1-hardened`)  
 Branch rilis: `main`  
 Package: `com.alvsia.pro`
 
@@ -39,11 +39,11 @@ Keystore dengan sertifikat berbeda akan ditolak oleh tahap verifikasi.
 
 ## 3. Jalankan build
 
-Setelah repositori terhubung dan keempat variable disetel, jalankan workflow `alvisia-android` pada branch `main`, atau push commit ke `main` jika pemicu otomatis sudah aktif.
+Setelah repositori terhubung dan keempat variable disetel, jalankan workflow `alvisia-android` pada branch `main`, atau push commit ke `main` jika pemicu otomatis aktif. Workflow rilis hanya dipicu oleh push ke `main`; pull request tidak menjalankan workflow rilis.
 
 Build akan memvalidasi signing secrets lebih awal, menjalankan pemeriksaan keamanan, menyegel aset, membangun APK release, menandatangani APK, lalu memverifikasi signature dan certificate pin. APK bertanda tangan yang diharapkan bernama:
 
-`ALVISIA_PRO_5.5.0_signed.apk`
+`ALVISIA_PRO_5.5.1-hardened_signed.apk`
 
 Unduh APK dari bagian artifacts pada build Codemagic yang berhasil.
 
