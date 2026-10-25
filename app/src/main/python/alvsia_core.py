@@ -192,6 +192,20 @@ def _alvsia_clear_operation_proof():
     global _ALVSIA_CORE_ACTIVE_PROOF
     _ALVSIA_CORE_ACTIVE_PROOF = None
 
+def _alvsia_set_expected_operation_identity(session_id, device_id):
+    """Install the trusted Android identity supplied by Kotlin before tool dispatch."""
+    import os as _os, re as _re
+    session = str(session_id or '').strip()
+    device = str(device_id or '').strip().lower()
+    if not _re.fullmatch(r'[0-9A-Fa-f]{64}', session) or not _re.fullmatch(r'[0-9a-f]{64}', device):
+        _os.environ.pop('ALVSIA_EXPECTED_SESSION_ID', None)
+        _os.environ.pop('ALVSIA_EXPECTED_DEVICE_ID', None)
+        _alvsia_clear_operation_proof()
+        return False
+    _os.environ['ALVSIA_EXPECTED_SESSION_ID'] = session
+    _os.environ['ALVSIA_EXPECTED_DEVICE_ID'] = device
+    return True
+
 def _alvsia_require_operation(allowed_operations):
     import os as _os
     p = _ALVSIA_CORE_ACTIVE_PROOF
