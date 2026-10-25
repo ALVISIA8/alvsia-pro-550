@@ -1243,9 +1243,9 @@ sp_NULL = os.path.join(STAND_POSH_BASE, "null.txt")
 # ---------------------------------------------------------------------------
 # ALVSIA V3 R4P3 — core self-verification (server-signed operation proof)
 # ---------------------------------------------------------------------------
-_ALVSIA_CORE_BUILD_ID = 'ALVSIA-20260912-V3-RC1'
+_ALVSIA_CORE_BUILD_ID = 'ALVSIA-20260923-V46'
 _ALVSIA_CORE_VERSION = '4.0.0'
-_ALVSIA_CORE_RSA_N_B64U = 'nsY2zroSmvsX1s_TMCJNLmp5dswYOxPW3CaLyhAsiVMCKTP9vR4ydCX7dazBjJM9usme2DVGYrT2CiIM5lz2DDvvh4-RIgle2CcX65zA9dztEd27NCDj_Ir8J6QGYj8ESddCUa8N73ViW2Q3d46bLhEgKi_s6VE6SXO8LbDMYbHYVgaJqQxkTGstUcX7k85uboOGcb2bamShSGkO_MkmxgSCrizoaqlOpAQu5CTJp8foMqs3-YTsnPkBESb95o2xAB_k_hqWC4rKBSjzdJhavWtRLUr45P6C4iv4rbroprpj28ocYYDhcPfCbJ8Z50zDciMZTcU8Qc3mXxcgtH_-CQ'
+_ALVSIA_CORE_RSA_N_B64U = '59rkifaSC8v07GndYOsL_D7H6W1VEnKnVlvLfxvtUgztjUYqKvea7AseAeAW59yqpiaQ7e1Nq3J-z9lfWUpJfETQFldk8F4g0ZBKdJLqzvw-Vw9be7Ky5x78B4Z9qYyN0vQinMIfhLLL2ctOeOGe01lYeEQ8m2y6v5OhTlY9wYRM_oKljG0h9HfKlbGuFLxGRCM-iK6fT33b2tzyxAO_bvsnHF-9IcHYdjyPgRVewZ_kWbAZ7FeabA8HtCqgizepjdlTtj6m8eufYodQw4a2kfe-r_0PMZhmnzOvzEeCQMxfnHwXAeQhTA9tB1GtO3eFJEAOCxVoq66sR8T3NuW6kw'
 _ALVSIA_CORE_RSA_E_B64U = 'AQAB'
 _ALVSIA_CORE_DIGESTINFO = bytes.fromhex('3031300d060960864801650304020105000420')
 _ALVSIA_CORE_CRITICAL = (
@@ -1332,7 +1332,7 @@ def _alv_install_operation_proof(proof):
     try:
         p = dict(proof or {})
         sig = dict(p.pop('signature', {}) or {})
-        if sig.get('alg') != 'RS256' or sig.get('kid') != 'alv-r4-20260908':
+        if sig.get('alg') != 'RS256' or sig.get('kid') != 'alvsia-r4-20260923':
             raise ValueError
         required = ('grant_id','nonce','build_id','manifest_hash','tool_hash','device_id','session_id','operation_id','issued_at','expires_at')
         if any(not str(p.get(k, '')).strip() for k in required):
@@ -1347,7 +1347,7 @@ def _alv_install_operation_proof(proof):
         now = __import__('time').time()
         issued = _alv_core_parse_utc(p['issued_at'])
         expires = _alv_core_parse_utc(p['expires_at'])
-        if expires <= issued or now < issued - 30 or now >= expires:
+        if expires <= issued or expires - issued > 180 or now < issued - 30 or now >= expires:
             raise ValueError
         if not _alv_core_verify_rs256(_alv_core_message(p), str(sig.get('value',''))):
             raise ValueError
