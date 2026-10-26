@@ -13,7 +13,7 @@ This branch removes the retired `alvsiapro.cc.cd` login/CoreBundle/grant URL con
 
 1. Login follows the new panel's captcha + PoW + AES-CBC proto-2 handshake.
 2. The old `tool_fetch.php` / CoreBundle contract is not emulated by misusing `get_asset.php`. The APK uses its bundled tool catalog and local engines until a versioned, authenticated CoreBundle transport is deliberately implemented on the new panel.
-3. High-privilege PAK/OBB operations still require a server-signed RS256 proof. No client-side bypass was added.
+3. High-privilege PAK/OBB operations still require a server-signed RS256 proof. The signed `session_id` is the full lowercase SHA-256 hex digest of the 64-hex session token and is compared consistently by Kotlin, the panel endpoint, and Python. Grant lifetime is exactly 180 seconds. No client-side bypass was added.
 4. `operation_grant.php` is a deployment adapter, not a live server change. Deploy it into the **new panel's** `api/` directory and configure `OPERATION_GRANT_PRIVATE_KEY_FILE` or `OPERATION_GRANT_PRIVATE_KEY` outside source control. Its signing public key must match the RSA modulus embedded in `app/src/main/python/alvsia_core.py`; otherwise the engine correctly rejects the proof.
 5. TLS hostname and CA validation remain enabled. The old hostname's SPKI pins were removed rather than copied to a different host. A new-host SPKI pin set must be added only after the live certificate chain has been measured and a backup pin verified.
 
