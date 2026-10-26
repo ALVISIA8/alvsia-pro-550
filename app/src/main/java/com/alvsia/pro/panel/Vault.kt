@@ -27,11 +27,15 @@ object Vault {
     fun pathSecurity(): String = "security_event.php"
 
     /**
-     * Empty pin set means OkHttp still performs platform CA-chain and hostname
-     * validation. Do not claim certificate pinning until a verified new-host
-     * SPKI pin and a backup pin have been measured and tested.
+     * SPKI pin measured from the live alvsiapanel.unaux.com TLS chain by the
+     * owner's Termux audit on 2026-10-26. OkHttp still validates hostname and
+     * the platform trust chain. No verified backup SPKI was present in the
+     * supplied audit, so certificate/key rotation must be re-measured and this
+     * pin updated before the server rotates its TLS key.
      */
-    fun certPinner(): CertificatePinner = CertificatePinner.Builder().build()
+    fun certPinner(): CertificatePinner = CertificatePinner.Builder()
+        .add("alvsiapanel.unaux.com", "sha256/84+S6cn1vo+IjlQMR5mvqIe5XKMPh28WV9xYVtFKTkk=")
+        .build()
 
     fun ua(): String = "ALVSIA-PRO/5.5.1 (Android)"
     fun tgToken(): String = ""
