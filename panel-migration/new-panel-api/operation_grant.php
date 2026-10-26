@@ -81,8 +81,8 @@ if (is_string($pem) && strpos($pem, '-----BEGIN') !== false) {
 $pkey = is_string($pem) ? openssl_pkey_get_private($pem) : false;
 if (!$pkey) grant_fail('Grant signer unavailable', 503);
 
-$issued = time() - 5;
-$expires = time() + 180;
+$issued = time();
+$expires = $issued + 180;
 $fields = [
  'grant_id' => bin2hex(random_bytes(16)),
  'nonce' => bin2hex(random_bytes(16)),
