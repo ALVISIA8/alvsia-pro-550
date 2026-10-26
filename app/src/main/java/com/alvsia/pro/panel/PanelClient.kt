@@ -92,9 +92,8 @@ class PanelClient {
         lastLicense = license
         lastHwid = hwid
         return try {
-            val captchaRaw = openApi(base() + Vault.pathG())
-                ?: openApi(base() + Vault.pathCaptcha())
-                ?: return LoginResult(false, "Network error")
+            val captchaRaw = openApi(base() + Vault.pathCaptcha())
+                ?: return LoginResult(false, "New panel captcha endpoint unavailable")
             if (captchaRaw.trimStart().startsWith("<")) {
                 return LoginResult(false, "Gateway still blocked after cookie")
             }
@@ -124,10 +123,7 @@ class PanelClient {
                 .put("proto", 2)
                 .apply { if (captchaSeal.isNotEmpty()) put("seal", captchaSeal) }
                 .toString()
-            var raw2 = postJson(base() + Vault.pathS(), loginJson)
-            if (raw2.isNullOrBlank() || raw2.trimStart().startsWith("<") || raw2.contains("Update required")) {
-                raw2 = postJson(base() + Vault.pathConnect(), loginJson)
-            }
+            val raw2 = postJson(base() + Vault.pathConnect(), loginJson)
             if (raw2.isNullOrBlank()) return LoginResult(false, "Empty login response")
             if (raw2.trimStart().startsWith("<")) return LoginResult(false, "Gateway blocked login")
             val r2 = JSONObject(raw2)
@@ -168,23 +164,9 @@ class PanelClient {
     ): FetchResult {
         return try {
             ensureGate()
-            val fetchJson = JSONObject()
-                .put("license", license)
-                .put("hwid", hwid)
-                .put("session_token", sessionToken)
-                .toString()
-            var bytes = postJsonBytes(base() + Vault.pathFetch(), fetchJson)
-            if (bytes == null) {
-                bytes = postBytes(
-                    base() + Vault.pathFetch(),
-                    mapOf(
-                        "license" to license,
-                        "hwid" to hwid,
-                        "session_token" to sessionToken,
-                    )
-                )
-            }
-            if (bytes == null) return FetchResult(false, "empty fetch")
+            // New panel serves named assets, not the legacy opaque CoreBundle endpoint.
+            // Do not parse get_asset metadata JSON as executable CoreBundle bytes.
+            return FetchResult(false, "New panel has no CoreBundle endpoint; use built-in tool catalog")
             if (bytes.size > 16) {
                 val n = minOf(32, bytes.size)
                 val head = String(bytes, 0, n, Charsets.ISO_8859_1)
@@ -210,7 +192,7 @@ class PanelClient {
     private fun ensureGate() {
         val host = base().toHttpUrlOrNull()?.host ?: return
         val has = cookieStore[host]?.any { it.name == "__test" } == true
-        if (!has) openApi(base() + Vault.pathG())
+        if (!has) openApi(base() + Vault.pathCaptcha())
     }
 
     private fun solveTestCookie(html: String, pageUrl: String): Boolean {
@@ -260,7 +242,7 @@ class PanelClient {
     }
 
     private fun postJson(url: String, json: String): String? {
-        if (cookieStore.isEmpty()) openApi(base() + Vault.pathG())
+        if (cookieStore.isEmpty()) openApi(base() + Vault.pathCaptcha())
         val media = "application/json; charset=utf-8".toMediaType()
         val body = json.toRequestBody(media)
         val req = Request.Builder()
