@@ -31,6 +31,7 @@ seal_script = read(ROOT / "tools/seal_python.py")
 audit_script = read(ROOT / "tools/audit_release_apk.py")
 codemagic = read(ROOT / "codemagic.yaml")
 workflow = read(ROOT / ".github/workflows/android-validation.yml")
+profile = read(ROOT / "app/src/main/java/com/alvsia/pro/ui/profile/ProfileScreen.kt")
 
 required_modules = {
     "alvsia_bridge_impl.py", "alvsia_private.py", "alvsia_vm_protect.py", "lua_engine/pattern_registry.py",
@@ -93,6 +94,12 @@ if "tools/seal_python.py --seal" not in codemagic or "tools/seal_python.py --res
     fail.append("CodeMagic does not seal and restore protected Python modules")
 if "tools/audit_release_apk.py" not in codemagic or "tools/audit_release_apk.py" not in workflow:
     fail.append("actual APK audit is not wired into both release pipelines")
+if "BuildConfig.VERSION_NAME" not in profile:
+    fail.append("profile version label must use the actual built APK version")
+if "rebrand_config.txt" not in audit_script or "app-metadata.properties" not in audit_script:
+    fail.append("APK audit must reject packaged local rebrand/build metadata")
+if "forbidden_inner" not in audit_script or "forbidden_package_names" not in audit_script:
+    fail.append("APK audit must inspect nested Chaquopy app.imy metadata")
 if "CM_BRANCH" not in codemagic or '!= "main"' not in codemagic:
     fail.append("CodeMagic release branch is not restricted to main")
 if "isMinifyEnabled = true" not in gradle or "isShrinkResources = true" not in gradle:
