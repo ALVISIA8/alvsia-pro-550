@@ -145,6 +145,8 @@ if "KEY_ALGORITHM_HMAC_SHA256" not in session or "age in 0..SESSION_TTL" not in 
     fail.append("SessionGate HMAC or future/expiry timestamp checks are missing")
 if "if (Guard.runtimeHostile(ctx))" not in session or "native_rasp_unavailable" not in session:
     fail.append("SessionGate must recheck live hooks each dispatch and fail closed if release JNI RASP is unavailable")
+if "DualVmGuard.inspect(ctx)" not in session:
+    fail.append("SessionGate must re-run the dual-layer runtime gate at each protected dispatch")
 if "fun isNativeLoaded(): Boolean = nativeLoaded" not in native_guard:
     fail.append("NativeGuard load-state API is missing; release cannot detect JNI downgrade")
 guard = read(JAVA / "sec/Guard.kt")
