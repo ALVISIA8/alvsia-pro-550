@@ -142,10 +142,13 @@ if ".certificatePinner(Vault.certPinner())" not in panel or "clientPinned.newCal
     fail.append("PanelClient TLS policy is not wired")
 if 'sha256/84+S6cn1vo+IjlQMR5mvqIe5XKMPh28WV9xYVtFKTkk=' not in vault or '.add("alvsiapanel.unaux.com", "sha256/' not in vault:
     fail.append("measured Unaux SPKI pin is missing from the active OkHttp certificate pinner")
+network_config = read(ROOT / "app/src/main/res/xml/network_security_config.xml")
 if ("networkSecurityConfig" not in manifest
-        or "alvsiapanel.unaux.com" not in read(ROOT / "app/src/main/res/xml/network_security_config.xml")
+        or "alvsiapanel.unaux.com" not in network_config
+        or "<pin-set>" not in network_config
+        or "84+S6cn1vo+IjlQMR5mvqIe5XKMPh28WV9xYVtFKTkk=" not in network_config
         or "alvsiapanel.unaux.com" not in vault):
-    fail.append("new-panel network security configuration is missing")
+    fail.append("new-panel network security configuration or measured SPKI pin is missing")
 if "KEY_ALGORITHM_HMAC_SHA256" not in session or "age in 0..SESSION_TTL" not in session:
     fail.append("SessionGate HMAC or future/expiry timestamp checks are missing")
 if "if (Guard.runtimeHostile(ctx))" not in session or "native_rasp_unavailable" not in session:
