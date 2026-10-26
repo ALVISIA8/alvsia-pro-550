@@ -79,6 +79,11 @@ object PythonBridgeRunner {
         }
     }
 
+    private fun sha256Hex(value: String): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(value.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+
     fun runBridge(
         moduleId: Int,
         subId: String,
@@ -152,7 +157,7 @@ object PythonBridgeRunner {
                 )
             }
             val coreModule = getModule.invoke(py, "alvsia_core")
-                ?: return false to listOf("X AUTH: core grant verifier unavailable")
+                ?: return false to listOf("X AUTH: core session-binding helper unavailable")
             val identityResult = callAttr.invoke(
                 coreModule,
                 "_alvsia_set_expected_operation_identity",
