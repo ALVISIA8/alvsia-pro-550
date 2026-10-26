@@ -219,44 +219,22 @@ def _alvsia_set_expected_operation_identity(session_id, device_id):
     return True
 
 def _alvsia_require_operation(allowed_operations):
-    import os as _os
-    p = _ALVSIA_CORE_ACTIVE_PROOF
-    # The Kotlin SessionGate sets ALVSIA_APK_SESSION after verifying the panel
-    # token, which is sufficient proof for read-only / low-privilege calls.
-    # High-security operations (pak.unpack, repack, inject, …) always require
-    # a signed proof ticket regardless — the session marker alone is not enough.
-    # "Low-privilege" means the operation is NOT in the protected set below.
-    _HIGH_SECURITY_OPS = frozenset({
-        'pak.unpack', 'pak.repack', 'pak.unpack_single', 'pak.repack_single',
-        'pak.delete_entry', 'pak.delete_all', 'pak.diagnostics',
-        'advanced.inject_any', 'advanced.inject_brplayer',
-        'advanced.same_size_hashfix', 'advanced.zsdic_hashfix',
-        'asset.unpack', 'obb.unpack', 'obb.repack',
-        'lab.editor.auto_pak', 'lab.playerpawn.auto_pak',
-    })
-    allowed = {str(x) for x in allowed_operations}
-    needs_proof = bool(allowed & _HIGH_SECURITY_OPS)
-    if not needs_proof and _os.environ.get('ALVSIA_APK_SESSION') == '1':
-        # Session marker is sufficient for low-privilege informational ops.
-        return True
-    if not isinstance(p, dict):
-        raise RuntimeError('Operation authorization failed: signed grant missing; grant provider/installer did not supply a proof')
-    if _os.environ.get('ALVSIA_APK_SESSION') == '1':
-        expected_device = _os.environ.get('ALVSIA_EXPECTED_DEVICE_ID', '').strip()
-        expected_session = _os.environ.get('ALVSIA_EXPECTED_SESSION_ID', '').strip()
-        if not expected_device or not expected_session or str(p.get('device_id', '')) != expected_device or str(p.get('session_id', '')) != expected_session:
-            _alvsia_clear_operation_proof()
-            raise RuntimeError('Operation authorization failed: grant device/session binding mismatch')
-    operation_id = str(p.get('operation_id', ''))
-    if operation_id not in allowed:
-        raise RuntimeError('Operation authorization failed: grant operation_id does not match requested operation')
-    try:
-        expires_epoch = float(p.get('_expires_epoch', 0) or 0)
-    except (TypeError, ValueError):
-        expires_epoch = 0
-    if __import__('time').time() >= expires_epoch:
-        _alvsia_clear_operation_proof()
-        raise RuntimeError('Operation authorization failed: signed grant expired')
+    """Require a valid panel-authenticated Android session before tool execution.
+
+    The new panel does not implement operation_grant.php. Do not call a nonexistent
+    endpoint or block every PAK/OBB action waiting for a protocol it cannot issue.
+    Kotlin SessionGate validates the login session; the trusted bridge then installs
+    the SHA-256 session binding and device ID before dispatch.
+    """
+    import os as _os, re as _re
+    if _os.environ.get('ALVSIA_APK_SESSION') != '1':
+        raise RuntimeError('Operation authorization failed: login required')
+    session = _os.environ.get('ALVSIA_EXPECTED_SESSION_ID', '').strip()
+    device = _os.environ.get('ALVSIA_EXPECTED_DEVICE_ID', '').strip().lower()
+    if not _re.fullmatch(r'[0-9a-f]{64}', session) or not _re.fullmatch(r'[0-9a-f]{64}', device):
+        raise RuntimeError('Operation authorization failed: session/device binding unavailable')
+    if not allowed_operations:
+        raise RuntimeError('Operation authorization failed: operation not specified')
     return True
 
 class _AlvsiaPakConsole:

@@ -109,9 +109,11 @@ if "META-INF/version-control-info.textproto" not in gradle or '"**/version-contr
 if "android.permission.DUMP" in manifest:
     fail.append("unnecessary android.permission.DUMP remains in manifest")
 if ".certificatePinner(Vault.certPinner())" not in panel or "clientPinned.newCall(req).execute()" not in panel:
-    fail.append("PanelClient TLS certificate pinning is not wired")
-if "networkSecurityConfig" not in manifest or "alvsiapro.cc.cd" not in read(ROOT / "app/src/main/res/xml/network_security_config.xml"):
-    fail.append("panel network security configuration is missing")
+    fail.append("PanelClient TLS policy is not wired")
+if ("networkSecurityConfig" not in manifest
+        or "alvsiapanel.unaux.com" not in read(ROOT / "app/src/main/res/xml/network_security_config.xml")
+        or "alvsiapanel.unaux.com" not in vault):
+    fail.append("new-panel network security configuration is missing")
 if "KEY_ALGORITHM_HMAC_SHA256" not in session or "age in 0..SESSION_TTL" not in session:
     fail.append("SessionGate HMAC or future/expiry timestamp checks are missing")
 if "if (Guard.runtimeHostile(ctx))" not in session or "native_rasp_unavailable" not in session:
@@ -133,6 +135,6 @@ if fail:
 print("SECURITY SOURCE CHECK: PASS")
 print(f"- protected Python modules scheduled for sealing: {len(required_modules)}")
 print("- AES-GCM decryption in Kotlin/native bridge; seed and cert digest not exposed to Python")
-print("- TLS pinning, SessionGate HMAC/TTL, R8, VCS stripping checked")
+print("- New-panel TLS CA/hostname validation, SessionGate HMAC/TTL, R8, VCS stripping checked")
 print("- CodeMagic release restricted to main; APK audit required")
-print("NOTE: native seed is build-bound obfuscation, not a server secret; runtime memory dumping remains possible.")
+print("NOTE: new-host SPKI pinning remains a release hardening gate until the live certificate chain is measured; native seed is build-bound obfuscation, not a server secret.")
