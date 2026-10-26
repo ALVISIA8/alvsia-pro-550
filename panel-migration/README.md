@@ -7,14 +7,13 @@ This branch removes the retired `alvsiapro.cc.cd` login/CoreBundle/grant URL con
 - `https://alvsiapanel.unaux.com/api/refresh_session.php`
 - `https://alvsiapanel.unaux.com/api/get_asset.php`
 - `https://alvsiapanel.unaux.com/api/download_asset.php`
-- `https://alvsiapanel.unaux.com/api/operation_grant.php` (adapter source is in this directory and must be deployed to the new panel)
 
 ## Design decisions
 
 1. Login follows the new panel's captcha + PoW + AES-CBC proto-2 handshake.
-2. The old `tool_fetch.php` / CoreBundle contract is not emulated by misusing `get_asset.php`. The APK uses its bundled tool catalog and local engines until a versioned, authenticated CoreBundle transport is deliberately implemented on the new panel.
-3. High-privilege PAK/OBB operations still require a server-signed RS256 proof. The signed `session_id` is the full lowercase SHA-256 hex digest of the 64-hex session token and is compared consistently by Kotlin, the panel endpoint, and Python. Grant lifetime is exactly 180 seconds. No client-side bypass was added.
-4. `operation_grant.php` is a deployment adapter, not a live server change. Deploy it into the **new panel's** `api/` directory and configure `OPERATION_GRANT_PRIVATE_KEY_FILE` or `OPERATION_GRANT_PRIVATE_KEY` outside source control. Its signing public key must match the RSA modulus embedded in `app/src/main/python/alvsia_core.py`; otherwise the engine correctly rejects the proof.
+2. The old `tool_fetch.php` / CoreBundle contract is not emulated by misusing `get_asset.php`. The APK uses its bundled tool catalog and local engines; all 19 menus remain local. Dynamic CoreBundle delivery is not required by the new panel contract.
+3. The new panel has no operation-grant endpoint, so the APK uses its existing login/session validation (`SessionGate`) plus SHA-256 device/session binding before tool dispatch. The missing grant API is not called, and the old panel grant contract is removed.
+4. This is a panel-aligned session model; it does not claim per-operation server grants because the new panel does not support them.
 5. TLS hostname and CA validation remain enabled. The old hostname's SPKI pins were removed rather than copied to a different host. A new-host SPKI pin set must be added only after the live certificate chain has been measured and a backup pin verified.
 
 ## Release gates
@@ -27,4 +26,4 @@ This branch removes the retired `alvsiapro.cc.cd` login/CoreBundle/grant URL con
 
 ## Current limitation
 
-The source branch can be built without the retired CoreBundle endpoint, but the new panel's operation-grant endpoint must be deployed separately. Until that is deployed and tested with the matching private key, protected PAK/OBB operations will fail closed by design. Certificate pinning for the new hostname is also pending live certificate verification.
+The new-panel source path no longer depends on unavailable grant/CoreBundle endpoints. Build and device smoke tests must still confirm login/session handling and all 19 menus. TLS uses platform CA and hostname validation; SPKI pinning is not enabled because the new host's live certificate chain has not been measured.
