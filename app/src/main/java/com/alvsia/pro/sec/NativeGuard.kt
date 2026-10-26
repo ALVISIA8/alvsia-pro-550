@@ -38,6 +38,7 @@ object NativeGuard {
     private external fun nativeAntiDump(): Int
     private external fun nativeSealSeed(): ByteArray?
     private external fun nativeSealBuildId(): String?
+    private external fun nativeVmFlags(): Int
 
     // ── Public API ────────────────────────────────────────────────────
 
@@ -165,6 +166,12 @@ object NativeGuard {
             if ("frida" in maps || "gadget" in maps || "xposed" in maps) flags = flags or 0x02
         } catch (_: Exception) {}
         return flags
+    }
+
+    /** Run the independent native mini-VM; -1 means unavailable or invalid bytecode. */
+    fun dualVmNativeFlags(): Int {
+        if (!nativeLoaded) return -1
+        return try { nativeVmFlags() } catch (_: Throwable) { -1 }
     }
 
     fun isNativeLoaded(): Boolean = nativeLoaded
