@@ -92,9 +92,8 @@ class PanelClient {
         lastLicense = license
         lastHwid = hwid
         return try {
-            val captchaRaw = openApi(base() + Vault.pathG())
-                ?: openApi(base() + Vault.pathCaptcha())
-                ?: return LoginResult(false, "Network error")
+            val captchaRaw = openApi(base() + Vault.pathCaptcha())
+                ?: return LoginResult(false, "New panel handshake unavailable")
             if (captchaRaw.trimStart().startsWith("<")) {
                 return LoginResult(false, "Gateway still blocked after cookie")
             }
@@ -124,10 +123,7 @@ class PanelClient {
                 .put("proto", 2)
                 .apply { if (captchaSeal.isNotEmpty()) put("seal", captchaSeal) }
                 .toString()
-            var raw2 = postJson(base() + Vault.pathS(), loginJson)
-            if (raw2.isNullOrBlank() || raw2.trimStart().startsWith("<") || raw2.contains("Update required")) {
-                raw2 = postJson(base() + Vault.pathConnect(), loginJson)
-            }
+            val raw2 = postJson(base() + Vault.pathConnect(), loginJson)
             if (raw2.isNullOrBlank()) return LoginResult(false, "Empty login response")
             if (raw2.trimStart().startsWith("<")) return LoginResult(false, "Gateway blocked login")
             val r2 = JSONObject(raw2)
@@ -162,41 +158,18 @@ class PanelClient {
 
 
 
+    /**
+     * The new panel does not expose the legacy CoreBundle/tool_fetch contract.
+     * Core execution therefore stays on the bundled local engine; do not treat
+     * get_asset.php metadata as executable CoreBundle bytes.
+     */
     fun fetchCore(
         license: String = lastLicense,
         hwid: String = lastHwid,
-    ): FetchResult {
-        return try {
-            ensureGate()
-            val fetchJson = JSONObject()
-                .put("license", license)
-                .put("hwid", hwid)
-                .put("session_token", sessionToken)
-                .toString()
-            var bytes = postJsonBytes(base() + Vault.pathFetch(), fetchJson)
-            if (bytes == null) {
-                bytes = postBytes(
-                    base() + Vault.pathFetch(),
-                    mapOf(
-                        "license" to license,
-                        "hwid" to hwid,
-                        "session_token" to sessionToken,
-                    )
-                )
-            }
-            if (bytes == null) return FetchResult(false, "empty fetch")
-            if (bytes.size > 16) {
-                val n = minOf(32, bytes.size)
-                val head = String(bytes, 0, n, Charsets.ISO_8859_1)
-                if (head.trimStart().startsWith("<")) {
-                    return FetchResult(false, "gateway blocked fetch")
-                }
-            }
-            FetchResult(true, "ok ${bytes.size}b", bytes)
-        } catch (e: Exception) {
-            FetchResult(false, e.message ?: "fetch error")
-        }
-    }
+    ): FetchResult = FetchResult(
+        false,
+        "Remote CoreBundle disabled: new panel has no compatible CoreBundle endpoint"
+    )
 
     private fun openApi(url: String): String? {
         var body = get(url) ?: return null
@@ -210,7 +183,7 @@ class PanelClient {
     private fun ensureGate() {
         val host = base().toHttpUrlOrNull()?.host ?: return
         val has = cookieStore[host]?.any { it.name == "__test" } == true
-        if (!has) openApi(base() + Vault.pathG())
+        if (!has) openApi(base() + Vault.pathCaptcha())
     }
 
     private fun solveTestCookie(html: String, pageUrl: String): Boolean {
@@ -260,7 +233,7 @@ class PanelClient {
     }
 
     private fun postJson(url: String, json: String): String? {
-        if (cookieStore.isEmpty()) openApi(base() + Vault.pathG())
+        if (cookieStore.isEmpty()) openApi(base() + Vault.pathCaptcha())
         val media = "application/json; charset=utf-8".toMediaType()
         val body = json.toRequestBody(media)
         val req = Request.Builder()
@@ -283,7 +256,7 @@ class PanelClient {
     }
 
     private fun postJsonBytes(url: String, json: String): ByteArray? {
-        if (cookieStore.isEmpty()) openApi(base() + Vault.pathG())
+        if (cookieStore.isEmpty()) openApi(base() + Vault.pathCaptcha())
         val media = "application/json; charset=utf-8".toMediaType()
         val body = json.toRequestBody(media)
         val req = Request.Builder()
@@ -297,7 +270,7 @@ class PanelClient {
     }
 
     private fun postForm(url: String, fields: Map<String, String>): String? {
-        if (cookieStore.isEmpty()) openApi(base() + Vault.pathG())
+        if (cookieStore.isEmpty()) openApi(base() + Vault.pathCaptcha())
         val body = FormBody.Builder().apply {
             fields.forEach { (k, v) -> add(k, v) }
         }.build()
@@ -320,7 +293,7 @@ class PanelClient {
     }
 
     private fun postBytes(url: String, fields: Map<String, String>): ByteArray? {
-        if (cookieStore.isEmpty()) openApi(base() + Vault.pathG())
+        if (cookieStore.isEmpty()) openApi(base() + Vault.pathCaptcha())
         val body = FormBody.Builder().apply {
             fields.forEach { (k, v) -> add(k, v) }
         }.build()
