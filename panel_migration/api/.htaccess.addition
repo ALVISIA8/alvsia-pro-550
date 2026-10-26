@@ -1,0 +1,5 @@
+# Merge these directives into the new panel's api/.htaccess.
+# Existing config.php protection must remain in place.
+<FilesMatch "^(config\.php|operation_grant\.pem|\.htaccess)$">
+  Require all denied
+</FilesMatch>
