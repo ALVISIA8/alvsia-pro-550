@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Remove Gradle VCS revision metadata from an unsigned APK before audit/signing."""
+"""Strip non-runtime metadata and plaintext rebrand template before APK audit/signing."""
 from __future__ import annotations
 
 import os
@@ -8,7 +8,11 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-TARGET = "META-INF/version-control-info.textproto"
+FORBIDDEN_BASENAMES = {
+    "version-control-info.textproto",
+    "app-metadata.properties",
+    "rebrand_config.txt",
+}
 
 
 def main() -> int:
@@ -31,9 +35,10 @@ def main() -> int:
             if bad is not None:
                 raise RuntimeError(f"input APK ZIP is corrupt at {bad}")
             with zipfile.ZipFile(tmp, "w") as dst:
+                dst.comment = src.comment
                 for info in src.infolist():
-                    normalized = info.filename.replace("\\\\", "/")
-                    if normalized.lower().endswith(TARGET.lower()):
+                    normalized = info.filename.replace("\\", "/")
+                    if Path(normalized).name.lower() in FORBIDDEN_BASENAMES:
                         removed += 1
                         continue
                     dst.writestr(info, src.read(info.filename))
@@ -41,19 +46,22 @@ def main() -> int:
             bad = check.testzip()
             if bad is not None:
                 raise RuntimeError(f"rewritten APK ZIP is corrupt at {bad}")
-            remaining = [n for n in check.namelist() if n.lower().endswith(TARGET.lower())]
+            remaining = [
+                n for n in check.namelist()
+                if Path(n.replace("\\", "/")).name.lower() in FORBIDDEN_BASENAMES
+            ]
             if remaining:
-                raise RuntimeError("VCS metadata still present after rewrite")
+                raise RuntimeError("forbidden metadata remains after rewrite: " + ", ".join(remaining))
         os.replace(tmp, apk)
-        print(f"PASS unsigned APK VCS metadata stripped (entries removed: {removed})")
-        print("APK will be zipaligned and signed after this step.")
+        print(f"PASS forbidden non-runtime metadata stripped (entries removed: {removed})")
+        print("APK will be audited, zipaligned, and signed after this step.")
         return 0
     except Exception as exc:
         try:
             tmp.unlink(missing_ok=True)
         except OSError:
             pass
-        print(f"FAIL could not strip VCS metadata: {exc}", file=sys.stderr)
+        print(f"FAIL could not strip forbidden metadata: {exc}", file=sys.stderr)
         return 1
 
 
