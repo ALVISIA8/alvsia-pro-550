@@ -47,8 +47,13 @@ object DualVmGuard {
             steps++
         }
         if (pc != program.size || steps != program.size) failures += "dlrg_vm_bounds"
-        // Stage B is independent from the Kotlin instruction interpreter.
+        // Stage B executes a separate native instruction stream, then cross-checks
+        // it with the full native scanner. A malformed/unavailable VM fails closed
+        // in release builds; debug builds retain the documented fallback.
         if (NativeGuard.isNativeLoaded()) {
+            val vmFlags = try { NativeGuard.dualVmNativeFlags() } catch (_: Throwable) { -1 }
+            if (vmFlags < 0) failures += "dlrg_native_vm_invalid"
+            else if (vmFlags != 0) failures += NativeGuard.flagsToReasons(vmFlags).map { "dlrg_vm2_$it" }
             val nativeFlags = try { NativeGuard.scanFlags() } catch (_: Throwable) { -1 }
             if (nativeFlags < 0) failures += "dlrg_native_probe_failed"
             else if (nativeFlags != 0) failures += NativeGuard.flagsToReasons(nativeFlags).map { "dlrg_$it" }
