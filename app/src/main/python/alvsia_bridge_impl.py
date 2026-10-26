@@ -211,7 +211,7 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                         missing_targets.append(target)
                 if missing_targets:
                     lines.append(
-                        "NOTE target filename(s) are not present in this PAK index: %s"
+                        "NOTE target filename(s) are not indexed in this PAK; extraction succeeded, but these files may be in another PAK or use a different filename: %s"
                         % ", ".join(missing_targets)
                     )
                 lines.append(
