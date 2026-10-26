@@ -6,6 +6,7 @@ import com.alvsia.pro.panel.OperationGrantClient
 import android.content.Context
 import java.io.File
 import java.io.FileOutputStream
+import java.security.MessageDigest
 
 /**
  * Safe reflection-based runner for Chaquopy Python bridge.
@@ -170,10 +171,14 @@ object PythonBridgeRunner {
             }
             val coreModule = getModule.invoke(py, "alvsia_core")
                 ?: return false to listOf("X AUTH: core grant verifier unavailable")
+            val expectedSessionId = MessageDigest.getInstance("SHA-256")
+                .digest(token.toByteArray(Charsets.UTF_8))
+                .take(16)
+                .joinToString("") { "%02x".format(it) }
             val identityResult = callAttr.invoke(
                 coreModule,
                 "_alvsia_set_expected_operation_identity",
-                arrayOf<Any?>(token, deviceId)
+                arrayOf<Any?>(expectedSessionId, deviceId)
             )
             val identityOk = when {
                 identityResult == null -> false
