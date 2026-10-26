@@ -33,6 +33,30 @@ object OperationGrantClient {
             .build()
     }
 
+    private fun refreshPanelSession(token: String, hwid: String): String? {
+        return try {
+            val payload = JSONObject()
+                .put("session_token", token)
+                .put("hwid", hwid)
+                .toString()
+                .toRequestBody("application/json; charset=utf-8".toMediaType())
+            val request = Request.Builder()
+                .url("https://alvsiapanel.unaux.com/api/refresh_session.php")
+                .header("Accept", "application/json")
+                .header("Cache-Control", "no-store")
+                .post(payload)
+                .build()
+            client.newCall(request).execute().use { response ->
+                val root = JSONObject(response.body?.string().orEmpty())
+                if (!response.isSuccessful || root.optString("status") != "ok" ||
+                    root.optString("session_token") != token) return null
+                root.optLong("session_expires", 0L).takeIf { it > 0L }?.toString()
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     fun request(context: Context, operationId: String): Result {
         val license = SessionGate.currentLicense().trim()
         val token = SessionGate.sessionToken.trim()
@@ -40,6 +64,9 @@ object OperationGrantClient {
         if (license.isBlank() || !token.matches(Regex("^[0-9A-Fa-f]{64}$")) ||
             !hwid.matches(Regex("^[0-9a-f]{64}$"))) {
             return Result(false, message = "authenticated license/device/session unavailable")
+        }
+        if (refreshPanelSession(token, hwid) == null) {
+            return Result(false, message = "panel session refresh failed; re-login required")
         }
 
         return try {
