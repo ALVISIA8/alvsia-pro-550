@@ -7,7 +7,7 @@
     </base-config>
     <!-- New panel only. Platform CA + hostname validation remains enabled.
          Add a measured SPKI pin set for this host after live certificate verification.
-         Do not reuse pins from alvsiapro.cc.cd. -->
+         Do not reuse pins from the retired hostname. -->
     <domain-config cleartextTrafficPermitted="false">
         <domain includeSubdomains="true">alvsiapanel.unaux.com</domain>
     </domain-config>
