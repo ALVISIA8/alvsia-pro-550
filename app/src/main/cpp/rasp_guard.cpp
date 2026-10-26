@@ -432,12 +432,35 @@ native_seal_build_id(JNIEnv* env, jobject) {
     return result;
 }
 
+// ── Native mini-VM: a bounded second-stage integrity interpreter ─────────────
+// Kept separate from nativeScanFlags so the Kotlin VM and native VM evaluate
+// their own instruction streams. This is defense-in-depth, not a claim of
+// commercial Virbox equivalence or protection against a fully privileged attacker.
+static jint JNICALL
+native_vm_flags(JNIEnv*, jobject) {
+    static const uint8_t program[] = {0x11, 0x22, 0x33};
+    size_t pc = 0;
+    int budget = 8;
+    int flags = 0;
+    while (pc < sizeof(program) && budget-- > 0) {
+        switch (program[pc++]) {
+            case 0x11: flags |= check_tracer_pid(); break;
+            case 0x22: flags |= check_maps_frida(); break;
+            case 0x33: flags |= check_self_hash(); break;
+            default: return -1;
+        }
+    }
+    if (pc != sizeof(program) || budget < 0) return -1;
+    return flags;
+}
+
 static JNINativeMethod kNativeMethods[] = {
     {const_cast<char*>("nativeScanFlags"), const_cast<char*>("()I"), reinterpret_cast<void*>(native_scan_flags)},
     {const_cast<char*>("nativeWipe"), const_cast<char*>("([B)V"), reinterpret_cast<void*>(native_wipe)},
     {const_cast<char*>("nativeAntiDump"), const_cast<char*>("()I"), reinterpret_cast<void*>(native_anti_dump)},
     {const_cast<char*>("nativeSealSeed"), const_cast<char*>("()[B"), reinterpret_cast<void*>(native_seal_seed)},
     {const_cast<char*>("nativeSealBuildId"), const_cast<char*>("()Ljava/lang/String;"), reinterpret_cast<void*>(native_seal_build_id)},
+    {const_cast<char*>("nativeVmFlags"), const_cast<char*>("()I"), reinterpret_cast<void*>(native_vm_flags)},
 };
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
