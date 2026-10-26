@@ -143,6 +143,13 @@ workflows:
           test -n "$APK"
           python3 tools/audit_release_apk.py "$APK"
 
+      - name: Audit packaged local metadata
+        script: |
+          set -e
+          APK=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -1)
+          test -n "$APK"
+          python3 tools/audit_release_metadata.py "$APK"
+
       - name: Restore Python sources
         script: |
           python3 tools/seal_python.py --restore || true
