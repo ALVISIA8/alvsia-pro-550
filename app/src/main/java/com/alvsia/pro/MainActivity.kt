@@ -33,6 +33,7 @@ import com.alvsia.pro.sec.TacticalNotifier
 import com.alvsia.pro.tool.SubMenus
 import com.alvsia.pro.tool.SubTool
 import com.alvsia.pro.tool.ToolCatalog
+import com.alvsia.pro.tool.CoreSession
 import com.alvsia.pro.tool.ToolEngine
 import com.alvsia.pro.ui.home.HomeScreen
 import com.alvsia.pro.ui.loading.LoadingScreen
@@ -49,6 +50,7 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private val panel = PanelClient()
+    private val core = CoreSession()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
