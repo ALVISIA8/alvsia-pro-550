@@ -26,20 +26,10 @@ data class LoginResult(
 )
 
 
-data class FetchResult(
-    val ok: Boolean,
-    val message: String,
-    val data: ByteArray? = null,
-)
-
 /**
  * Solves free-host __test AES cookie (aes.js), then panel API with proto=2 JSON.
  */
 class PanelClient {
-    companion object {
-        const val MAX_ENGINE_BYTES = 12 * 1024 * 1024 // 12MB encrypted core from panel
-    }
-
     // Instance state
     var sessionToken: String = ""
         private set
@@ -158,19 +148,6 @@ class PanelClient {
 
 
 
-    /**
-     * The new panel does not expose the legacy CoreBundle/tool_fetch contract.
-     * Core execution therefore stays on the bundled local engine; do not treat
-     * get_asset.php metadata as executable CoreBundle bytes.
-     */
-    fun fetchCore(
-        license: String = lastLicense,
-        hwid: String = lastHwid,
-    ): FetchResult = FetchResult(
-        false,
-        "Remote CoreBundle disabled: new panel has no compatible CoreBundle endpoint"
-    )
-
     private fun openApi(url: String): String? {
         var body = get(url) ?: return null
         if (body.contains("slowAES") || body.contains("__test")) {
@@ -255,20 +232,6 @@ class PanelClient {
         }
     }
 
-    private fun postJsonBytes(url: String, json: String): ByteArray? {
-        if (cookieStore.isEmpty()) openApi(base() + Vault.pathCaptcha())
-        val media = "application/json; charset=utf-8".toMediaType()
-        val body = json.toRequestBody(media)
-        val req = Request.Builder()
-            .url(url)
-            .header("User-Agent", Vault.ua())
-            .header("Accept", "*/*")
-            .header("Content-Type", "application/json")
-            .post(body)
-            .build()
-        clientPinned.newCall(req).execute().use { return it.body?.bytes() }
-    }
-
     private fun postForm(url: String, fields: Map<String, String>): String? {
         if (cookieStore.isEmpty()) openApi(base() + Vault.pathCaptcha())
         val body = FormBody.Builder().apply {
@@ -290,20 +253,6 @@ class PanelClient {
             }
             return s
         }
-    }
-
-    private fun postBytes(url: String, fields: Map<String, String>): ByteArray? {
-        if (cookieStore.isEmpty()) openApi(base() + Vault.pathCaptcha())
-        val body = FormBody.Builder().apply {
-            fields.forEach { (k, v) -> add(k, v) }
-        }.build()
-        val req = Request.Builder()
-            .url(url)
-            .header("User-Agent", Vault.ua())
-            .header("Accept", "*/*")
-            .post(body)
-            .build()
-        clientPinned.newCall(req).execute().use { return it.body?.bytes() }
     }
 
     fun securityEvent(jsonBody: String): Boolean {
