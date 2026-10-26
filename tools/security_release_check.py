@@ -123,6 +123,9 @@ if "NativeGuard.scanFlags()" not in dual_vm or "NativeGuard.dualVmNativeFlags()"
     fail.append("dual-layer runtime gate does not cross-check the native VM and native RASP scanner")
 if "native_vm_flags" not in native or '"nativeVmFlags"' not in native or "fun dualVmNativeFlags()" not in native_guard:
     fail.append("native mini-VM JNI entry point is not wired end-to-end")
+for opcode in ("case 0x11:", "case 0x22:", "case 0x33:", "case 0x44:", "case 0x55:", "case 0x66:"):
+    if opcode not in native:
+        fail.append("native mini-VM is missing bounded integrity opcode " + opcode)
 if 'SEED_ENV = "ALVSIA_SEAL_SEED_HEX"' not in seal_script:
     fail.append("Python sealing does not use the per-build seed environment variable")
 if "secrets.token_hex(32)" not in workflow or "secrets.token_hex(32)" not in codemagic:
