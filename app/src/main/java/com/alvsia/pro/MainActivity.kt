@@ -30,9 +30,6 @@ import com.alvsia.pro.sec.Tamper
 import com.alvsia.pro.sec.ThreatReport
 import com.alvsia.pro.sec.TelegramNotifier
 import com.alvsia.pro.sec.TacticalNotifier
-import com.alvsia.pro.tool.CoreBundle
-import com.alvsia.pro.tool.CoreSession
-import com.alvsia.pro.tool.RamToolVault
 import com.alvsia.pro.tool.SubMenus
 import com.alvsia.pro.tool.SubTool
 import com.alvsia.pro.tool.ToolCatalog
@@ -52,7 +49,6 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private val panel = PanelClient()
-    private val core = CoreSession()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -185,35 +181,10 @@ class MainActivity : ComponentActivity() {
                                 loadMsg = "Initializing secure core..."
                                 loadProgress = 0.1f
 
-                                // Fetch core bundle from panel using session_token
-                                val fetch = withContext(Dispatchers.IO) {
-                                    panel.fetchCore(license, hwid)
-                                }
-                                val data = fetch.data
-                                var engineFromServer = false
-                                if (fetch.ok && data != null) {
-                                    val opened = withContext(Dispatchers.Default) {
-                                        CoreBundle.open(data)
-                                    }
-                                    tools = opened.tools
-                                    opened.engineBytes?.let { bytes ->
-                                        if (bytes.size <= 262144) {
-                                            RamToolVault.put("engine", bytes)
-                                            engine.installEngineBytes(bytes)
-                                            core.loadFromMemory(bytes)
-                                            engineFromServer = true
-                                        } else {
-                                            ThreatReport.emit(
-                                                this@MainActivity,
-                                                "ENGINE_CAP",
-                                                "skip_${bytes.size}",
-                                                license
-                                            )
-                                        }
-                                    }
-                                } else {
-                                    tools = ToolCatalog.defaults()
-                                }
+                                // The new panel does not publish the legacy CoreBundle protocol.
+                                // Use the APK's bundled tool catalog and local engines; never parse
+                                // get_asset.php metadata or an arbitrary package as an executable bundle.
+                                tools = ToolCatalog.defaults()
 
                                 // Integrity gate
                                 val tamper = Tamper.evaluate(this@MainActivity)
