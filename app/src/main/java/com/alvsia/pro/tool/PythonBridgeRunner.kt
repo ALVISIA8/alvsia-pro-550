@@ -6,6 +6,7 @@ import com.alvsia.pro.panel.OperationGrantClient
 import android.content.Context
 import java.io.File
 import java.io.FileOutputStream
+import java.security.MessageDigest
 
 /**
  * Safe reflection-based runner for Chaquopy Python bridge.
@@ -80,6 +81,11 @@ object PythonBridgeRunner {
     }
 
     /** Maps only protected PAK/OBB actions to server-authorized operation IDs. */
+    private fun sha256Hex(value: String): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(value.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+
     private fun requiredGrantOperation(moduleId: Int, subId: String): String? = when (moduleId) {
         1 -> "pak.unpack" // full unpack, index listing, info and CSV inspection
         2 -> "pak.repack" // rebuild, inject and whole-file PAK transforms
@@ -173,7 +179,7 @@ object PythonBridgeRunner {
             val identityResult = callAttr.invoke(
                 coreModule,
                 "_alvsia_set_expected_operation_identity",
-                arrayOf<Any?>(token, deviceId)
+                arrayOf<Any?>(sha256Hex(token), deviceId)
             )
             val identityOk = when {
                 identityResult == null -> false
