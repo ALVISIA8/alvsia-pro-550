@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit
 import java.security.MessageDigest
 
 /**
- * Requests a short-lived signed grant from the pinned panel API.
+ * Requests a short-lived signed grant from the new panel API; platform CA and hostname checks remain enabled.
  * The RSA private key stays server-side; this class never logs credentials or grant contents.
  */
 object OperationGrantClient {
