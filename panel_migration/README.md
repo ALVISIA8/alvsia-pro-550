@@ -21,3 +21,5 @@ The new-panel ZIP does not contain `api/operation_grant.php`, but the APK's Pyth
 ## Release gate
 
 Do not merge/release until CI passes and the deployed panel endpoint has been tested with a real licensed test account. Check login, refresh/session expiry, grant signing, and at least one protected PAK and OBB operation on-device. The 19-menu catalog must be regression-tested before release.
+
+CI trigger note: this migration branch is intentionally separate from `main`; merge only after the new endpoint is deployed and protected-operation/device tests pass.
