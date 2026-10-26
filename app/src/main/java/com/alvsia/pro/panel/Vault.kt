@@ -5,7 +5,7 @@ import okhttp3.CertificatePinner
 /**
  * ALVSIA PRO — single-panel endpoint registry.
  *
- * The previous alvsiapro.cc.cd contract is intentionally not retained here.
+ * The retired panel contract is intentionally not retained here.
  * The new panel uses /api/captcha.php, /api/connect.php, /api/refresh_session.php,
  * /api/get_asset.php and /api/download_asset.php.
  *
