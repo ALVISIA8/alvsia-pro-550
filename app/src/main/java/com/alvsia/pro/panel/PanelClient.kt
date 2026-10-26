@@ -64,7 +64,7 @@ class PanelClient {
         .followSslRedirects(true)
         .build()
 
-    /** Release transport: pinned TLS only. Never downgrade to an unpinned client. */
+    /** Release transport: Android CA-chain and hostname validation; new-host SPKI pin pending verification. */
     private val clientPinned = clientLoose.newBuilder()
         .certificatePinner(Vault.certPinner())
         .build()
