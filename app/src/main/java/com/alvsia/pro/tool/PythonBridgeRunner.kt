@@ -2,6 +2,7 @@ package com.alvsia.pro.tool
 
 import com.alvsia.pro.sec.SessionGate
 import com.alvsia.pro.panel.Hwid
+import com.alvsia.pro.panel.OperationGrantClient
 import android.content.Context
 import java.io.File
 import java.io.FileOutputStream
@@ -76,6 +77,23 @@ object PythonBridgeRunner {
         } catch (_: Throwable) {
             null
         }
+    }
+
+    /** Maps only protected PAK/OBB actions to server-authorized operation IDs. */
+    private fun requiredGrantOperation(moduleId: Int, subId: String): String? = when (moduleId) {
+        1 -> "pak.unpack" // full unpack, index listing, info and CSV inspection
+        2 -> "pak.repack" // rebuild, inject and whole-file PAK transforms
+        3 -> when (subId) {
+            "pak_delete_entry" -> "pak.delete_entry"
+            "pak_delete_all" -> "pak.delete_all"
+            else -> null
+        }
+        4 -> when (subId) {
+            "obb_unzip" -> "obb.unpack"
+            "obb_rezip" -> "obb.repack"
+            else -> null
+        }
+        else -> null
     }
 
     fun runBridge(
@@ -165,6 +183,30 @@ object PythonBridgeRunner {
             if (!identityOk) {
                 return false to listOf("X AUTH: trusted device/session identity could not be installed")
             }
+
+            // Protected PAK/OBB actions require a fresh server-signed RSA grant.
+            // The request uses the same pinned TLS client and active SessionGate identity.
+            val operationId = requiredGrantOperation(moduleId, subId)
+            if (operationId != null) {
+                val grantResult = OperationGrantClient.request(context, operationId)
+                if (!grantResult.ok || grantResult.grantJson.isBlank()) {
+                    return false to listOf("X AUTH: protected operation grant unavailable", grantResult.message)
+                }
+                val installResult = callAttr.invoke(
+                    coreModule,
+                    "_alvsia_install_operation_proof_json",
+                    arrayOf<Any?>(grantResult.grantJson)
+                )
+                val grantInstalled = when {
+                    installResult == null -> false
+                    installResult is Boolean -> installResult
+                    else -> installResult.toString().trim().equals("True", ignoreCase = true)
+                }
+                if (!grantInstalled) {
+                    return false to listOf("X AUTH: server grant failed signature, measurement, expiry, or identity verification")
+                }
+            }
+
             val rawResult = callAttr.invoke(
                 bridge,
                 "bridge_run_sub",

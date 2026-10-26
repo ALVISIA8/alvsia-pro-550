@@ -188,6 +188,18 @@ def _alvsia_install_operation_proof(proof):
         _ALVSIA_CORE_ACTIVE_PROOF = None
         return False
 
+def _alvsia_install_operation_proof_json(proof_json):
+    """Parse a JSON-serialized signed grant from the pinned Kotlin client."""
+    try:
+        raw = proof_json.decode('utf-8') if isinstance(proof_json, bytes) else str(proof_json or '')
+        parsed = __import__('json').loads(raw)
+        if not isinstance(parsed, dict):
+            raise ValueError('grant payload must be an object')
+        return _alvsia_install_operation_proof(parsed)
+    except Exception:
+        _alvsia_clear_operation_proof()
+        return False
+
 def _alvsia_clear_operation_proof():
     global _ALVSIA_CORE_ACTIVE_PROOF
     _ALVSIA_CORE_ACTIVE_PROOF = None
