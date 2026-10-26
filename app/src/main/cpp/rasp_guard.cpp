@@ -342,7 +342,13 @@ native_wipe(JNIEnv* env, jobject, jbyteArray arr) {
     if (len <= 0) return;
     jbyte* p = env->GetByteArrayElements(arr, nullptr);
     if (!p) return;
-    memset(p, 0, (size_t)len);
+    // Volatile stores prevent the optimizer from eliding the wipe as a dead
+    // store. Release mode 0 copies the cleared bytes back when JNI returned a
+    // temporary buffer.
+    volatile unsigned char* wipe = reinterpret_cast<volatile unsigned char*>(p);
+    for (jsize i = 0; i < len; ++i) {
+        wipe[i] = 0;
+    }
     env->ReleaseByteArrayElements(arr, p, 0);
 }
 
