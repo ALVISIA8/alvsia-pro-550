@@ -119,8 +119,10 @@ if "DualVmGuard.inspect(ctx)" not in rasp_engine:
     fail.append("RaspEngine does not execute the dual-layer runtime integrity gate")
 if "OP_PACKAGE" not in dual_vm or "OP_NATIVE" not in dual_vm or "dlrg_vm_bounds" not in dual_vm:
     fail.append("dual-layer runtime gate is missing bounded VM opcodes or native-stage checks")
-if "NativeGuard.scanFlags()" not in dual_vm or "NativeGuard.isNativeLoaded()" not in dual_vm:
-    fail.append("dual-layer runtime gate does not independently consume native RASP signals")
+if "NativeGuard.scanFlags()" not in dual_vm or "NativeGuard.dualVmNativeFlags()" not in dual_vm:
+    fail.append("dual-layer runtime gate does not cross-check the native VM and native RASP scanner")
+if "native_vm_flags" not in native or '"nativeVmFlags"' not in native or "fun dualVmNativeFlags()" not in native_guard:
+    fail.append("native mini-VM JNI entry point is not wired end-to-end")
 if 'SEED_ENV = "ALVSIA_SEAL_SEED_HEX"' not in seal_script:
     fail.append("Python sealing does not use the per-build seed environment variable")
 if "secrets.token_hex(32)" not in workflow or "secrets.token_hex(32)" not in codemagic:
