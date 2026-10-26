@@ -10,6 +10,9 @@ import sys
 _MAGIC = b"ALVSEAL2"
 _MAP = {
     "alvsia_bridge_impl": "alvsia_bridge_impl.alv",
+    "alvsia_private": "alvsia_private.alv",
+    "alvsia_vm_protect": "alvsia_vm_protect.alv",
+    "lua_engine.pattern_registry": "lua_engine_pattern_registry.alv",
     "alvsia_core": "alvsia_core.alv",
     "alvsia_ultimate": "alvsia_ultimate.alv",
     "alvsia_ultimate_compat": "alvsia_ultimate_compat.alv",

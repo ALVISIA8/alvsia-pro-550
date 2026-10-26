@@ -33,7 +33,8 @@ codemagic = read(ROOT / "codemagic.yaml")
 workflow = read(ROOT / ".github/workflows/android-validation.yml")
 
 required_modules = {
-    "alvsia_bridge_impl.py", "alvsia_core.py", "alvsia_ultimate.py",
+    "alvsia_bridge_impl.py", "alvsia_private.py", "alvsia_vm_protect.py", "lua_engine/pattern_registry.py",
+    "alvsia_core.py", "alvsia_ultimate.py",
     "alvsia_ultimate_compat.py", "alvsia_features.py", "pinned_http.py",
     "lua_engine/lua_decompiler_final.py", "lua_engine/lua_protector.py",
     "lua_output_validator.py", "lua_string_recover.py",
@@ -49,6 +50,14 @@ if required_modules - script_modules:
 expected_loader = {p[:-3].replace("/", ".") for p in required_modules}
 if expected_loader - loader_modules:
     fail.append("sealed loader map misses modules: " + ", ".join(sorted(expected_loader - loader_modules)))
+if script_modules - required_modules:
+    fail.append("seal script contains unreviewed modules: " + ", ".join(sorted(script_modules - required_modules)))
+if loader_modules != expected_loader:
+    fail.append("sealed loader inventory differs from required module inventory: missing=" +
+                ", ".join(sorted(expected_loader - loader_modules)) + "; unexpected=" +
+                ", ".join(sorted(loader_modules - expected_loader)))
+if script_modules != required_modules:
+    fail.append("seal script inventory differs from required module inventory")
 for rel in required_modules:
     if not (PY / rel).is_file():
         fail.append("protected source missing from developer/test tree: " + rel)
