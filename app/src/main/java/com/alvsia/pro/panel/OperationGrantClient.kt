@@ -7,6 +7,8 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import org.json.JSONArray
+import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
 /**
@@ -43,12 +45,22 @@ object OperationGrantClient {
         }
 
         return try {
+            val sessionId = MessageDigest.getInstance("SHA-256")
+                .digest(token.toByteArray(Charsets.UTF_8))
+                .take(16)
+                .joinToString("") { "%02x".format(it) }
+            val measurement = MessageDigest.getInstance("SHA-256")
+                .digest("ALVSIA-APK-SESSION".toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }
             val payload = JSONObject()
                 .put("license", license)
                 .put("hwid", hwid)
                 .put("session_token", token)
-                .put("operation_id", operationId)
+                .put("session_id", sessionId)
+                .put("operations", JSONArray().put(operationId))
                 .put("build_id", BUILD_ID)
+                .put("manifest_hash", measurement)
+                .put("tool_hash", measurement)
                 .toString()
             val body = payload.toRequestBody("application/json; charset=utf-8".toMediaType())
             val request = Request.Builder()
@@ -76,15 +88,15 @@ object OperationGrantClient {
                         message = "grant endpoint returned $bodyKind (HTTP ${response.code}, type=${contentType.ifBlank { "missing" }})"
                     )
                 }
-                if (!response.isSuccessful || !root.optBoolean("ok", false)) {
-                    val reason = root.optString("error", "grant request rejected")
+                if (!response.isSuccessful || root.optString("status") != "success") {
+                    val reason = root.optString("msg", root.optString("error", "grant request rejected"))
                         .replace(Regex("[^A-Za-z0-9 _.:/-]"), "")
                         .take(140)
                     return Result(false, message = "grant request failed (HTTP ${response.code}): $reason")
                 }
-                val grant = root.optJSONObject("grant")
-                    ?: return Result(false, message = "grant response missing signed payload")
-                Result(true, grant.toString(), "signed grant received")
+                val proof = root.optJSONObject("proof")
+                    ?: return Result(false, message = "grant response missing signed proof")
+                Result(true, proof.toString(), "signed grant received")
             }
         } catch (e: Exception) {
             Result(false, message = "grant network error: ${e.javaClass.simpleName}")
