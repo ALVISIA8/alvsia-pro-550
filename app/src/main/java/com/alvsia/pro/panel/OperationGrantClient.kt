@@ -60,7 +60,21 @@ object OperationGrantClient {
             client.newCall(request).execute().use { response ->
                 val raw = response.body?.string().orEmpty()
                 val root = try { JSONObject(raw) } catch (_: Exception) {
-                    return Result(false, message = "grant endpoint returned invalid JSON (HTTP ${response.code})")
+                    // Report response shape only; never expose response bodies or credentials.
+                    val contentType = response.header("Content-Type").orEmpty()
+                        .substringBefore(';').take(60)
+                    val trimmed = raw.trimStart()
+                    val bodyKind = when {
+                        trimmed.isEmpty() -> "empty"
+                        trimmed.startsWith("<!DOCTYPE", ignoreCase = true) ||
+                            trimmed.startsWith("<html", ignoreCase = true) -> "html"
+                        trimmed.startsWith("{") || trimmed.startsWith("[") -> "malformed-json"
+                        else -> "non-json-text"
+                    }
+                    return Result(
+                        false,
+                        message = "grant endpoint returned $bodyKind (HTTP ${response.code}, type=${contentType.ifBlank { "missing" }})"
+                    )
                 }
                 if (!response.isSuccessful || !root.optBoolean("ok", false)) {
                     val reason = root.optString("error", "grant request rejected")
