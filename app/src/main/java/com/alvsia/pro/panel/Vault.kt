@@ -24,6 +24,7 @@ object Vault {
     fun pathRefreshSession(): String = "refresh_session.php"
     fun pathGetAsset(): String = "get_asset.php"
     fun pathDownloadAsset(): String = "download_asset.php"
+    fun pathSecurity(): String = "security_event.php"
 
     /**
      * Empty pin set means OkHttp still performs platform CA-chain and hostname
