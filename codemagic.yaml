@@ -18,7 +18,7 @@ workflows:
         PACKAGE_NAME: "com.alvsia.pro"
         # CM_BRANCH must equal main for release — enforced below
       # Set in Codemagic UI → Environment variables (group "signing"):
-      # CM_KEYSTORE  (base64 of alvsia-release.keystore)
+      # CM_KEYSTORE_PATH (uploaded keystore file) OR CM_KEYSTORE (base64)
       # CM_KEYSTORE_PASSWORD, CM_KEY_ALIAS, CM_KEY_PASSWORD
     scripts:
       - name: Branch gate
@@ -33,19 +33,33 @@ workflows:
       - name: Validate release signing configuration
         script: |
           set -euo pipefail
-          : "${CM_KEYSTORE:?Missing CM_KEYSTORE (base64-encoded keystore) in Codemagic environment group signing}"
           : "${CM_KEYSTORE_PASSWORD:?Missing CM_KEYSTORE_PASSWORD in Codemagic environment group signing}"
-          python3 - <<'PY'
-          import base64, os
+          KS=/tmp/alvsia-signing-preflight.keystore
+          if [ -n "${CM_KEYSTORE_PATH:-}" ] && [ -s "${CM_KEYSTORE_PATH}" ]; then
+            KS="${CM_KEYSTORE_PATH}"
+          elif [ -n "${CM_KEYSTORE:-}" ] && [ -f "${CM_KEYSTORE}" ]; then
+            # Codemagic may expose CM_KEYSTORE as an uploaded keystore file path.
+            KS="${CM_KEYSTORE}"
+          elif [ -n "${CM_KEYSTORE:-}" ]; then
+            # Or CM_KEYSTORE can be configured as base64 in the signing group.
+            python3 - "$KS" <<'PY'
+          import base64, os, sys
           raw = "".join(os.environ["CM_KEYSTORE"].split())
           try:
               decoded = base64.b64decode(raw, validate=True)
           except Exception as exc:
-              raise SystemExit("CM_KEYSTORE is not valid base64") from exc
+              raise SystemExit("CM_KEYSTORE must be a readable keystore path or valid base64") from exc
           if not decoded:
-              raise SystemExit("Decoded keystore is empty; check the CM_KEYSTORE value")
-          print("PASS: required signing secrets are present and keystore base64 is valid")
+              raise SystemExit("Decoded keystore is empty; check CM_KEYSTORE")
+          with open(sys.argv[1], "wb") as out:
+              out.write(decoded)
           PY
+          else
+            echo "ERROR: set CM_KEYSTORE_PATH to an uploaded keystore, or CM_KEYSTORE to base64, in environment group signing"
+            exit 1
+          fi
+          test -s "$KS" || { echo "ERROR: keystore file is empty or unreadable"; exit 1; }
+          echo "PASS: signing keystore source and password are present"
           grep -q 'CERT_SHA256' app/build.gradle.kts || {
             echo "ERROR: certificate pin CERT_SHA256 is missing"
             exit 1
@@ -146,16 +160,24 @@ workflows:
           test -n "$UNSIGNED" || { echo "ERROR: release APK not found"; exit 1; }
 
           # Release builds must never silently publish an unsigned APK.
-          : "${CM_KEYSTORE:?Missing CM_KEYSTORE (base64 keystore) in Codemagic environment group signing}"
           : "${CM_KEYSTORE_PASSWORD:?Missing CM_KEYSTORE_PASSWORD in Codemagic environment group signing}"
           KS=/tmp/alvsia-release.keystore
-          # Decode with Python for compatibility with both macOS and Linux base64 tools.
-          python3 - "$KS" <<'PY'
+          if [ -n "${CM_KEYSTORE_PATH:-}" ] && [ -s "${CM_KEYSTORE_PATH}" ]; then
+            KS="${CM_KEYSTORE_PATH}"
+          elif [ -n "${CM_KEYSTORE:-}" ] && [ -f "${CM_KEYSTORE}" ]; then
+            KS="${CM_KEYSTORE}"
+          elif [ -n "${CM_KEYSTORE:-}" ]; then
+            # Decode base64-configured keystore without printing its contents.
+            python3 - "$KS" <<'PY'
           import base64, os, sys
           with open(sys.argv[1], "wb") as out:
               out.write(base64.b64decode("".join(os.environ["CM_KEYSTORE"].split()), validate=True))
           PY
-          test -s "$KS" || { echo "ERROR: decoded keystore is empty"; exit 1; }
+          else
+            echo "ERROR: configure CM_KEYSTORE_PATH (uploaded keystore) or CM_KEYSTORE (base64)"
+            exit 1
+          fi
+          test -s "$KS" || { echo "ERROR: keystore file is empty or unreadable"; exit 1; }
           KSPASS="$CM_KEYSTORE_PASSWORD"
           ALIAS="${CM_KEY_ALIAS:-alvsia}"
           KEYPASS="${CM_KEY_PASSWORD:-$KSPASS}"
