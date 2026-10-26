@@ -9,9 +9,8 @@ import okhttp3.CertificatePinner
  * The new panel uses /api/captcha.php, /api/connect.php, /api/refresh_session.php,
  * /api/get_asset.php and /api/download_asset.php.
  *
- * TLS currently relies on Android's normal CA/hostname verification. Add a
- * verified SPKI pin for alvsiapanel.unaux.com only after measuring the live
- * certificate chain; never reuse a pin from the retired hostname.
+ * TLS uses Android CA/hostname verification plus the SPKI pin measured in the
+ * owner's Termux audit. Do not reuse pins from the retired hostname.
  */
 object Vault {
     private const val PANEL_ORIGIN = "https://alvsiapanel.unaux.com"
