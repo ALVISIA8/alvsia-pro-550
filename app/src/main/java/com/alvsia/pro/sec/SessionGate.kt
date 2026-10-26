@@ -93,9 +93,10 @@ object SessionGate {
     // ── Runtime hostile check ─────────────────────────────────────────────
     fun runtimeHostile(ctx: Context): Boolean {
         if (Guard.hostile(ctx)) return true
-        val nf = NativeGuard.scanFlags()
-        if (nf != 0) return true
-        // If native lib not loaded on release build → treat as hostile
+        // Re-run the bounded Kotlin VM + native mini-VM at every protected
+        // dispatch, not only on the periodic background RASP tick.
+        if (DualVmGuard.inspect(ctx).isNotEmpty()) return true
+        // If native lib not loaded on release build → treat as hostile.
         val native_rasp_unavailable = !NativeGuard.isNativeLoaded() && !isDebugBuild()
         if (native_rasp_unavailable) return true
         return false
