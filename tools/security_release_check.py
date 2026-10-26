@@ -133,6 +133,8 @@ if "META-INF/version-control-info.textproto" not in gradle or '"**/version-contr
     fail.append("VCS metadata is not excluded from release packaging")
 if "android.permission.DUMP" in manifest:
     fail.append("unnecessary android.permission.DUMP remains in manifest")
+if "android.permission.DELETE_PACKAGES" in manifest or "android.permission.CHANGE_NETWORK_STATE" in manifest:
+    fail.append("unused package-delete/network-state permissions remain in manifest")
 if ".certificatePinner(Vault.certPinner())" not in panel or "clientPinned.newCall(req).execute()" not in panel:
     fail.append("PanelClient TLS policy is not wired")
 if ("networkSecurityConfig" not in manifest
