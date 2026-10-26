@@ -36,7 +36,7 @@ $manifestHash = strtolower(trim((string)($body['manifest_hash'] ?? '')));
 $toolHash = strtolower(trim((string)($body['tool_hash'] ?? '')));
 $opsInput = $body['operations'] ?? [];
 if ($license === '' || strlen($token) !== 64 || strlen($hwid) !== 64) grant_fail('Missing identity', 400);
-if (!hash_equals(substr(hash('sha256', $token), 0, 32), $sessionId)) grant_fail('Session binding mismatch');
+if (!hash_equals(hash('sha256', $token), $sessionId)) grant_fail('Session binding mismatch');
 if ($buildId !== 'ALVSIA-20260923-V46') grant_fail('Build mismatch');
 $measurement = hash('sha256', 'ALVSIA-APK-SESSION');
 if (!hash_equals($measurement, $manifestHash) || !hash_equals($measurement, $toolHash)) grant_fail('Measurement mismatch');
