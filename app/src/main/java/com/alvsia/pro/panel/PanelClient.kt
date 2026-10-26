@@ -162,22 +162,10 @@ class PanelClient {
         license: String = lastLicense,
         hwid: String = lastHwid,
     ): FetchResult {
-        return try {
-            ensureGate()
-            // New panel serves named assets, not the legacy opaque CoreBundle endpoint.
-            // Do not parse get_asset metadata JSON as executable CoreBundle bytes.
-            return FetchResult(false, "New panel has no CoreBundle endpoint; use built-in tool catalog")
-            if (bytes.size > 16) {
-                val n = minOf(32, bytes.size)
-                val head = String(bytes, 0, n, Charsets.ISO_8859_1)
-                if (head.trimStart().startsWith("<")) {
-                    return FetchResult(false, "gateway blocked fetch")
-                }
-            }
-            FetchResult(true, "ok ${bytes.size}b", bytes)
-        } catch (e: Exception) {
-            FetchResult(false, e.message ?: "fetch error")
-        }
+        // The new panel's get_asset.php returns metadata plus a one-time download token,
+        // not the legacy opaque CoreBundle. Keep the built-in catalog/engine path active
+        // until a separately specified, authenticated CoreBundle asset contract exists.
+        return FetchResult(false, "Built-in tool catalog selected for new panel")
     }
 
     private fun openApi(url: String): String? {
