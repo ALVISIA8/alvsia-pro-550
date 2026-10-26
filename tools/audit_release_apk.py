@@ -85,6 +85,10 @@ def main() -> int:
             check(bool(manifest), "compiled Android manifest exists")
             check(b"android.permission.DUMP" not in manifest,
                   "compiled manifest excludes android.permission.DUMP")
+            check(b"android.permission.DELETE_PACKAGES" not in manifest,
+                  "compiled manifest excludes unused DELETE_PACKAGES")
+            check(b"android.permission.CHANGE_NETWORK_STATE" not in manifest,
+                  "compiled manifest excludes unused CHANGE_NETWORK_STATE")
             # READ_PHONE_STATE is currently declared for legacy device/tool compatibility.
             # Do not fail the release audit merely because that declared permission is present;
             # any future permission removal must be verified against PermissionHelper/tool usage.
