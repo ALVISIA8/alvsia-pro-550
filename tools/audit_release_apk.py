@@ -105,6 +105,18 @@ def main() -> int:
                     check(not forbidden_inner,
                           "sensitive local rebrand/build metadata absent from app.imy" if not forbidden_inner
                           else "forbidden app.imy metadata entries: " + ", ".join(forbidden_inner))
+                    # These implementation markers must not be exposed in plaintext
+                    # DEX or Python source. Encrypted .alv payloads are deliberately
+                    # excluded from this static-string check.
+                    plain_python = b"\\n".join(
+                        inner.read(n) for n in members if n.lower().endswith(".py")
+                    )
+                    protected_markers = (b"Feistel-like", b"vm_extract_payload")
+                    exposed = [marker.decode("ascii") for marker in protected_markers
+                               if marker in dex_bytes or marker in plain_python]
+                    check(not exposed,
+                          "custom cipher/deobfuscator markers absent from plaintext code" if not exposed
+                          else "plaintext protection markers exposed: " + ", ".join(exposed))
                     by_base = {Path(n).name: n for n in members}
                     bridge_name = by_base.get("alvsia_bridge.py")
                     bridge_bytes = inner.read(bridge_name) if bridge_name else b""
