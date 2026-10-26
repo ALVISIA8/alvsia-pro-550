@@ -114,8 +114,13 @@ if 'implementation("com.securevale:rasp-android:0.7.1")' in gradle:
     fail.append("recognizable SecureVale Android RASP SDK dependency remains")
 if "SecureAppChecker" in rasp_engine or "com.securevale." in rasp_engine:
     fail.append("RaspEngine still references removed SecureVale SDK classes")
-if not re.search(r"NativeGuard\.flagsToReasons\(\s*(?:NativeGuard\.scanFlags\(\)|nf)\s*\)", rasp_engine):
-    fail.append("RaspEngine does not consume the in-repo native RASP scan results")
+dual_vm = read(JAVA / "sec/DualVmGuard.kt")
+if "DualVmGuard.inspect(ctx)" not in rasp_engine:
+    fail.append("RaspEngine does not execute the dual-layer runtime integrity gate")
+if "OP_PACKAGE" not in dual_vm or "OP_NATIVE" not in dual_vm or "dlrg_vm_bounds" not in dual_vm:
+    fail.append("dual-layer runtime gate is missing bounded VM opcodes or native-stage checks")
+if "NativeGuard.scanFlags()" not in dual_vm or "NativeGuard.isNativeLoaded()" not in dual_vm:
+    fail.append("dual-layer runtime gate does not independently consume native RASP signals")
 if 'SEED_ENV = "ALVSIA_SEAL_SEED_HEX"' not in seal_script:
     fail.append("Python sealing does not use the per-build seed environment variable")
 if "secrets.token_hex(32)" not in workflow or "secrets.token_hex(32)" not in codemagic:
