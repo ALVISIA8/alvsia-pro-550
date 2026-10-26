@@ -63,6 +63,11 @@ def main() -> int:
         with zipfile.ZipFile(io.BytesIO(data)) as outer:
             check(outer.testzip() is None, "APK ZIP integrity")
             names = set(outer.namelist())
+            forbidden_package_names = {"rebrand_config.txt", "app-metadata.properties"}
+            packaged_forbidden = sorted(n for n in names if Path(n).name.lower() in forbidden_package_names)
+            check(not packaged_forbidden,
+                  "sensitive local rebrand/build metadata absent from APK" if not packaged_forbidden
+                  else "forbidden APK metadata entries: " + ", ".join(packaged_forbidden))
             check("lib/arm64-v8a/librasp_guard.so" in names, "native RASP library packaged")
             check("assets/chaquopy/app.imy" in names, "Chaquopy app bundle packaged")
             check("assets/nx/i.dat" in names, "sealed JAR index packaged")
@@ -96,6 +101,10 @@ def main() -> int:
                     check(inner.testzip() is None, "Chaquopy app.imy ZIP integrity")
                     check(not any("version-control-info.textproto" in n for n in inner.namelist()), "VCS metadata absent from Chaquopy bundle")
                     members = inner.namelist()
+                    forbidden_inner = sorted(n for n in members if Path(n).name.lower() in forbidden_package_names)
+                    check(not forbidden_inner,
+                          "sensitive local rebrand/build metadata absent from app.imy" if not forbidden_inner
+                          else "forbidden app.imy metadata entries: " + ", ".join(forbidden_inner))
                     by_base = {Path(n).name: n for n in members}
                     bridge_name = by_base.get("alvsia_bridge.py")
                     bridge_bytes = inner.read(bridge_name) if bridge_name else b""
