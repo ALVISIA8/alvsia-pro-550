@@ -85,10 +85,10 @@ object RaspEngine {
         // Hook framework installer packages — soft signal (not proof of injection)
         AntiHook.hasHookFrameworkPackages(ctx.packageManager).forEach { soft += "antihook_$it" }
 
-        // Native RASP layer — consume results via flagsToReasons
-        val nf = NativeGuard.scanFlags()
-        val nativeReasons = NativeGuard.flagsToReasons(nf)
-        nativeReasons.forEach { hard += it }
+        // Dual-layer runtime gate: bounded Kotlin instruction interpreter plus
+        // independent native RASP probes. Only concrete integrity/instrumentation
+        // failures are hard signals; root/emulator heuristics remain soft above.
+        DualVmGuard.inspect(ctx).forEach { hard += it }
 
         // Threat level = hard count * 10 + soft count
         threatLevel = hard.size * 10 + soft.size
