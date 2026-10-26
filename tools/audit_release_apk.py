@@ -10,6 +10,9 @@ from pathlib import Path
 
 EXPECTED_SEALED = {
     "alvsia_bridge_impl.alv",
+    "alvsia_private.alv",
+    "alvsia_vm_protect.alv",
+    "lua_engine_pattern_registry.alv",
     "alvsia_core.alv",
     "alvsia_ultimate.alv",
     "alvsia_ultimate_compat.alv",
@@ -26,16 +29,17 @@ EXPECTED_SEALED = {
     "lua_engine_container.alv",
     "lua_engine_detector.alv",
     "lua_engine_multi_format.alv",
+    "lua_engine_streaming_decompiler.alv",
     "lua_engine_vm_deobfuscator.alv",
 }
 PROTECTED_MODULES = {
-    "alvsia_bridge_impl", "alvsia_core", "alvsia_ultimate", "alvsia_ultimate_compat",
+    "alvsia_bridge_impl", "alvsia_private", "alvsia_vm_protect", "alvsia_core", "alvsia_ultimate", "alvsia_ultimate_compat",
     "alvsia_features", "pinned_http", "lua_engine/lua_decompiler_final",
-    "lua_engine/lua_protector",
+    "lua_engine/lua_protector", "lua_engine/pattern_registry",
     "lua_output_validator", "lua_string_recover",
     "lua_engine/engine", "lua_engine/decompiler53", "lua_engine/bgmi",
     "lua_engine/luajit_decompiler", "lua_engine/container", "lua_engine/detector",
-    "lua_engine/multi_format", "lua_engine/vm_deobfuscator",
+    "lua_engine/multi_format", "lua_engine/streaming_decompiler", "lua_engine/vm_deobfuscator",
 }
 SEAL_MAGIC = b"ALVSEAL2"
 ASSET_MAGIC = b"ALVSA1\x00"
@@ -99,9 +103,12 @@ def main() -> int:
                           "plaintext bridge is a small bootstrap stub")
                     check(b"import alvsia_bridge_impl as impl" in bridge_bytes and b"if mid == 1" not in bridge_bytes,
                           "tool routing is not shipped in plaintext bridge")
-                    missing = sorted(EXPECTED_SEALED - set(by_base))
-                    check(not missing, "all protected Python payloads exist" if not missing else "missing sealed payloads: " + ", ".join(missing))
-                    for name in sorted(EXPECTED_SEALED & set(by_base)):
+                    actual_sealed = {Path(n).name for n in members if n.lower().endswith(".alv")}
+                    missing = sorted(EXPECTED_SEALED - actual_sealed)
+                    unexpected = sorted(actual_sealed - EXPECTED_SEALED)
+                    check(not missing and not unexpected, "all protected Python payloads exist" if not missing else "missing sealed payloads: " + ", ".join(missing))
+                    check(not unexpected, "no unreviewed sealed payloads" if not unexpected else "unexpected sealed payloads: " + ", ".join(unexpected))
+                    for name in sorted(EXPECTED_SEALED & actual_sealed):
                         check(inner.read(by_base[name]).startswith(SEAL_MAGIC), f"AES-GCM payload header: {name}")
                     plaintext = []
                     for name in members:
