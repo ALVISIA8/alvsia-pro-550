@@ -20,8 +20,9 @@ jobs:
       - name: Generate fresh per-build seal seed
         run: |
           SEED=$(python3 -c "import secrets; print(secrets.token_hex(32))")
-          echo "ALVSIA_SEAL_SEED_HEX=$SEED" >> $GITHUB_ENV
-          echo "Seal seed length: ${#SEED}"
+          echo "::add-mask::$SEED"
+          echo "ALVSIA_SEAL_SEED_HEX=$SEED" >> "$GITHUB_ENV"
+          echo "Seal seed generated (32 bytes); value is masked."
 
       - name: Run source-level security checks
         run: python3 tools/security_release_check.py
