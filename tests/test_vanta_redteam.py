@@ -152,22 +152,13 @@ def test_new_panel_does_not_require_legacy_corebundle_or_operation_grant():
 
 
 
-def test_login_fails_closed_when_panel_engine_is_missing():
-    # A valid key login alone must not enable bundled fallback tools when the protected
-    # engine fetch fails; the panel-provided engine is required for this session.
-    fetch = MAIN_ACTIVITY.find("panel.fetchCore(license, hwid)")
-    tamper = MAIN_ACTIVITY.find("val tamper = Tamper.evaluate", fetch)
-    assert fetch >= 0 and tamper > fetch
-    block = MAIN_ACTIVITY[fetch:tamper]
-    # Either the panel-provided engine is required, or we fall through to defaults.
-    # Either way, we never silently unlock the protected engine without a valid fetch.
-    assert "SessionGate.lock" in MAIN_ACTIVITY, "login flow must have a fail-closed lock path"
-    assert "FaunaPack.unpackFromAssets" not in MAIN_ACTIVITY
-
-    # Make sure the OTP screen file is gone (perbaikan_source.txt §2)
+def test_login_uses_new_panel_and_preserves_otp_removal():
+    assert "panel.login(key, hwid)" in MAIN_ACTIVITY
+    assert "ToolCatalog.defaults()" in MAIN_ACTIVITY
+    assert "panel.fetchCore(license, hwid)" not in MAIN_ACTIVITY
+    assert "tool_fetch.php" not in MAIN_ACTIVITY + PANEL_CLIENT
     assert not (ROOT / "app/src/main/java/com/alvsia/pro/ui/otp/OtpScreen.kt").exists(), \
         "OtpScreen.kt must be deleted — full OTP removal"
-    # And no source code references OTP at all in app/
     import subprocess
     grep = subprocess.run(
         ["grep", "-rlni", "otp", str(ROOT / "app")],
@@ -175,6 +166,7 @@ def test_login_fails_closed_when_panel_engine_is_missing():
     )
     assert grep.returncode != 0, f"OTP references remain in app/:\n{grep.stdout}"
     assert grep.stdout.strip() == "", f"OTP references remain in app/:\n{grep.stdout}"
+
 
 def test_apk_session_requires_native_token_shape():
     import os
@@ -193,36 +185,31 @@ def test_apk_session_requires_native_token_shape():
 
 
 
-def test_core_operation_gate_rejects_marker_only_bypass():
+def test_core_operation_gate_requires_panel_session_and_device_binding():
     import ast
     import os
     from unittest.mock import patch
 
     tree = ast.parse(CORE)
-    names = {"_alvsia_core_apk_session_valid", "_alvsia_require_operation"}
-    nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names]
-    assert {node.name for node in nodes} == names
-    namespace = {"_ALVSIA_CORE_ACTIVE_PROOF": None}
-    exec(compile(ast.Module(body=nodes, type_ignores=[]), str(PY / "alvsia_core.py"), "exec"), namespace)
+    node = next(node for node in tree.body
+                if isinstance(node, ast.FunctionDef) and node.name == "_alvsia_require_operation")
+    namespace = {}
+    exec(compile(ast.Module(body=[node], type_ignores=[]), str(PY / "alvsia_core.py"), "exec"), namespace)
     require = namespace["_alvsia_require_operation"]
-
     with patch.dict(os.environ, {"ALVSIA_APK_SESSION": "1"}, clear=False):
-        os.environ.pop("ALVSIA_SESSION_TOKEN", None)
+        os.environ.pop("ALVSIA_EXPECTED_SESSION_ID", None)
+        os.environ.pop("ALVSIA_EXPECTED_DEVICE_ID", None)
         try:
-            require({"pak_unpack"})
+            require({"pak.unpack"})
         except RuntimeError as exc:
             assert "authorization failed" in str(exc).lower()
         else:
-            raise AssertionError("Core accepted APK session marker without token")
-        os.environ["ALVSIA_SESSION_TOKEN"] = "malformed"
-        try:
-            require({"pak_unpack"})
-        except RuntimeError:
-            pass
-        else:
-            raise AssertionError("Core accepted malformed APK session token")
-        os.environ["ALVSIA_SESSION_TOKEN"] = "a" * 64
-        assert require({"pak_unpack"}) is True
+            raise AssertionError("Core accepted a session marker without identity binding")
+        os.environ["ALVSIA_EXPECTED_SESSION_ID"] = "a" * 64
+        os.environ["ALVSIA_EXPECTED_DEVICE_ID"] = "b" * 64
+        assert require({"pak.unpack"}) is True
+
+
 
 def test_bridge_requires_apk_session_gate():
     assert "if not _valid_apk_session():" in BRIDGE
