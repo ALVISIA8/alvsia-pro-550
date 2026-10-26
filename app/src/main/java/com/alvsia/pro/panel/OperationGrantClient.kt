@@ -8,6 +8,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
+import java.security.MessageDigest
 
 /**
  * Requests a short-lived signed grant from the pinned panel API.
@@ -43,16 +44,22 @@ object OperationGrantClient {
         }
 
         return try {
+            val sessionId = sha256(token).take(32)
+            val measurement = sha256("ALVSIA-APK-SESSION")
             val payload = JSONObject()
                 .put("license", license)
                 .put("hwid", hwid)
                 .put("session_token", token)
+                .put("session_id", sessionId)
+                .put("operations", org.json.JSONArray().put(operationId))
                 .put("operation_id", operationId)
                 .put("build_id", BUILD_ID)
+                .put("manifest_hash", measurement)
+                .put("tool_hash", measurement)
                 .toString()
             val body = payload.toRequestBody("application/json; charset=utf-8".toMediaType())
             val request = Request.Builder()
-                .url("https://api.alvsiapro.cc.cd/api/operation_grant.php")
+                .url(Vault.apiBase() + Vault.pathOperationGrant())
                 .header("Accept", "application/json")
                 .header("Cache-Control", "no-store")
                 .post(body)
@@ -76,18 +83,24 @@ object OperationGrantClient {
                         message = "grant endpoint returned $bodyKind (HTTP ${response.code}, type=${contentType.ifBlank { "missing" }})"
                     )
                 }
-                if (!response.isSuccessful || !root.optBoolean("ok", false)) {
+                if (!response.isSuccessful || root.optString("status") != "success") {
                     val reason = root.optString("error", "grant request rejected")
                         .replace(Regex("[^A-Za-z0-9 _.:/-]"), "")
                         .take(140)
                     return Result(false, message = "grant request failed (HTTP ${response.code}): $reason")
                 }
-                val grant = root.optJSONObject("grant")
-                    ?: return Result(false, message = "grant response missing signed payload")
+                val grant = root.optJSONObject("proof")
+                    ?: root.optJSONObject("grant")
+                    ?: return Result(false, message = "grant response missing signed proof")
                 Result(true, grant.toString(), "signed grant received")
             }
         } catch (e: Exception) {
             Result(false, message = "grant network error: ${e.javaClass.simpleName}")
         }
     }
+
+    private fun sha256(value: String): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(value.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
 }
