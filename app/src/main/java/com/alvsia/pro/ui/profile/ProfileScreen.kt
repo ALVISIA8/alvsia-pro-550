@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.alvsia.pro.BuildConfig
 import com.alvsia.pro.ui.theme.*
 
 private data class ModuleChip(val icon: String, val name: String)
@@ -46,7 +47,7 @@ fun ProfileScreen(product: String, expiry: String, hwidShort: String, toolCount:
         }
         Spacer(Modifier.height(8.dp))
         Text("ALVSIA PRO", color=accent, fontSize=21.sp, fontWeight=FontWeight.Black, letterSpacing=3.sp)
-        Text("SECURE TOOL SYSTEM · 5.5.0", color=Color(0xFFC5A86A), fontSize=10.sp, letterSpacing=1.2.sp)
+        Text("SECURE TOOL SYSTEM · ${BuildConfig.VERSION_NAME.uppercase()}", color=Color(0xFFC5A86A), fontSize=10.sp, letterSpacing=1.2.sp)
         Spacer(Modifier.height(15.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(7.dp)) {
             _InfoTile("PLAN", product.ifBlank { "PREMIUM" }, Modifier.weight(1f))
@@ -72,7 +73,7 @@ fun ProfileScreen(product: String, expiry: String, hwidShort: String, toolCount:
                 Text("DEVICE ID", color=muted, fontSize=9.sp, letterSpacing=.7.sp)
                 Text(hwidShort.take(12).ifBlank { "—" } + "…", color=AlvisiaSilver, fontSize=11.sp, fontWeight=FontWeight.SemiBold)
             }
-            Text("SESSION-GATED · INTEGRITY CHECK", color=accent.copy(alpha=.75f), fontSize=8.sp, textAlign=TextAlign.End)
+            Text("RASP · AES-GCM · INTEGRITY CHECK", color=accent.copy(alpha=.75f), fontSize=8.sp, textAlign=TextAlign.End)
         }
         Spacer(Modifier.height(15.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment=Alignment.CenterVertically) {
