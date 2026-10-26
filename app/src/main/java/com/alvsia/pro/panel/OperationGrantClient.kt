@@ -52,7 +52,7 @@ object OperationGrantClient {
                 .toString()
             val body = payload.toRequestBody("application/json; charset=utf-8".toMediaType())
             val request = Request.Builder()
-                .url("https://api.alvsiapro.cc.cd/api/operation_grant.php")
+                .url("https://alvsiapanel.unaux.com/api/operation_grant.php")
                 .header("Accept", "application/json")
                 .header("Cache-Control", "no-store")
                 .post(body)
