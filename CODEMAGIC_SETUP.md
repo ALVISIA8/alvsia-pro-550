@@ -12,9 +12,9 @@ Package: `com.alvsia.pro`
 
 ## 2. Tambahkan signing secrets
 
-Masukkan variable berikut ke group `signing` dan tandai sebagai secret:
+Masukkan variable berikut ke group `signing` dan tandai password serta Base64 sebagai secret. Jika memakai `CM_KEYSTORE_PATH`, gunakan path file keystore yang tersedia pada build CodeMagic; jangan isi variabel itu dengan Base64.
 
-- `CM_KEYSTORE`: isi Base64 dari file keystore rilis.
+- `CM_KEYSTORE_PATH`: path keystore yang diunggah melalui CodeMagic Code signing identities (jika tersedia), **atau** `CM_KEYSTORE`: isi Base64 file keystore rilis.
 - `CM_KEYSTORE_PASSWORD`: password keystore.
 - `CM_KEY_ALIAS`: `alvsia`
 - `CM_KEY_PASSWORD`: password private key; jika sama dengan password keystore, gunakan nilai yang sama.
@@ -49,7 +49,8 @@ Unduh APK dari bagian artifacts pada build Codemagic yang berhasil.
 
 ## Troubleshooting
 
-- `Missing CM_KEYSTORE` / `Missing CM_KEYSTORE_PASSWORD`: periksa nama variable dan pastikan group bernama `signing` terpasang pada workflow.
+- `Missing CM_KEYSTORE_PATH` / `CM_KEYSTORE`: pastikan file keystore tersedia pada build atau isi `CM_KEYSTORE` dengan Base64 yang benar; pastikan group `signing` terpasang.
+- `Missing CM_KEYSTORE_PASSWORD`: periksa nama variable dan pastikan password di group `signing` benar.
 - `CM_KEYSTORE is not valid base64`: buat ulang Base64 dari file keystore yang benar dan salin output lengkap.
 - `certificate does not match`: keystore bukan keystore rilis yang sertifikatnya dipin oleh source. Jangan menghapus atau mengganti pin hanya untuk melewati verifikasi.
 - Build sukses belum membuktikan APK berjalan normal di perangkat; uji instalasi dan login setelah APK terverifikasi.
