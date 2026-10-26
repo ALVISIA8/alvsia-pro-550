@@ -126,15 +126,29 @@ def test_release_seals_asset_jars_and_disables_plaintext_fallback():
     assert "tools/seal_assets.py" in WORKFLOW
 
 
-def test_login_enforces_rasp_before_engine_fetch():
-    # A successful key-login response must not bypass the hostile-environment gate.
+def test_login_enforces_rasp_before_local_tool_initialization():
+    # The new panel authenticates login/session; it does not publish the legacy CoreBundle API.
     login = MAIN_ACTIVITY.find("val res = withContext(Dispatchers.IO) { panel.login(key, hwid) }")
-    fetch = MAIN_ACTIVITY.find("panel.fetchCore(license, hwid)")
-    assert login >= 0 and fetch > login, "RASP gate must run before protected engine fetch"
-    gate = MAIN_ACTIVITY[login:fetch]
+    catalog = MAIN_ACTIVITY.find("tools = ToolCatalog.defaults()")
+    assert login >= 0 and catalog > login, "local tool catalog must initialize only after panel login"
+    gate = MAIN_ACTIVITY[login:catalog]
     assert "Guard.checkAndReport(" in gate
     assert "if (!safeAfterLogin)" in gate
     assert "SessionGate.lock(this@MainActivity)" in gate
+
+
+def test_new_panel_does_not_require_legacy_corebundle_or_operation_grant():
+    main = MAIN_ACTIVITY
+    panel = PANEL_CLIENT
+    vault = (ROOT / "app/src/main/java/com/alvsia/pro/panel/Vault.kt").read_text(encoding="utf-8")
+    runner = (ROOT / "app/src/main/java/com/alvsia/pro/tool/PythonBridgeRunner.kt").read_text(encoding="utf-8")
+    assert "tool_fetch.php" not in main + panel + vault
+    assert "fetchCore(" not in main + panel
+    assert "pathOperationGrant" not in vault
+    assert "OperationGrantClient" not in runner
+    assert "SessionGate.unlock(this@MainActivity, tok, license)" in main
+    assert "SessionGate.isTokenCurrent(token)" in runner
+    assert "ToolCatalog.defaults()" in main
 
 
 
