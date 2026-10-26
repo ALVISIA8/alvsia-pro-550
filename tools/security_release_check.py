@@ -100,6 +100,8 @@ if "rebrand_config.txt" not in audit_script or "app-metadata.properties" not in 
     fail.append("APK audit must reject packaged local rebrand/build metadata")
 if "forbidden_inner" not in audit_script or "forbidden_package_names" not in audit_script:
     fail.append("APK audit must inspect nested Chaquopy app.imy metadata")
+if "vm_extract_payload" not in audit_script or "Feistel-like" not in audit_script:
+    fail.append("APK audit must scan plaintext code for exposed protection implementation markers")
 if "CM_BRANCH" not in codemagic or '!= "main"' not in codemagic:
     fail.append("CodeMagic release branch is not restricted to main")
 if "isMinifyEnabled = true" not in gradle or "isShrinkResources = true" not in gradle:
