@@ -22,4 +22,9 @@
             <pin digest="SHA-256">C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M=</pin>
         </pin-set>
     </domain-config>
+    <!-- New panel host: system CA validation; add SPKI pins after verifying the live certificate chain. -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="false">alvsiapanel.unaux.com</domain>
+        <trust-anchors><certificates src="system" /></trust-anchors>
+    </domain-config>
 </network-security-config>
