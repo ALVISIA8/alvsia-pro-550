@@ -44,7 +44,7 @@ object OperationGrantClient {
         }
 
         return try {
-            val sessionId = sha256(token).take(32)
+            val sessionId = sha256(token)
             val measurement = sha256("ALVSIA-APK-SESSION")
             val payload = JSONObject()
                 .put("license", license)
