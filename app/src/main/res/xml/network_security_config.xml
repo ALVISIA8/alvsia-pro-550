@@ -5,21 +5,10 @@
             <certificates src="system" />
         </trust-anchors>
     </base-config>
+    <!-- New panel only. Platform CA + hostname validation remains enabled.
+         Add a measured SPKI pin set for this host after live certificate verification.
+         Do not reuse pins from alvsiapro.cc.cd. -->
     <domain-config cleartextTrafficPermitted="false">
-        <domain includeSubdomains="true">alvsiapro.cc.cd</domain>
-        <!-- Pin SPKI (sama dengan Vault.kt) - sumber: alvsia_pin_doctor.py.
-             expiration = tanggal berakhirnya leaf (16 Jan 2027): setelah tanggal
-             itu pin otomatis dilepas (safety valve), app tetap jalan via CA biasa.
-             WAJIB update pin + tanggal ini saat Cloudflare memperbarui leaf! -->
-        <pin-set expiration="2027-01-16">
-            <!-- leaf alvsiapro.cc.cd -->
-            <pin digest="SHA-256">9SAlPOYX5EuzgKf+w3vxjzS0qgl1WJOPVEQeGO5Knjo=</pin>
-            <!-- backup: intermediate WE1 (s/d Feb 2029) -->
-            <pin digest="SHA-256">kIdp6NNEd8wsugYyyIYFsi1ylMCED3hZbSR8ZFsa/A4=</pin>
-            <!-- backup: root GTS Root R4 (s/d Jan 2028) -->
-            <pin digest="SHA-256">mEflZT5enoR1FuXLgYYGqnVEoZvmf9c2bVBpiOjYQ0c=</pin>
-            <!-- backup: ISRG Root X1 (antisipasi CA pindah ke Let's Encrypt) -->
-            <pin digest="SHA-256">C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M=</pin>
-        </pin-set>
+        <domain includeSubdomains="true">alvsiapanel.unaux.com</domain>
     </domain-config>
 </network-security-config>
