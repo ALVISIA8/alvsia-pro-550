@@ -36,7 +36,8 @@ fun ProfileScreen(product: String, expiry: String, hwidShort: String, toolCount:
         ModuleChip("🗑","Workspace"), ModuleChip("📄","Export Report"), ModuleChip("🎨","Rebrand"),
         ModuleChip("🔬","SO Analyzer"), ModuleChip("🎯","Frida Tracer"), ModuleChip("🔑","XOR Suite"),
         ModuleChip("🔓","Decrypt Engine"), ModuleChip("📂","PAK Deep"), ModuleChip("🔤","String Recover"),
-        ModuleChip("💉","Lua Inject"), ModuleChip("🛡","Anti-RE Audit"), ModuleChip("🔐","Lua Protector")
+        ModuleChip("💉","Lua Inject"), ModuleChip("🛡","Anti-RE Audit"), ModuleChip("🔐","Lua Protector"),
+        ModuleChip("⚙","ALVSIA PRIVATE TOOL")
     )
     Column(Modifier.fillMaxSize().background(AlvisiaDeep).verticalScroll(rememberScrollState())
         .padding(horizontal=16.dp, vertical=20.dp), horizontalAlignment=Alignment.CenterHorizontally) {
@@ -79,7 +80,7 @@ fun ProfileScreen(product: String, expiry: String, hwidShort: String, toolCount:
         Row(Modifier.fillMaxWidth(), verticalAlignment=Alignment.CenterVertically) {
             Text("TOOL MODULES", color=muted, fontSize=10.sp, letterSpacing=1.5.sp)
             Spacer(Modifier.weight(1f))
-            Text("${modules.size} MODULES", color=Color(0xFFC5A86A), fontSize=9.sp)
+            Text("${modules.size} / 19 MODULES", color=Color(0xFFC5A86A), fontSize=9.sp)
         }
         Spacer(Modifier.height(7.dp))
         modules.chunked(3).forEach { items ->
