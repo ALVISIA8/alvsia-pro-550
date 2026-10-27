@@ -2,6 +2,7 @@ package com.alvsia.pro.ui.info
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -30,6 +31,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import com.alvsia.pro.R
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -101,7 +105,14 @@ fun InfoScreen(onBack: () -> Unit) {
                             .border(1.5.dp, AlvisiaCyan.copy(alpha = 0.55f), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("A", color = AlvisiaCyan, fontWeight = FontWeight.Black, fontSize = 30.sp)
+                        Image(
+                            painter = painterResource(R.drawable.logo_alvisia),
+                            contentDescription = "ALVISIA PRO logo",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(64.dp)
+                                .clip(CircleShape)
+                        )
                     }
                     Spacer(Modifier.height(10.dp))
                     Text(APP_NAME, color = Color.White, fontWeight = FontWeight.Black, fontSize = 17.sp)
