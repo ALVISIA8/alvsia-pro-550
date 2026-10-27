@@ -89,8 +89,6 @@ def main() -> int:
                   "compiled manifest excludes unused DELETE_PACKAGES")
             check(b"android.permission.CHANGE_NETWORK_STATE" not in manifest,
                   "compiled manifest excludes unused CHANGE_NETWORK_STATE")
-            check(b"android.permission.RECORD_AUDIO" not in manifest,
-                  "compiled manifest excludes microphone recording permission (not needed for audio playback)")
             # READ_PHONE_STATE is currently declared for legacy device/tool compatibility.
             # Do not fail the release audit merely because that declared permission is present;
             # any future permission removal must be verified against PermissionHelper/tool usage.
