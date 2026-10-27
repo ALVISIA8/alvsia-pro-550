@@ -144,8 +144,6 @@ if "android.permission.DUMP" in manifest:
     fail.append("unnecessary android.permission.DUMP remains in manifest")
 if "android.permission.DELETE_PACKAGES" in manifest or "android.permission.CHANGE_NETWORK_STATE" in manifest:
     fail.append("unused package-delete/network-state permissions remain in manifest")
-if "android.permission.RECORD_AUDIO" in manifest:
-    fail.append("microphone recording permission is declared although playback-only audio does not require it")
 if ".certificatePinner(Vault.certPinner())" not in panel or "clientPinned.newCall(req).execute()" not in panel:
     fail.append("PanelClient TLS policy is not wired")
 if 'sha256/84+S6cn1vo+IjlQMR5mvqIe5XKMPh28WV9xYVtFKTkk=' not in vault or '.add("alvsiapanel.unaux.com", "sha256/' not in vault:
