@@ -1,6 +1,11 @@
+import base64
+import sys
 import unittest
+from pathlib import Path
 
-from app.src.main.python.pinned_http import extract_spki_der, panel_post
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "app" / "src" / "main" / "python"))
+import pinned_http
 
 
 def tlv(tag, value):
@@ -24,13 +29,26 @@ class PinnedHttpTests(unittest.TestCase):
         spki = tlv(0x30, tlv(0x02, b"\x01"))
         tbs = tlv(0x30, version + serial + signature + issuer + validity + subject + spki)
         certificate = tlv(0x30, tbs + tlv(0x30, b"") + tlv(0x03, b"\x00"))
-        self.assertEqual(extract_spki_der(certificate), spki)
+        self.assertEqual(pinned_http.extract_spki_der(certificate), spki)
 
-    def test_rejects_unpinned_host_and_cleartext(self):
-        for url in ("http://alvsiapro.cc.cd/api", "https://example.com/api"):
+    def test_only_active_unaux_host_is_trusted(self):
+        self.assertEqual(pinned_http.PANEL_HOSTS, frozenset(("alvsiapanel.unaux.com",)))
+
+    def test_pin_matches_android_vault_measured_spki(self):
+        expected = base64.b64decode("84+S6cn1vo+IjlQMR5mvqIe5XKMPh28WV9xYVtFKTkk=")
+        self.assertEqual(pinned_http.PANEL_SPKI_PINS, (expected,))
+
+    def test_retired_hosts_and_cleartext_are_rejected_before_network(self):
+        for url in (
+            "http://alvsiapro.cc.cd/api",
+            "https://alvsiapro.cc.cd/api",
+            "https://api.alvsiapro.cc.cd/api",
+            "http://alvsiapanel.unaux.com/api/connect.php",
+            "https://example.com/api",
+        ):
             with self.subTest(url=url):
                 with self.assertRaises(ValueError):
-                    panel_post(url, json={})
+                    pinned_http.panel_post(url, json={})
 
 
 if __name__ == "__main__":
