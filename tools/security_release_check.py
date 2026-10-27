@@ -173,6 +173,10 @@ guard = read(JAVA / "sec/Guard.kt")
 if "fun runtimeHostile(ctx: Context)" not in guard or "private val RUNTIME_MARKERS" not in guard:
     fail.append("Guard must distinguish active runtime instrumentation from root-only markers")
 ultimate = read(PY / "alvsia_ultimate.py")
+if "alvsiapro.cc.cd" in ultimate or "api.alvsiapro.cc.cd" in ultimate:
+    fail.append("bundled ultimate engine still references the retired panel host")
+if 'def check_password_login()' in ultimate and 'SessionGate.isSessionAuthorized()' not in ultimate:
+    fail.append("bundled ultimate engine must defer authentication to the trusted Kotlin session gate")
 if "/SKIN_TOOL/main/SKIN_TOOL.zip" in ultimate or "/BGMI_CSV/main/" in ultimate:
     fail.append("external SKIN_TOOL/BGMI_CSV downloads are not commit-pinned")
 if "_verify_pinned_git_blob" not in ultimate or "cbd3d0e257963b54f34a908b6864040c7f96fbb1" not in ultimate:
