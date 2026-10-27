@@ -9,10 +9,16 @@ import sys
 import tempfile
 from pathlib import Path
 
-try:
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-except ImportError:
-    raise SystemExit("Missing dependency: install cryptography before sealing.")
+AESGCM = None
+
+def _aesgcm_class():
+    # Restoring source after a failed CI step must not require the optional
+    # sealing dependency. Import AES-GCM only for the --seal path.
+    try:
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM as _AESGCM
+        return _AESGCM
+    except ImportError as exc:
+        raise SystemExit("Missing dependency: install cryptography before sealing.") from exc
 
 ROOT = Path(__file__).resolve().parents[1]
 PY_ROOT = ROOT / "app/src/main/python"
@@ -63,7 +69,7 @@ def seal_payload(source: bytes, seed: bytes, cert_digest: bytes, build_id: str) 
         raise ValueError("invalid seal key material")
     key = hashlib.sha256(seed + cert_digest + build_id.encode("utf-8")).digest()
     nonce = os.urandom(12)
-    encrypted = AESGCM(key).encrypt(nonce, source, MAGIC)
+    encrypted = _aesgcm_class()(key).encrypt(nonce, source, MAGIC)
     return MAGIC + nonce + encrypted
 
 def restore() -> None:
