@@ -14,6 +14,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Chaquopy host-side pip imports cgi; Python 3.13+ removes it.
+      - name: Set up compatible host Python for Chaquopy
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Validate 19-module catalog and security baseline
         run: python3 scripts/release_safety_audit.py
       - name: Set up Java
