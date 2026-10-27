@@ -5,14 +5,14 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-val AlvisiaBlue = Color(0xFF00A3FF)
-val AlvisiaCyan = Color(0xFF00E5FF)
-val AlvisiaSilver = Color(0xFFE8EEF6)
-val AlvisiaDeep = Color(0xFF02050C)
-val AlvisiaCard = Color(0xCC0A121C)
-val AlvisiaRed = Color(0xFFFF2D55)
-val AlvisiaMetal = Color(0xFF8FA3B8)
-val AlvisiaGlow = Color(0xFF00B4FF)
+val AlvisiaBlue = Color(0xFF42D6FF)
+val AlvisiaCyan = Color(0xFF8AF7E8)
+val AlvisiaSilver = Color(0xFFEAF2FA)
+val AlvisiaDeep = Color(0xFF050912)
+val AlvisiaCard = Color(0xE6111C2A)
+val AlvisiaRed = Color(0xFFFF5477)
+val AlvisiaMetal = Color(0xFF9CB3C9)
+val AlvisiaGlow = Color(0xFF6C8CFF)
 
 private val DarkColors = darkColorScheme(
     primary = AlvisiaBlue,
