@@ -119,15 +119,24 @@ jobs:
           # Strip non-runtime metadata and the plaintext rebrand template before auditing.
           python3 tools/strip_vcs_metadata.py "$APK"
           python3 tools/audit_release_apk.py "$APK"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          test -x "$AAPT" || { echo "FAIL: aapt not found"; exit 1; }
+          BADGING="$("$AAPT" dump badging "$APK")"
+          printf '%s\n' "$BADGING" | grep -Fq "package: name='com.alvsia.pro' versionCode='97' versionName='5.5.1-hardened'" || {
+            echo "FAIL: APK package/version does not match release source"
+            printf '%s\n' "$BADGING" | grep -E "^package:|^application-label:" || true
+            exit 1
+          }
+          echo "PASS: APK package/version verified"
           mkdir -p validation-artifacts
-          cp "$APK" validation-artifacts/ALVISIA_PRO_5.5.0_release_unsigned.apk
+          cp "$APK" validation-artifacts/ALVISIA_PRO_5.5.1-hardened_release_unsigned.apk
           cp release_security_audit.txt validation-artifacts/
           sha256sum validation-artifacts/*.apk
 
       - name: Report release APK fingerprint and size
         run: |
           set -euo pipefail
-          APK=validation-artifacts/ALVISIA_PRO_5.5.0_release_unsigned.apk
+          APK=validation-artifacts/ALVISIA_PRO_5.5.1-hardened_release_unsigned.apk
           test -s "$APK"
           echo "Commit: $GITHUB_SHA"
           echo "APK bytes: $(wc -c < "$APK" | tr -d ' ')"
@@ -143,7 +152,7 @@ jobs:
           draft: true
           prerelease: true
           files: |
-            validation-artifacts/ALVISIA_PRO_5.5.0_release_unsigned.apk
+            validation-artifacts/ALVISIA_PRO_5.5.1-hardened_release_unsigned.apk
             validation-artifacts/release_security_audit.txt
           fail_on_unmatched_files: true
 
