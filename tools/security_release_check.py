@@ -123,6 +123,9 @@ if "NativeGuard.scanFlags()" not in dual_vm or "NativeGuard.dualVmNativeFlags()"
     fail.append("dual-layer runtime gate does not cross-check the native VM and native RASP scanner")
 if "native_vm_flags" not in native or '"nativeVmFlags"' not in native or "fun dualVmNativeFlags()" not in native_guard:
     fail.append("native mini-VM JNI entry point is not wired end-to-end")
+for opcode in ("case 0x11:", "case 0x22:", "case 0x33:", "case 0x44:", "case 0x55:", "case 0x66:"):
+    if opcode not in native:
+        fail.append("native mini-VM is missing bounded integrity opcode " + opcode)
 if 'SEED_ENV = "ALVSIA_SEAL_SEED_HEX"' not in seal_script:
     fail.append("Python sealing does not use the per-build seed environment variable")
 if "secrets.token_hex(32)" not in workflow or "secrets.token_hex(32)" not in codemagic:
@@ -137,10 +140,15 @@ if "android.permission.DELETE_PACKAGES" in manifest or "android.permission.CHANG
     fail.append("unused package-delete/network-state permissions remain in manifest")
 if ".certificatePinner(Vault.certPinner())" not in panel or "clientPinned.newCall(req).execute()" not in panel:
     fail.append("PanelClient TLS policy is not wired")
+if 'sha256/84+S6cn1vo+IjlQMR5mvqIe5XKMPh28WV9xYVtFKTkk=' not in vault or '.add("alvsiapanel.unaux.com", "sha256/' not in vault:
+    fail.append("measured Unaux SPKI pin is missing from the active OkHttp certificate pinner")
+network_config = read(ROOT / "app/src/main/res/xml/network_security_config.xml")
 if ("networkSecurityConfig" not in manifest
-        or "alvsiapanel.unaux.com" not in read(ROOT / "app/src/main/res/xml/network_security_config.xml")
+        or "alvsiapanel.unaux.com" not in network_config
+        or "<pin-set>" not in network_config
+        or "84+S6cn1vo+IjlQMR5mvqIe5XKMPh28WV9xYVtFKTkk=" not in network_config
         or "alvsiapanel.unaux.com" not in vault):
-    fail.append("new-panel network security configuration is missing")
+    fail.append("new-panel network security configuration or measured SPKI pin is missing")
 if "KEY_ALGORITHM_HMAC_SHA256" not in session or "age in 0..SESSION_TTL" not in session:
     fail.append("SessionGate HMAC or future/expiry timestamp checks are missing")
 if "if (Guard.runtimeHostile(ctx))" not in session or "native_rasp_unavailable" not in session:
@@ -166,4 +174,4 @@ print(f"- protected Python modules scheduled for sealing: {len(required_modules)
 print("- AES-GCM decryption in Kotlin/native bridge; seed and cert digest not exposed to Python")
 print("- New-panel TLS CA/hostname validation, SessionGate HMAC/TTL, R8, VCS stripping checked")
 print("- CodeMagic release restricted to main; APK audit required")
-print("NOTE: new-host SPKI pinning remains a release hardening gate until the live certificate chain is measured; native seed is build-bound obfuscation, not a server secret.")
+print("NOTE: one Termux-measured Unaux SPKI pin is enforced; no verified backup pin was supplied, so certificate rotation must be re-measured. Native seed is build-bound obfuscation, not a server secret.")

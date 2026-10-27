@@ -438,15 +438,20 @@ native_seal_build_id(JNIEnv* env, jobject) {
 // commercial Virbox equivalence or protection against a fully privileged attacker.
 static jint JNICALL
 native_vm_flags(JNIEnv*, jobject) {
-    static const uint8_t program[] = {0x11, 0x22, 0x33};
+    // Independent bounded bytecode stream. The VM checks six distinct native
+    // signals; unknown opcodes, overrun, and incomplete execution fail closed.
+    static const uint8_t program[] = {0x11, 0x22, 0x33, 0x44, 0x55, 0x66};
     size_t pc = 0;
-    int budget = 8;
+    int budget = 12;
     int flags = 0;
     while (pc < sizeof(program) && budget-- > 0) {
         switch (program[pc++]) {
             case 0x11: flags |= check_tracer_pid(); break;
             case 0x22: flags |= check_maps_frida(); break;
             case 0x33: flags |= check_self_hash(); break;
+            case 0x44: flags |= check_wchan_ptrace(); break;
+            case 0x55: flags |= check_late_loaded_libs(); break;
+            case 0x66: flags |= check_dev_files(); break;
             default: return -1;
         }
     }

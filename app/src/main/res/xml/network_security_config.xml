@@ -5,10 +5,15 @@
             <certificates src="system" />
         </trust-anchors>
     </base-config>
-    <!-- New panel only. Platform CA + hostname validation remains enabled.
-         Add a measured SPKI pin set for this host after live certificate verification.
-         Do not reuse pins from the retired hostname. -->
+    <!-- New panel only. Platform CA + hostname validation and measured SPKI pin are enforced.
+         Re-measure the key before certificate rotation; do not reuse retired-host pins. -->
     <domain-config cleartextTrafficPermitted="false">
         <domain includeSubdomains="true">alvsiapanel.unaux.com</domain>
+        <!-- SPKI measured by the owner's Termux audit on 2026-10-26.
+             Keep CA and hostname validation enabled. Re-measure before key rotation;
+             no verified backup SPKI was present in the supplied audit. -->
+        <pin-set>
+            <pin digest="SHA-256">84+S6cn1vo+IjlQMR5mvqIe5XKMPh28WV9xYVtFKTkk=</pin>
+        </pin-set>
     </domain-config>
 </network-security-config>
