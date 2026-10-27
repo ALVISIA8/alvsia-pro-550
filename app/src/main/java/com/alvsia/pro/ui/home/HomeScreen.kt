@@ -136,7 +136,7 @@ fun HomeScreen(
             delay(1000L)
         }
     }
-    Box(Modifier.fillMaxSize().background(Color(0xFF070B10)))
+    Box(Modifier.fillMaxSize().background(Color(0xFF070B10))) {
         Column(
             Modifier
                 .fillMaxSize()
