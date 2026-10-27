@@ -53,14 +53,14 @@ fun ProfileScreen(product: String, expiry: String, hwidShort: String, toolCount:
         Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(7.dp)) {
             _InfoTile("PLAN", product.ifBlank { "PREMIUM" }, Modifier.weight(1f))
             _InfoTile("EXPIRES", expiry.ifBlank { "—" }, Modifier.weight(1f))
-            _InfoTile("MODULES", toolCount.toString(), Modifier.weight(1f))
+            _InfoTile("MODULES", "19", Modifier.weight(1f))
         }
         Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             _ActionTile("♙", "OWNER", "@OriginalOnwerALV", Modifier.weight(1f), Color(0xFF263B4C)) {
                 uri.openUri("https://t.me/OriginalOnwerALV")
             }
-            _ActionTile("✦", "DEVELOPER", "BIJI PUKI", Modifier.weight(1f), Color(0xFF42352D)) { }
+            _ActionTile("✦", "CREATOR", "ALVSIA_PRO", Modifier.weight(1f), Color(0xFF263F35)) { }
         }
         Spacer(Modifier.height(8.dp))
         _ActionTile("✈", "OFFICIAL CHANNEL", "@ALVSIA_PRO", Modifier.fillMaxWidth(), Color(0xFF263F35)) {
