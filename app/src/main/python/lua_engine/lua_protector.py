@@ -13,7 +13,7 @@ compile_lua_bytecode(src_path, out_dir) -> dict
     Konversi Lua source → bytecode via Python-only emitter (Lua 5.3 header)
 
 encrypt_lua(src_path, out_dir, key_hex=None) -> dict
-    XOR-AES hybrid encryption dengan ALVSIA header
+    AES-256-GCM authenticated encryption with ALVSIA header (legacy v1 decrypt supported)
 
 obfuscate_lua(src_path, out_dir, passes=1) -> dict
     Variable rename · string encode · dead code inject · anti-extract shuffle
@@ -34,7 +34,7 @@ from typing import Optional
 # ──────────────────────────────────────────────────────────────────────────────
 
 _MAGIC = b"\x41\x4C\x56\x50\x52\x4F\x54"   # "ALVPROT"
-_VERSION = 0x01
+_VERSION = 0x02  # v2 uses AES-GCM; v1 remains readable for legacy outputs
 _BLOCK = 16
 
 # Lua 5.3 bytecode header (standard — for compile stub)
@@ -87,9 +87,9 @@ def _make_nonce() -> bytes:
     return secrets.token_bytes(12)
 
 
-def _pack_header(nonce: bytes, salt: bytes, orig_size: int) -> bytes:
+def _pack_header(nonce: bytes, salt: bytes, orig_size: int, version: int = _VERSION) -> bytes:
     """
-    ALVPROT v1 header (total 44 bytes):
+    ALVPROT header (total 44 bytes):
       7  magic
       1  version
       12 nonce
@@ -99,7 +99,7 @@ def _pack_header(nonce: bytes, salt: bytes, orig_size: int) -> bytes:
     """
     size_le = struct.pack("<I", orig_size)
     crc = hashlib.md5(size_le).digest()[:4]
-    return _MAGIC + bytes([_VERSION]) + nonce + salt + size_le + crc
+    return _MAGIC + bytes([version]) + nonce + salt + size_le + crc
 
 
 def _unpack_header(data: bytes):
@@ -107,8 +107,9 @@ def _unpack_header(data: bytes):
         raise ValueError("too short for ALVPROT header")
     if data[:7] != _MAGIC:
         raise ValueError(f"bad magic: {data[:7].hex()}")
-    if data[7] != _VERSION:
-        raise ValueError(f"unknown version {data[7]:#x}")
+    version = data[7]
+    if version not in (0x01, 0x02):
+        raise ValueError(f"unknown version {version:#x}")
     nonce = data[8:20]
     salt  = data[20:36]
     orig_size = struct.unpack_from("<I", data, 36)[0]
@@ -117,7 +118,7 @@ def _unpack_header(data: bytes):
     if crc_stored != crc_actual:
         raise ValueError("header CRC mismatch — file corrupted or tampered")
     payload = data[44:]
-    return nonce, salt, orig_size, payload
+    return version, nonce, salt, orig_size, payload
 
 
 def _session_ok() -> bool:
@@ -133,7 +134,7 @@ def _session_ok() -> bool:
 
 def encrypt_lua(src_path, out_dir, key_hex: Optional[str] = None) -> dict:
     """
-    Encrypt Lua source or bytecode with ALVPROT hybrid cipher.
+    Encrypt Lua source or bytecode using AES-256-GCM with authenticated header.
     Key: hex string; if None, random 32-byte key is generated and saved beside output.
     """
     if not _session_ok():
@@ -162,15 +163,17 @@ def encrypt_lua(src_path, out_dir, key_hex: Optional[str] = None) -> dict:
 
     salt  = secrets.token_bytes(16)
     nonce = _make_nonce()
-    dk    = _derive_key(raw_key, salt + nonce)
+    dk = _derive_key(raw_key, salt + nonce)
+    header = _pack_header(nonce, salt, orig_size, version=_VERSION)
+    try:
+        from Crypto.Cipher import AES
+    except ImportError:
+        return {"ok": False, "error": "AES-GCM unavailable: PyCryptodome is required"}
 
-    # Encrypt: XOR stream → block mix → XOR stream again (layered)
-    step1 = _xor_stream(plain, dk)
-    step2 = _block_mix(step1, dk[:16])
-    step3 = _xor_stream(step2, dk[16:])
-
-    header  = _pack_header(nonce, salt, orig_size)
-    payload = header + step3
+    cipher = AES.new(dk, AES.MODE_GCM, nonce=nonce, mac_len=16)
+    cipher.update(header)
+    ciphertext, tag = cipher.encrypt_and_digest(plain)
+    payload = header + ciphertext + tag
 
     dest = out / (src.stem + ".alv")
     dest.write_bytes(payload)
@@ -178,7 +181,7 @@ def encrypt_lua(src_path, out_dir, key_hex: Optional[str] = None) -> dict:
     sha256 = hashlib.sha256(payload).hexdigest()
     return {
         "ok": True,
-        "mode": "alvprot_v1",
+        "mode": "alvprot_v2_aes_gcm",
         "out": str(dest),
         "original_size": orig_size,
         "encrypted_size": len(payload),
@@ -204,16 +207,28 @@ def decrypt_lua(src_path, out_dir, key_hex: str) -> dict:
 
     try:
         data = src.read_bytes()
-        nonce, salt, orig_size, payload = _unpack_header(data)
+        version, nonce, salt, orig_size, payload = _unpack_header(data)
     except Exception as e:
         return {"ok": False, "error": f"header parse failed: {e}"}
 
     dk = _derive_key(raw_key, salt + nonce)
-
-    # Reverse: undo step3 → undo step2 → undo step1
-    step3 = _xor_stream(payload, dk[16:])
-    step2 = _block_mix(step3, dk[:16])   # block_mix is self-inverse (XOR)
-    plain = _xor_stream(step2, dk)
+    if version == 0x02:
+        if len(payload) < 16:
+            return {"ok": False, "error": "AES-GCM payload is missing its authentication tag"}
+        try:
+            from Crypto.Cipher import AES
+            cipher = AES.new(dk, AES.MODE_GCM, nonce=nonce, mac_len=16)
+            cipher.update(data[:44])
+            plain = cipher.decrypt_and_verify(payload[:-16], payload[-16:])
+        except ImportError:
+            return {"ok": False, "error": "AES-GCM unavailable: PyCryptodome is required"}
+        except Exception:
+            return {"ok": False, "error": "AES-GCM authentication failed: wrong key or modified payload"}
+    else:
+        # Backward-compatible reader for ALVPROT v1. New encryption never emits v1.
+        step3 = _xor_stream(payload, dk[16:])
+        step2 = _block_mix(step3, dk[:16])
+        plain = _xor_stream(step2, dk)
 
     if len(plain) != orig_size:
         return {"ok": False, "error": f"size mismatch: got {len(plain)}, expected {orig_size}"}
