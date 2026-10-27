@@ -283,6 +283,9 @@ static int check_jni_prologue() {
 //     debugging setup exists in /data/local/tmp or /dev/
 //     Sprint 1: Detect frida-server, gadget, hluda-server artifacts
 // ─────────────────────────────────────────────────────────────────────
+// Only unambiguous instrumentation artifacts may trigger hard runtime enforcement.
+// Root managers and generic /data/adb paths are deliberately excluded: their presence
+// alone is not proof of an active hook and must not lock legitimate tool users out.
 static const char* DEV_FILE_PATHS[] = {
     "/data/local/tmp/frida-server",
     "/data/local/tmp/frida-gadget",
@@ -292,14 +295,8 @@ static const char* DEV_FILE_PATHS[] = {
     "/data/local/tmp/frida-helper-64",
     "/data/local/tmp/linjector",
     "/data/local/tmp/objection",
-    "/data/local/tmp/agent",
-    "/data/local/tmp/fs-main",
     "/system/bin/frida-server",
     "/system/xbin/frida-server",
-    "/sbin/.magisk",
-    "/data/adb/magisk",
-    "/data/adb/ksu",
-    "/data/adb/modules",
     nullptr
 };
 
