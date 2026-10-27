@@ -182,12 +182,8 @@ except ImportError:
 #     os._exit(0)
 
 APP_VERSION = "5.5" 
-# ========== PANEL-BASED KEY SYSTEM ==========
-PANEL_API_URL = "https://alvsiapro.cc.cd/api"
-PANEL_PROTO = 2  # v2: no permanent secret
-PANEL_MARKER = b"ALVSIA_V2|"
-SESSION_TOKEN = None
-SESSION_EXPIRES = 0
+# Authentication is owned by the Android Kotlin PanelClient + SessionGate.
+# This bundled engine must never contact the retired panel or invent a second login protocol.
 
 if getattr(sys, 'frozen', False):
     application_path = os.path.dirname(sys.executable)
@@ -257,7 +253,7 @@ def fancy_panel(renderable, title=None, **kwargs):
     return Panel(renderable, title=title, **kwargs)
 
 # Panel API URL is already defined above (line 156)
-# API_URL = PANEL_API_URL (defined at startup)
+# Panel HTTP is intentionally handled only by the authenticated Kotlin client.
 
 def check_key_press():
     if sys.platform != 'win32' and select.select([sys.stdin], [], [], 0)[0]:
@@ -677,7 +673,7 @@ _KS_INNER_SALT = "ALVSIA_INNER_V2_9F3D"
 
 # ── prefix → days (0 = lifetime) ──────────────────────────
 # ========== KEY TIERS NOW MANAGED BY PANEL ==========
-# Previously hardcoded — now sourced from alvsiapro.cc.cd API
+# Legacy standalone panel lookup removed; the Android app owns panel authentication.
 _KEY_TIERS = {}  # Empty; validation done server-side
 
 # ── helpers ───────────────────────────────────────────────
@@ -890,190 +886,23 @@ def _ks_prompt_key(hwid: str) -> bool:
 # ── public entry point (replaces the old stub) ─────────────
 
 def check_password_login():
-    """
-    Panel-based key authentication via alvsiapro.cc.cd API.
-    Validates key with remote panel and stores session token locally.
-    """
-    global SESSION_TOKEN, SESSION_EXPIRES, SESSION_USER
-    
-    console.clear()
-    console.print(Panel(
-        "[bold cyan]🔐 ALVSIA PRO 5.5[/bold cyan]\n"
-        "[dim]Panel-based Authentication[/dim]\n"
-        f"[dim]API: {PANEL_API_URL}[/dim]",
-        title="[bold white on cyan] 🔑 LICENSE CHECK [/]",
-        border_style="cyan", box=box.HEAVY
-    ))
-    
-    # Prompt user untuk key
-    for attempt in range(3):
-        try:
-            license_key = Prompt.ask(
-                f"\n[bold cyan]🔑 Enter your ALVSIA key[/bold cyan] "
-                f"[dim](attempt {attempt+1}/3)[/dim]"
-            ).strip()
-        except (KeyboardInterrupt, EOFError):
-            console.print("\n[bold red]❌ Cancelled by user[/bold red]")
-            os._exit(1)
-        
-        if not license_key:
-            console.print("[bold red]❌ No key entered.[/bold red]")
-            continue
-        
-        # Try panel validation (offline: skip if network unavailable)
-        console.print("\n[bold yellow]⏳ Validating key with panel...[/bold yellow]")
-        
-        try:
-            # Attempt connection (akan fail gracefully jika network disable)
-            response = validate_key_with_panel(license_key)
-            if response:
-                SESSION_TOKEN = response.get("session_token")
-                SESSION_EXPIRES = response.get("session_expires", 0)
-                SESSION_USER = license_key
-                
-                console.print(Panel(
-                    f"[bold green]✅ KEY ACTIVATED![/bold green]\n"
-                    f"[bold yellow]Key     :[/bold yellow] [cyan]{license_key[:20]}...[/cyan]\n"
-                    f"[bold yellow]Expires :[/bold yellow] [cyan]{response.get('expiry', 'Unknown')}[/cyan]",
-                    title="[bold white on green] 🔓 ACTIVATION SUCCESS [/]",
-                    border_style="green", box=box.HEAVY,
-                ))
-                time.sleep(1.5)
-                return "ALVSIA_KEYED"
-            else:
-                console.print("[bold red]❌ Invalid key or server rejected[/bold red]")
-                continue
-                
-        except Exception as e:
-            console.print(f"[bold yellow]⚠️  Connection issue: {str(e)[:50]}[/bold yellow]")
-            console.print("[dim]Tip: Check network or panel status[/dim]")
-            continue
-    
-    # Failed after 3 attempts
-    console.print()
-    console.print(Panel(
-        "[bold red]❌ Too many invalid attempts.[/bold red]\n"
-        "[yellow]Contact [bold cyan]@OriginalOnwerALV[/bold cyan] for support.[/yellow]",
-        title="[bold white on red] 🚫 ACCESS DENIED [/]",
-        border_style="red", box=box.HEAVY,
-    ))
-    time.sleep(2)
-    os._exit(1)
+    """Accept only the live Kotlin session; never prompt or call a legacy panel."""
+    if os.environ.get("ALVSIA_APK_SESSION") != "1":
+        return None
+    try:
+        from com.alvsia.pro.sec import SessionGate
+        if not bool(SessionGate.isSessionAuthorized()):
+            return None
+    except Exception:
+        return None
+    global SESSION_USER
+    SESSION_USER = "AUTHENTICATED APK SESSION"
+    return "ALVSIA_KEYED"
 
 
 def validate_key_with_panel(license_key: str) -> dict | None:
-    """
-    Validate key dengan panel API.
-    Returns dict dengan session_token jika sukses, None jika gagal.
-    Network-aware: graceful fallback jika offline.
-    """
-    try:
-        import requests
-        
-        # Get device ID
-        device_id = get_device_id()
-        
-        # Handshake: request captcha challenge
-        resp_captcha = requests.post(
-            f"{PANEL_API_URL}/captcha.php",
-            json={},
-            timeout=10,
-            verify=True
-        )
-        
-        if resp_captcha.status_code != 200:
-            return None
-        
-        captcha_data = resp_captcha.json()
-        cid = captcha_data.get("cid", "")
-        nonce = captcha_data.get("nonce", "")
-        
-        if not cid or not nonce:
-            return None
-        
-        # Solve captcha (parse equation)
-        equation_b64 = captcha_data.get("mechanic", "")
-        if equation_b64:
-            import base64
-            equation = base64.b64decode(equation_b64).decode()
-            try:
-                solution = int(eval(equation))
-            except:
-                solution = 0
-        else:
-            solution = 0
-        
-        # Build payload
-        payload = {
-            "license": license_key,
-            "game": "ALVSIA_PRO",
-            "hwid": device_id,
-            "solution": solution,
-            "pow_nonce": "0",
-            "ts": int(time.time()),
-        }
-        
-        # Encrypt packet dengan transport key
-        transport_key = hashlib.sha256(PANEL_MARKER + nonce.encode()).digest()
-        iv = nonce[:16].encode()
-        
-        from Crypto.Cipher import AES
-        from Crypto.Util.Padding import pad
-        
-        cipher = AES.new(transport_key, AES.MODE_CBC, iv)
-        encrypted_payload = cipher.encrypt(pad(json.dumps(payload).encode(), AES.block_size))
-        packet_b64 = base64.b64encode(encrypted_payload).decode()
-        
-        # Send to connect.php
-        resp_connect = requests.post(
-            f"{PANEL_API_URL}/connect.php",
-            json={
-                "cid": cid,
-                "packet": packet_b64,
-                "proto": PANEL_PROTO
-            },
-            timeout=15,
-            verify=True
-        )
-        
-        if resp_connect.status_code != 200:
-            return None
-        
-        response_data = resp_connect.json()
-        
-        if response_data.get("status") != "login":
-            return None
-        
-        # Decrypt response
-        server_iv_b64 = response_data.get("ip", "")
-        encrypted_resp_b64 = response_data.get("isp", "")
-        
-        if not server_iv_b64 or not encrypted_resp_b64:
-            return None
-        
-        server_iv = base64.b64decode(server_iv_b64)
-        encrypted_resp = base64.b64decode(encrypted_resp_b64)
-        
-        from Crypto.Util.Padding import unpad
-        cipher_resp = AES.new(transport_key, AES.MODE_CBC, server_iv)
-        decrypted = unpad(cipher_resp.decrypt(encrypted_resp), AES.block_size)
-        
-        result = json.loads(decrypted.decode())
-        
-        if result.get("status") == "success":
-            return {
-                "session_token": result.get("session_token"),
-                "session_expires": result.get("session_expires", 0),
-                "expiry": result.get("expiry", "Unknown"),
-                "max_devices": result.get("max_devices"),
-                "seller": result.get("seller"),
-            }
-        
-        return None
-        
-    except Exception as e:
-        # Network error atau parsing error
-        return None
+    """Legacy duplicate panel handshake intentionally disabled."""
+    return None
 
 
 def get_device_id() -> str:
@@ -10937,7 +10766,7 @@ def clear_all_unpack_data():
 # ==================== SECURITY SYSTEM ====================
 
 # 🔑 LICENSE KEYS - NOW MANAGED BY PANEL API
-# No hardcoded keys; all validation done at alvsiapro.cc.cd
+# No legacy panel validation; authenticated session is supplied by Kotlin.
 VALID_LICENSE_KEYS = []  # Legacy placeholder
 
 # 📱 DEVICE MODEL WHITELIST (Complete - All Brands)
@@ -12122,7 +11951,10 @@ def main():
     create_dirs(BASE)
     
     auth_status = check_password_login()
-    
+    if not auth_status:
+        console.print("[bold red]Open ALVSIA PRO and complete login through the active Unaux panel first.[/bold red]")
+        return
+
     global SESSION_KEY, SM4_SECRET_NEW, ENGINE_LOCKED, SERVER_LUA_XOR_KEY_HEX
     
     # Offline startup: no server token / heartbeat / deliberate crash dependency.
