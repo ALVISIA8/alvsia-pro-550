@@ -84,7 +84,7 @@ def main() -> int:
             manifest = outer.read("AndroidManifest.xml") if "AndroidManifest.xml" in names else b""
             check(bool(manifest), "compiled Android manifest exists")
             # Keep the bundled home-screen audio asset from silently disappearing in release packaging.
-            audio_entries = sorted(n for n in names if re.fullmatch(r"res/raw/bgm_pulse\\.[a-z0-9]+", n.lower()))
+            audio_entries = sorted(n for n in names if re.fullmatch(r"res/raw/bgm_pulse\.[a-z0-9]+", n.lower()))
             check(bool(audio_entries), "background audio resource packaged" if audio_entries else "background audio resource missing from APK")
             for audio_name in audio_entries:
                 check(outer.getinfo(audio_name).file_size > 0, f"non-empty media asset: {audio_name}")
