@@ -31,7 +31,8 @@ def test_python_auth_normalizes_java_string_and_lua_avoids_art_oom():
     # SessionGate is loaded from Python by its fully-qualified JVM name; R8 must not rename/repackage it.
     rules = (ROOT / "app/proguard-rules.pro").read_text(encoding="utf-8")
     assert "-keep class com.alvsia.pro.sec.SessionGate { *; }" in rules
-    assert 'getattr(exc, "name"' in bridge, "configure diagnostics must expose the missing module name"
+    assert 'getattr(exc, "name"' not in bridge, "release bridge must not expose internal exception/module diagnostics"
+    assert '_CD="error"' in bridge, "failed runtime configuration must return a generic diagnostic"
     configure = bridge.split("def configure_runtime", 1)[1].split("def run_tool", 1)[0]
     assert "gate.isSessionAuthorized()" not in configure, "split auth checks can race with RASP session locking"
     gate = (ROOT / "app/src/main/java/com/alvsia/pro/sec/SessionGate.kt").read_text(encoding="utf-8")
