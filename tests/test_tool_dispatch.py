@@ -287,6 +287,20 @@ def test_large_file_helpers_stream_and_report_hashes():
         assert report.get("sha256") == expected, report
         assert expected in Path(report["out"]).read_text(encoding="utf-8")
 
+
+def test_profile_catalog_matches_canonical_nineteen_modules():
+    profile_path = ROOT / "app/src/main/java/com/alvsia/pro/ui/profile/ProfileScreen.kt"
+    profile = profile_path.read_text(encoding="utf-8")
+    chips = re.findall(r'ModuleChip\\(\s*"[^"]+"\s*,\s*"([^"]+)"\s*\\)', profile)
+    assert len(chips) == 19, f"Expected 19 profile chips, got {len(chips)}"
+    assert chips[-1] == "ALVSIA PRIVATE TOOL"
+    assert '_ActionTile("✦", "CREATOR", "ALVSIA_PRO"' in profile
+    assert '_InfoTile("MODULES", "19"' in profile
+    catalog = CATALOG.read_text(encoding="utf-8")
+    names = re.findall(r'ToolItem\\(\s*\\d+\\s*,\\s*"([^"]+)"', catalog)
+    assert names == chips, f"Home/profile module names differ: home={names}, profile={chips}"
+
+
 if __name__ == "__main__":
     tests = (
         test_python_auth_normalizes_java_string_and_lua_avoids_art_oom,
@@ -296,6 +310,7 @@ if __name__ == "__main__":
         test_frida_spawn_preserves_full_package_name,
         test_engine_surfaces_bridge_failures,
         test_tool_argument_and_storage_contracts,
+        test_profile_catalog_matches_canonical_nineteen_modules,
         test_bridge_call_signatures_match_helpers,
         test_obb_extract_normalizes_archive_paths,
         test_large_lua_source_is_detected_before_bytecode_fallback,
