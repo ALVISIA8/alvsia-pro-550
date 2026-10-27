@@ -246,7 +246,7 @@ workflows:
           "$BUILD_TOOLS/zipalign" -c -v 4 ALVISIA_PRO_5.5.2-hardened_signed.apk
           python3 tools/audit_release_apk.py ALVISIA_PRO_5.5.2-hardened_signed.apk
           BADGING="$("$BUILD_TOOLS/aapt" dump badging ALVISIA_PRO_5.5.2-hardened_signed.apk)"
-          printf '%s\n' "$BADGING" | grep -Fq "package: name='com.alvsia.pro' versionCode='97' versionName='5.5.2-hardened'" || {
+          printf '%s\n' "$BADGING" | grep -Fq "package: name='com.alvsia.pro' versionCode='98' versionName='5.5.2-hardened'" || {
             echo "ERROR: final APK package/version does not match release source"
             printf '%s\n' "$BADGING" | grep -E "^package:|^application-label:" || true
             exit 1
