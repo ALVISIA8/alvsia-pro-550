@@ -291,13 +291,13 @@ def test_large_file_helpers_stream_and_report_hashes():
 def test_profile_catalog_matches_canonical_nineteen_modules():
     profile_path = ROOT / "app/src/main/java/com/alvsia/pro/ui/profile/ProfileScreen.kt"
     profile = profile_path.read_text(encoding="utf-8")
-    chips = re.findall(r'ModuleChip\\(\s*"[^"]+"\s*,\s*"([^"]+)"\s*\\)', profile)
+    chips = re.findall(r'ModuleChip\(\s*"[^"]+"\s*,\s*"([^"]+)"\s*\)', profile)
     assert len(chips) == 19, f"Expected 19 profile chips, got {len(chips)}"
     assert chips[-1] == "ALVSIA PRIVATE TOOL"
     assert '_ActionTile("✦", "CREATOR", "ALVSIA_PRO"' in profile
     assert '_InfoTile("MODULES", "19"' in profile
     catalog = CATALOG.read_text(encoding="utf-8")
-    names = re.findall(r'ToolItem\\(\s*\\d+\\s*,\\s*"([^"]+)"', catalog)
+    names = re.findall(r'ToolItem\(\s*\d+\s*,\s*"([^"]+)"', catalog)
     assert names == chips, f"Home/profile module names differ: home={names}, profile={chips}"
 
 
