@@ -1,4 +1,4 @@
-# ALVSIA PREMIUM TOOL 5.5.0
+# ALVSIA PREMIUM TOOL 5.5.2
 
 > **Channel**: [t.me/ALVSIA_PRO](https://t.me/ALVSIA_PRO)  
 > **Owner / Developer**: [@OriginalOnwerALV](https://t.me/OriginalOnwerALV)
@@ -7,7 +7,7 @@
 
 ## Overview
 
-ALVSIA PRO is a hardened Android toolkit for PAK/OBB/Lua file analysis and manipulation. It ships with a 7-layer RASP security stack, AES-256-GCM session encryption backed by Android Keystore TEE, TLS 1.3 certificate pinning, and a full **18-module** tool catalog including VM-style Lua protection + deobfuscation.
+ALVSIA PRO is a hardened Android toolkit for PAK/OBB/Lua file analysis and manipulation. It ships with a layered RASP security stack, AES-256-GCM session encryption backed by Android Keystore TEE, TLS 1.3 certificate pinning, and a full **19-module** tool catalog including VM-style Lua protection + deobfuscation.
 
 ## Build — CodeMagic
 
@@ -62,6 +62,7 @@ bash RELEASE_SIGN_TERMUX.sh
 | 16 | Lua Inject | Patch bytecode · inject hook function · mod repack |
 | 17 | Anti-RE Audit | APK · LUA · SO posture analysis report |
 | 18 | Lua Protector | AES-256-GCM encrypt · VM-style BGMI-pattern protect · VM deobfuscate |
+| 19 | ALVSIA PRIVATE TOOL | Private analysis suite · sealed runtime required |
 
 ## Security Architecture
 
