@@ -241,6 +241,29 @@ fun HomeScreen(
     }
 }
 
+private fun moduleIcon(id: Int): String = when (id) {
+    1 -> "📦"
+    2 -> "🔧"
+    3 -> "🗜️"
+    4 -> "💾"
+    5 -> "🌙"
+    6 -> "🔍"
+    7 -> "🧰"
+    8 -> "📄"
+    9 -> "🎨"
+    10 -> "🔬"
+    11 -> "🎯"
+    12 -> "🔑"
+    13 -> "🔓"
+    14 -> "🗂️"
+    15 -> "🔤"
+    16 -> "💉"
+    17 -> "🛡️"
+    18 -> "🔐"
+    19 -> "⚙️"
+    else -> "◈"
+}
+
 @Composable
 private fun NeonModuleChip(
     id: Int,
@@ -284,12 +307,11 @@ private fun NeonModuleChip(
         )
         Column {
             Text(
-                "%02d".format(id),
-                color = Color.White,
-                fontWeight = FontWeight.Black,
-                fontSize = 13.sp
+                moduleIcon(id),
+                color = Color(0xFFC2D0A4),
+                fontSize = 18.sp
             )
-            Spacer(Modifier.height(2.dp))
+            Spacer(Modifier.height(3.dp))
             Text(
                 title,
                 color = Color.White.copy(alpha = 0.95f),
