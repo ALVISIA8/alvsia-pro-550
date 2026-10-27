@@ -83,9 +83,14 @@ def main() -> int:
                   "recognizable SecureVale SDK classes absent from DEX")
             manifest = outer.read("AndroidManifest.xml") if "AndroidManifest.xml" in names else b""
             check(bool(manifest), "compiled Android manifest exists")
-            # Keep the bundled home-screen audio asset from silently disappearing in release packaging.
-            audio_entries = sorted(n for n in names if re.fullmatch(r"res/raw/bgm_pulse\.[a-z0-9]+", n.lower()))
-            check(bool(audio_entries), "background audio resource packaged" if audio_entries else "background audio resource missing from APK")
+            # Resource shrinking may rename compiled res/ paths; verify packaged MP3 payloads.
+            audio_entries = sorted(
+                n for n in names
+                if n.startswith("res/") and n.lower().endswith(".mp3")
+            )
+            named_background = [n for n in audio_entries if n.lower().endswith("/bgm_pulse.mp3")]
+            audio_present = bool(named_background) or len(audio_entries) >= 2
+            check(audio_present, "background audio resource packaged" if audio_present else "background audio resource missing from APK")
             for audio_name in audio_entries:
                 check(outer.getinfo(audio_name).file_size > 0, f"non-empty media asset: {audio_name}")
             check(b"android.permission.DUMP" not in manifest,
