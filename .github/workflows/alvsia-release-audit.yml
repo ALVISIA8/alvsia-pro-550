@@ -1,0 +1,25 @@
+name: ALVSIA release safety audit
+
+on:
+  push:
+    branches: [main, release/5.5.2-19-module-redesign]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  release-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate 19-module catalog and security baseline
+        run: python3 scripts/release_safety_audit.py
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Gradle lint
+        run: ./gradlew :app:lintRelease --no-daemon
