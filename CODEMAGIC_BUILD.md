@@ -1,90 +1,49 @@
-workflows:
-  alvisia-android:
-    name: ALVISIA PRO 5.5.0
-    max_build_duration: 120
-    instance_type: mac_mini_m2
-    environment:
-      java: 17
-      vars:
-        PACKAGE_NAME: "com.alvsia.pro"
-      # Optional: set these in Codemagic UI → Environment variables (group "signing")
-      # CM_KEYSTORE  (base64 of alvsia-release.keystore) OR use keystore in repo
-      # CM_KEYSTORE_PASSWORD
-      # CM_KEY_ALIAS: alvsia
-      # CM_KEY_PASSWORD
-    scripts:
-      - name: Set gradlew permission
-        script: |
-          chmod +x ./gradlew
-          java -version
+# CodeMagic Release Build — ALVSIA PRO 5.5.1-hardened
 
-      - name: Build release APK
-        script: |
-          set -o pipefail
-          ./gradlew assembleRelease --stacktrace --no-daemon 2>&1 | tee build_full.log
-          STATUS=${PIPESTATUS[0]}
-          echo "===== ERRORS (if any) ====="
-          grep -E "^e:|What went wrong|Caused by:|FAILED|error:" build_full.log | head -50 || true
-          echo "===== APK outputs ====="
-          find app/build/outputs -name "*.apk" -type f 2>/dev/null || true
-          exit $STATUS
+This guide matches the workflow in `codemagic.yaml`. The release workflow is named **ALVSIA PRO 5.5.1-hardened** and only runs for pushes to `main`.
 
-      - name: Sign APK if keystore present
-        script: |
-          set -e
-          UNSIGNED=$(find app/build/outputs/apk -name "*.apk" -type f | head -1)
-          if [ -z "$UNSIGNED" ]; then
-            echo "No APK found — build step failed"
-            exit 1
-          fi
-          echo "Found: $UNSIGNED"
+- Repository: `ALVISIA8/alvsia-pro-550`
+- Branch: `main`
+- Package: `com.alvsia.pro`
+- Version: `5.5.1-hardened` (`versionCode 97`)
+- Expected signed APK: `ALVISIA_PRO_5.5.1-hardened_signed.apk`
 
-          # Prefer Codemagic env keystore; fallback to repo keystore
-          if [ -n "${CM_KEYSTORE:-}" ]; then
-            echo "$CM_KEYSTORE" | base64 -d > /tmp/alvsia.keystore
-            KS=/tmp/alvsia.keystore
-            KSPASS="${CM_KEYSTORE_PASSWORD}"
-            ALIAS="${CM_KEY_ALIAS:-alvsia}"
-            KEYPASS="${CM_KEY_PASSWORD:-$KSPASS}"
-          elif [ -f alvsia-release.keystore ]; then
-            KS=alvsia-release.keystore
-            # Password: set CM_KEYSTORE_PASSWORD in Codemagic UI (do not hardcode)
-            KSPASS="${CM_KEYSTORE_PASSWORD:-}"
-            ALIAS="${CM_KEY_ALIAS:-alvsia}"
-            KEYPASS="${CM_KEY_PASSWORD:-$KSPASS}"
-          else
-            echo "No keystore — leaving unsigned APK"
-            cp "$UNSIGNED" ALVSIA_PRO_5.5.0_unsigned.apk
-            exit 0
-          fi
+## 1. Connect the repository
 
-          if [ -z "$KSPASS" ]; then
-            echo "CM_KEYSTORE_PASSWORD not set — copying unsigned APK"
-            cp "$UNSIGNED" ALVSIA_PRO_5.5.0_unsigned.apk
-            exit 0
-          fi
+In CodeMagic, add `ALVISIA8/alvsia-pro-550` and select the `codemagic.yaml` workflow `alvisia-android`. Confirm the workflow uses the `main` branch.
 
-          # Align + sign
-          BUILD_TOOLS=$(ls -d $ANDROID_SDK_ROOT/build-tools/* 2>/dev/null | sort -V | tail -1)
-          ZIPALIGN="$BUILD_TOOLS/zipalign"
-          APKSIGNER="$BUILD_TOOLS/apksigner"
-          ALIGNED=/tmp/alvsia-aligned.apk
-          SIGNED=ALVSIA_PRO_5.5.0_signed.apk
+## 2. Configure release signing
 
-          "$ZIPALIGN" -f 4 "$UNSIGNED" "$ALIGNED"
-          "$APKSIGNER" sign \
-            --ks "$KS" \
-            --ks-key-alias "$ALIAS" \
-            --ks-pass "pass:$KSPASS" \
-            --key-pass "pass:$KEYPASS" \
-            --out "$SIGNED" \
-            "$ALIGNED"
-          "$APKSIGNER" verify "$SIGNED"
-          echo "Signed OK: $SIGNED"
-          ls -lh "$SIGNED"
+Create an environment-variable group named exactly `signing` and attach it to the workflow. Set these variables:
 
-    artifacts:
-      - app/build/outputs/apk/**/*.apk
-      - ALVSIA_PRO_5.5.0_signed.apk
-      - ALVSIA_PRO_5.5.0_unsigned.apk
-      - build_full.log
+- `CM_KEYSTORE_PASSWORD` — keystore password (secret).
+- `CM_KEY_ALIAS` — `alvsia`.
+- `CM_KEY_PASSWORD` — private-key password (secret); it may equal the keystore password.
+- **One keystore source:** either `CM_KEYSTORE_PATH` pointing to a keystore file available to the build, or `CM_KEYSTORE` containing the Base64 text of the release keystore.
+
+The workflow also accepts `CM_KEYSTORE` as a readable file path if CodeMagic exposes it that way. Do not put the keystore, password, or Base64 contents in Git or chat.
+
+The certificate must match the pin in `app/build.gradle.kts`:
+`99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c`.
+
+The release job intentionally **fails** if signing configuration is missing or if the resulting certificate does not match. It does not publish an unsigned APK as a successful release.
+
+## 3. Run the release build
+
+Push the reviewed release source to `main`, or start the `alvisia-android` workflow on `main` if manual workflow start is available in the CodeMagic UI. Pull-request builds are not the release workflow.
+
+The workflow:
+1. Checks the branch and signing configuration.
+2. Runs source security checks and seals Python modules/assets with a fresh per-build seed.
+3. Builds the release APK and audits its contents/metadata.
+4. Signs with v2/v3 enabled and v1 disabled.
+5. Verifies signature, certificate pin, package name, version, alignment, and final APK contents.
+
+Download `ALVISIA_PRO_5.5.1-hardened_signed.apk` from the successful CodeMagic build's Artifacts section. Also retain `build_full.log` for diagnosis.
+
+## Troubleshooting
+
+- **Missing signing variables:** verify the exact group name `signing` and attach it to `alvisia-android`.
+- **Invalid Base64:** create Base64 from the intended release keystore and save the full output in the secret `CM_KEYSTORE`; do not include line breaks or surrounding quotes.
+- **Certificate mismatch:** use the release keystore whose certificate matches `CERT_SHA256`. Do not remove the certificate check to bypass the error.
+- **Build succeeded but app was not tested:** CI success proves the automated checks passed; still install the exact signed APK and verify login against the current panel and exercise the 19 modules on a device before public release.
