@@ -110,6 +110,8 @@ chaquopy {
     defaultConfig {
         version = "3.8"
         pip {
+            // Retry slow Chaquopy index downloads; source fallback cannot compile native packages here.
+            options("--timeout", "120", "--retries", "10")
             install("pycryptodome")
             install("requests")
             install("rich")
