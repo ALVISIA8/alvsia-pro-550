@@ -61,32 +61,34 @@ fun LoginScreen(
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(34.dp))
             Image(
                 painter = painterResource(R.drawable.logo_alvisia),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
-                    .size(88.dp)
+                    .size(104.dp)
                     .clip(CircleShape)
                     .border(2.dp, AlvisiaCyan.copy(alpha = 0.5f), CircleShape)
             )
             Spacer(Modifier.height(16.dp))
-            Text("ALVSIA PREMIUM TOOL", color = AlvisiaCyan, fontWeight = FontWeight.Black, fontSize = 18.sp)
-            Text("LICENSE GATE", color = AlvisiaSilver.copy(alpha = 0.6f), fontSize = 12.sp)
-            Spacer(Modifier.height(20.dp))
+            Text("ALVSIA", color = Color.White, fontWeight = FontWeight.Black, fontSize = 28.sp, letterSpacing = 5.sp)
+            Text("PRO  //  SECURE TOOL SYSTEM", color = AlvisiaCyan, fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.5.sp)
+            Spacer(Modifier.height(8.dp))
+            Text("19 TOOLS  ·  ONE SECURE WORKSPACE", color = AlvisiaSilver.copy(alpha = 0.58f), fontSize = 10.sp)
+            Spacer(Modifier.height(24.dp))
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0xAA0A1520))
-                    .border(1.dp, AlvisiaBlue.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
-                    .padding(16.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Brush.linearGradient(listOf(Color(0xEE142438), Color(0xF00A111D), Color(0xEE122A30))))
+                    .border(1.dp, AlvisiaCyan.copy(alpha = 0.28f), RoundedCornerShape(24.dp))
+                    .padding(20.dp)
             ) {
                 Column {
-                    Text("HWID", color = AlvisiaSilver.copy(alpha = 0.5f), fontSize = 10.sp)
-                    Text(hwidShort + "…", color = AlvisiaSilver, fontSize = 12.sp)
-                    Spacer(Modifier.height(12.dp))
+                    Text("DEVICE ID  /  HARDWARE BINDING", color = AlvisiaCyan.copy(alpha = 0.9f), fontWeight = FontWeight.Bold, fontSize = 9.sp, letterSpacing = 1.2.sp)
+                    Text(hwidShort + "…", color = AlvisiaSilver, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(18.dp))
                     OutlinedTextField(
                         value = key,
                         onValueChange = { key = it.trim() },
