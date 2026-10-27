@@ -1,7 +1,7 @@
 name: Android Security Validation
 on:
   push:
-    branches: [ main ]
+    branches: [ main, fix/chaquopy-python312-ci ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -16,6 +16,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # Chaquopy 15 host-side pip imports cgi, removed in Python 3.13+.
+      # Pin the CI host interpreter; embedded app Python remains set in app/build.gradle.kts.
+      - name: Set up compatible host Python for Chaquopy
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify host Python version
+        run: python3 --version
 
       - name: Generate fresh per-build seal seed
         run: |
