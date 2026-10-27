@@ -214,6 +214,9 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                         "NOTE target filename(s) are not present in this PAK index: %s"
                         % ", ".join(missing_targets)
                     )
+                    lines.append(
+                        "NOTE: PAK extraction succeeded; target files may be in another PAK or use a different filename."
+                    )
                 lines.append(
                     "Lua filenames sample -> %s"
                     % ", ".join(names[:12])
@@ -323,12 +326,25 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
                         # decompile just because the analyzer produced recovery artifacts.
                         if r.get("mode") == "bgmi_vm_partial" or r.get("recovered") is False:
                             lines.append("PARTIAL mode=%s lines=0" % (r.get("mode", "partial")))
-                            report_path = r.get("report_out") or r.get("out")
-                            if report_path:
-                                lines.append("OUT -> %s" % report_path)
+                            lines.append(
+                                "DIAGNOSTIC: protos=%s main_instructions=%s main_constants=%s parse_errors=%s"
+                                % (r.get("protos_parsed", 0), r.get("main_code_count", 0),
+                                   r.get("main_const_count", 0), r.get("parse_errors", 0))
+                            )
+                            for key, label in (
+                                ("structure_out", "STRUCTURE MAP"),
+                                ("constants_out", "CONSTANT DUMP"),
+                                ("report_out", "RECOVERY REPORT"),
+                            ):
+                                artifact = r.get(key)
+                                if artifact and Path(artifact).is_file():
+                                    lines.append("OUT %s -> %s" % (label, artifact))
                             if r.get("note"):
                                 lines.append("NOTE: %s" % r.get("note"))
-                            lines.append("NOTE: structural/constant recovery only; no validated Lua source was produced")
+                            lines.append(
+                                "NOTE: no validated Lua source was produced. Full recovery needs the matching VM opcode/dispatcher map; "
+                                "raising the ART size limit cannot decode a custom VM by itself."
+                            )
                             return "\n".join(lines)
                         if r.get("ok"):
                             lines.append("OK mode=%s lines=%s" % (r.get("mode","?"), r.get("lines",0)))
