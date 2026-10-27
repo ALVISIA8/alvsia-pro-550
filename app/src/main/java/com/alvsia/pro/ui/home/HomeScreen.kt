@@ -167,8 +167,17 @@ fun HomeScreen(
                 TextButton(onClick = {
                     ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/OriginalOnwerALV")))
                 }) { Text("OWNER", color = Color(0xFFC2D0A4), fontWeight = FontWeight.Bold) }
-                TextButton(onClick = onProfile) {
-                    Text("PROFILE", color = Color(0xFFC2D0A4), fontWeight = FontWeight.Bold) }
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Brush.horizontalGradient(listOf(AlvisiaBlue, AlvisiaCyan)))
+                        .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(10.dp))
+                        .clickable(onClick = onProfile)
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("PROFILE", color = Color.White, fontWeight = FontWeight.Black, fontSize = 12.sp)
+                }
             }
             Spacer(Modifier.height(4.dp))
 
