@@ -1,7 +1,7 @@
 name: Android Security Validation
 on:
   push:
-    branches: [ main ]
+    branches: [ main, fix/chaquopy-python312-ci ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
