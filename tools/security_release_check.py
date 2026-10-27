@@ -27,6 +27,7 @@ rasp_engine = read(JAVA / "sec/RaspEngine.kt")
 tool_engine = read(JAVA / "tool/ToolEngine.kt")
 bridge = read(PY / "alvsia_bridge.py")
 loader = read(PY / "sealed_loader.py")
+python_panel = read(PY / "pinned_http.py")
 seal_script = read(ROOT / "tools/seal_python.py")
 audit_script = read(ROOT / "tools/audit_release_apk.py")
 codemagic = read(ROOT / "codemagic.yaml")
@@ -155,6 +156,11 @@ if ("networkSecurityConfig" not in manifest
         or "84+S6cn1vo+IjlQMR5mvqIe5XKMPh28WV9xYVtFKTkk=" not in network_config
         or "alvsiapanel.unaux.com" not in vault):
     fail.append("new-panel network security configuration or measured SPKI pin is missing")
+if ("alvsiapanel.unaux.com" not in python_panel
+        or "84+S6cn1vo+IjlQMR5mvqIe5XKMPh28WV9xYVtFKTkk=" not in python_panel
+        or "alvsiapro.cc.cd" in python_panel
+        or "api.alvsiapro.cc.cd" in python_panel):
+    fail.append("Python HTTP pinning must use only the active Unaux panel host and measured SPKI pin")
 if "KEY_ALGORITHM_HMAC_SHA256" not in session or "age in 0..SESSION_TTL" not in session:
     fail.append("SessionGate HMAC or future/expiry timestamp checks are missing")
 if "if (Guard.runtimeHostile(ctx))" not in session or "native_rasp_unavailable" not in session:
