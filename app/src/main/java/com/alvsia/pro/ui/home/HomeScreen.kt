@@ -60,12 +60,12 @@ import com.alvsia.pro.ui.theme.AlvisiaSilver
 data class ToolItem(val id: Int, val title: String, val desc: String)
 
 private val chipColors = listOf(
-    listOf(Color(0xFF0077CC), Color(0xFF00D4FF)),
-    listOf(Color(0xFF8B1E3F), Color(0xFFFF2D55)),
-    listOf(Color(0xFF0A4D68), Color(0xFF00A3FF)),
-    listOf(Color(0xFF1A3A5C), Color(0xFF7EB6FF)),
-    listOf(Color(0xFF3D0A1A), Color(0xFFFF6B8A)),
-    listOf(Color(0xFF063A4A), Color(0xFF00E5FF))
+    listOf(Color(0xFF18212A), Color(0xFF26352F)),
+    listOf(Color(0xFF1B242B), Color(0xFF354137)),
+    listOf(Color(0xFF171F27), Color(0xFF303A35)),
+    listOf(Color(0xFF1D252C), Color(0xFF3B4338)),
+    listOf(Color(0xFF192128), Color(0xFF303B34)),
+    listOf(Color(0xFF1A2229), Color(0xFF343F38))
 )
 
 @Composable
@@ -136,8 +136,7 @@ fun HomeScreen(
             delay(1000L)
         }
     }
-    Box(Modifier.fillMaxSize()) {
-        NeonPulseBackground(Modifier.fillMaxSize())
+    Box(Modifier.fillMaxSize().background(Color(0xFF070B10)))
         Column(
             Modifier
                 .fillMaxSize()
@@ -145,8 +144,8 @@ fun HomeScreen(
                 .padding(horizontal = 14.dp, vertical = 8.dp)
         ) {
             Text(
-                "ALVSIA PREMIUM TOOL",
-                color = AlvisiaCyan,
+                "ALVSIA PRO  /  SECURE TOOL SYSTEM",
+                color = Color(0xFFC2D0A4),
                 fontWeight = FontWeight.Black,
                 fontSize = 20.sp
             )
@@ -164,12 +163,12 @@ fun HomeScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = {
                     ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/ALVSIA_PRO")))
-                }) { Text("Channel", color = AlvisiaCyan, fontWeight = FontWeight.Bold) }
+                }) { Text("CHANNEL", color = Color(0xFFC2D0A4), fontWeight = FontWeight.Bold) }
                 TextButton(onClick = {
                     ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/OriginalOnwerALV")))
-                }) { Text("Owner", color = AlvisiaCyan, fontWeight = FontWeight.Bold) }
+                }) { Text("OWNER", color = Color(0xFFC2D0A4), fontWeight = FontWeight.Bold) }
                 TextButton(onClick = onProfile) {
-                    Text("Profil", color = AlvisiaCyan, fontWeight = FontWeight.Bold) }
+                    Text("PROFILE", color = Color(0xFFC2D0A4), fontWeight = FontWeight.Bold) }
             }
             Spacer(Modifier.height(4.dp))
 
@@ -210,9 +209,9 @@ fun HomeScreen(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                 colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = AlvisiaCyan,
-                    unfocusedBorderColor = AlvisiaBlue.copy(alpha = 0.3f),
-                    cursorColor = AlvisiaCyan,
+                    focusedBorderColor = Color(0xFF9DAF80),
+                    unfocusedBorderColor = Color(0xFF596655).copy(alpha = 0.6f),
+                    cursorColor = Color(0xFFC2D0A4),
                     focusedTextColor = Color.White,
                     unfocusedTextColor = AlvisiaSilver
                 ),
@@ -258,15 +257,14 @@ private fun NeonModuleChip(
             .background(
                 Brush.linearGradient(
                     listOf(
-                        colors[0].copy(alpha = 0.92f),
-                        colors[1].copy(alpha = 0.75f),
-                        Color.White.copy(alpha = 0.08f)
+                        colors[0],
+                        colors[1].copy(alpha = 0.92f)
                     )
                 )
             )
             .border(
                 1.dp,
-                Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.4f), Color.Transparent)),
+                Brush.verticalGradient(listOf(Color(0xFFB7C99A).copy(alpha = 0.28f), Color.Transparent)),
                 RoundedCornerShape(16.dp)
             )
             .clickable(onClick = onClick)
