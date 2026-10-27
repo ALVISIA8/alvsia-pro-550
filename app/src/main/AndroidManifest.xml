@@ -30,7 +30,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <!-- Package query for anti-hook checks + Frida Tracer + Anti-RE Audit -->
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
 
     <!-- Install/delete packages (PAK patching / APK audit) -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
