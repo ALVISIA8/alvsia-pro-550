@@ -6,17 +6,13 @@ import hashlib
 import hmac
 from urllib.parse import urlparse
 
-PANEL_HOSTS = frozenset(("alvsiapro.cc.cd", "api.alvsiapro.cc.cd"))
-# Pin SPKI aktif + backup. OkHttp membandingkan SHA-256 dari SPKI
-# (publicKey.encoded) -- format yang sama dipakai di sini.
-# Sumber nilai: alvsia_pin_doctor.py. Leaf dicek ulang sebelum 16 Jan 2027.
+PANEL_HOSTS = frozenset(("alvsiapanel.unaux.com",))
+# The active panel is alvsiapanel.unaux.com. Match the Android Vault pin.
+# Only the owner-measured pin is trusted; fail closed until a verified backup is measured.
 PANEL_SPKI_PINS = tuple(
     base64.b64decode(p)
     for p in (
-        "9SAlPOYX5EuzgKf+w3vxjzS0qgl1WJOPVEQeGO5Knjo=",  # leaf alvsiapro.cc.cd
-        "kIdp6NNEd8wsugYyyIYFsi1ylMCED3hZbSR8ZFsa/A4=",  # intermediate WE1
-        "mEflZT5enoR1FuXLgYYGqnVEoZvmf9c2bVBpiOjYQ0c=",  # root GTS Root R4
-        "C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M=",  # backup ISRG Root X1
+        "84+S6cn1vo+IjlQMR5mvqIe5XKMPh28WV9xYVtFKTkk=",  # measured SPKI for alvsiapanel.unaux.com
     )
 )
 
