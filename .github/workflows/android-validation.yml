@@ -64,7 +64,9 @@ jobs:
           python3 tests/test_seal_python_payloads.py
 
       - name: Run Lua decompiler safety regression tests
-        run: python3 -m unittest discover -s tests -p 'test_lua*.py'
+        run: |
+          python3 -m pip install --disable-pip-version-check pycryptodome
+          python3 -m unittest discover -s tests -p 'test_lua*.py'
 
       - name: Run Lua Protector round-trip tests
         run: python3 tests/test_vm_protect_roundtrip.py
