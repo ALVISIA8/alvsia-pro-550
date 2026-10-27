@@ -235,6 +235,17 @@ workflows:
           }
           echo "PASS: signed APK verified and certificate pin matches"
           ls -lh ALVISIA_PRO_5.5.1-hardened_signed.apk
+          # Verify the exact final signed artifact, not only its unsigned predecessor.
+          "$BUILD_TOOLS/zipalign" -c -v 4 ALVISIA_PRO_5.5.1-hardened_signed.apk
+          python3 tools/audit_release_apk.py ALVISIA_PRO_5.5.1-hardened_signed.apk
+          BADGING="$("$BUILD_TOOLS/aapt" dump badging ALVISIA_PRO_5.5.1-hardened_signed.apk)"
+          printf '%s\n' "$BADGING" | grep -Fq "package: name='com.alvsia.pro' versionCode='97' versionName='5.5.1-hardened'" || {
+            echo "ERROR: final APK package/version does not match release source"
+            printf '%s\n' "$BADGING" | grep -E "^package:|^application-label:" || true
+            exit 1
+          }
+          echo "PASS: final APK package/version verified"
+          sha256sum ALVISIA_PRO_5.5.1-hardened_signed.apk
     artifacts:
       - app/build/outputs/apk/**/*.apk
       - ALVISIA_PRO_5.5.1-hardened_signed.apk
