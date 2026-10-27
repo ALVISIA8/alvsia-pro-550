@@ -34,4 +34,15 @@ icon_section = home.split("private fun moduleIcon(id: Int)", 1)[1].split("@Compo
 icon_ids = [int(i) for i in re.findall(r'(?m)^\s*(\d+)\s*->\s*"[^"]+"', icon_section)]
 assert icon_ids == expected_ids, f"HomeScreen must map icon IDs 1..19 in order; got {icon_ids}"
 
-print("MODULE CATALOG CONSISTENCY: PASS (19/19 IDs, names, profile entries, submenu titles, and home icons)")
+
+# The private module must be fully wired from its UI submenu into the sealed bridge.
+private_submenu = submenus.split("19 -> listOf(", 1)[1].split("\n    )", 1)[0]
+private_ids = re.findall(r'SubTool\(\s*"([^"]+)"', private_submenu)
+assert len(private_ids) == 12, f"expected 12 private subtools, got {len(private_ids)}"
+bridge_private = (ROOT / "app/src/main/python/alvsia_bridge_impl.py").read_text(encoding="utf-8")
+dispatch_section = bridge_private.split("ALVSIA PRIVATE TOOL — sealed runtime required", 1)[1].split("# ── ZUC-128 decrypt", 1)[0]
+for sub_id in private_ids:
+    assert f'"{sub_id}"' in dispatch_section, f"private subtool is not registered in sealed bridge: {sub_id}"
+assert 'ALVSIA_SEALED_RUNTIME' in dispatch_section, "private module must retain its sealed-runtime gate"
+
+print("MODULE CATALOG CONSISTENCY: PASS (19/19 modules, profile/home/submenu parity, 12 private subtools wired to sealed bridge)")
