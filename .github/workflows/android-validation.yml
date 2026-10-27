@@ -78,10 +78,22 @@ jobs:
       - name: Install pinned Android NDK
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null && "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.0.12077973"
 
+      # Chaquopy's embedded interpreter is pinned to 3.8 in app/build.gradle.kts.
+      # Use matching host Python for Gradle so pip selects compatible Android wheels.
+      - name: Set up Chaquopy Python 3.8 for Android debug build
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+
       - name: Build and test Android debug variant
         run: |
           chmod +x ./gradlew
           ./gradlew testDebugUnitTest assembleDebug --no-daemon --stacktrace
+
+      - name: Restore Python 3.12 for sealing tools
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
       - name: Prepare sealed release inputs
         run: |
@@ -107,6 +119,11 @@ jobs:
               raise SystemExit("Native seed placeholder missing or ambiguous")
           path.write_text(source.replace(old, "static const unsigned char _alvsia_seal_seed[32] = {" + values + "};"))
           PY
+
+      - name: Set up Chaquopy Python 3.8 for Android release build
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
 
       - name: Build release APK
         run: |
