@@ -172,6 +172,12 @@ if "fun isNativeLoaded(): Boolean = nativeLoaded" not in native_guard:
 guard = read(JAVA / "sec/Guard.kt")
 if "fun runtimeHostile(ctx: Context)" not in guard or "private val RUNTIME_MARKERS" not in guard:
     fail.append("Guard must distinguish active runtime instrumentation from root-only markers")
+native_rasp = read(ROOT / "app/src/main/cpp/rasp_guard.cpp")
+dev_block = native_rasp.split("static const char* DEV_FILE_PATHS[] = {", 1)[-1].split("};", 1)[0]
+if any(marker in dev_block for marker in ("/sbin/.magisk", "/data/adb/magisk", "/data/adb/ksu", "/data/adb/modules")):
+    fail.append("native hard-enforcement list must not block solely on root-manager artifacts")
+if '"/data/local/tmp/frida-server"' not in dev_block or '"/data/local/tmp/linjector"' not in dev_block:
+    fail.append("native instrumentation artifact detection was accidentally removed")
 ultimate = read(PY / "alvsia_ultimate.py")
 if "alvsiapro.cc.cd" in ultimate or "api.alvsiapro.cc.cd" in ultimate:
     fail.append("bundled ultimate engine still references the retired panel host")
