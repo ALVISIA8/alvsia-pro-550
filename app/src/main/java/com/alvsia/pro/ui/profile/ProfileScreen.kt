@@ -53,7 +53,7 @@ fun ProfileScreen(product: String, expiry: String, hwidShort: String, toolCount:
         Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(7.dp)) {
             _InfoTile("PLAN", product.ifBlank { "PREMIUM" }, Modifier.weight(1f))
             _InfoTile("EXPIRES", expiry.ifBlank { "—" }, Modifier.weight(1f))
-            _InfoTile("MODULES", toolCount.toString(), Modifier.weight(1f))
+            _InfoTile("MODULES", "19", Modifier.weight(1f))
         }
         Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(8.dp)) {
