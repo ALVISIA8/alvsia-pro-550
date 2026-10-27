@@ -27,6 +27,7 @@ rasp_engine = read(JAVA / "sec/RaspEngine.kt")
 tool_engine = read(JAVA / "tool/ToolEngine.kt")
 bridge = read(PY / "alvsia_bridge.py")
 loader = read(PY / "sealed_loader.py")
+python_panel = read(PY / "pinned_http.py")
 seal_script = read(ROOT / "tools/seal_python.py")
 audit_script = read(ROOT / "tools/audit_release_apk.py")
 codemagic = read(ROOT / "codemagic.yaml")
@@ -155,6 +156,11 @@ if ("networkSecurityConfig" not in manifest
         or "84+S6cn1vo+IjlQMR5mvqIe5XKMPh28WV9xYVtFKTkk=" not in network_config
         or "alvsiapanel.unaux.com" not in vault):
     fail.append("new-panel network security configuration or measured SPKI pin is missing")
+if ("alvsiapanel.unaux.com" not in python_panel
+        or "84+S6cn1vo+IjlQMR5mvqIe5XKMPh28WV9xYVtFKTkk=" not in python_panel
+        or "alvsiapro.cc.cd" in python_panel
+        or "api.alvsiapro.cc.cd" in python_panel):
+    fail.append("Python HTTP pinning must use only the active Unaux panel host and measured SPKI pin")
 if "KEY_ALGORITHM_HMAC_SHA256" not in session or "age in 0..SESSION_TTL" not in session:
     fail.append("SessionGate HMAC or future/expiry timestamp checks are missing")
 if "if (Guard.runtimeHostile(ctx))" not in session or "native_rasp_unavailable" not in session:
@@ -167,6 +173,10 @@ guard = read(JAVA / "sec/Guard.kt")
 if "fun runtimeHostile(ctx: Context)" not in guard or "private val RUNTIME_MARKERS" not in guard:
     fail.append("Guard must distinguish active runtime instrumentation from root-only markers")
 ultimate = read(PY / "alvsia_ultimate.py")
+if "alvsiapro.cc.cd" in ultimate or "api.alvsiapro.cc.cd" in ultimate:
+    fail.append("bundled ultimate engine still references the retired panel host")
+if 'def check_password_login()' in ultimate and 'SessionGate.isSessionAuthorized()' not in ultimate:
+    fail.append("bundled ultimate engine must defer authentication to the trusted Kotlin session gate")
 if "/SKIN_TOOL/main/SKIN_TOOL.zip" in ultimate or "/BGMI_CSV/main/" in ultimate:
     fail.append("external SKIN_TOOL/BGMI_CSV downloads are not commit-pinned")
 if "_verify_pinned_git_blob" not in ultimate or "cbd3d0e257963b54f34a908b6864040c7f96fbb1" not in ultimate:

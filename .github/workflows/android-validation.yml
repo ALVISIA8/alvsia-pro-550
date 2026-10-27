@@ -37,6 +37,9 @@ jobs:
       - name: Run source-level security checks
         run: python3 tools/security_release_check.py
 
+      - name: Verify active Unaux Python TLS pin policy
+        run: python3 -m unittest discover -s tests -p 'test_pinned_http.py'
+
       - name: Compile Python tool modules and run dispatch contract tests
         run: |
           python3 - <<'PY'
