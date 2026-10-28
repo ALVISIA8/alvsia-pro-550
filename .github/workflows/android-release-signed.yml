@@ -177,7 +177,7 @@ jobs:
             --shell-dir "$XOP_ROOT/executable/shell-files" \
             --profile industry \
             --cert-sha256 99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c \
-            --rasp-action alert
+            --rasp-action 0
           test -s "$OUTPUT_APK"
           # Ensure packer actually transformed the APK and added its runtime payload.
           python3 - "$OUTPUT_APK" <<'PY'
