@@ -13229,3 +13229,15 @@ def audit_so(input_path, out_dir):
     out_file = out_dir / "so_report.txt"
     out_file.write_text("\n".join(lines), encoding="utf-8")
     return {"ok": True, "out": str(out_file)}
+
+
+def _alv_install_operation_proof_json(proof_json):
+    try:
+        raw = proof_json.decode('utf-8') if isinstance(proof_json, bytes) else str(proof_json or '')
+        parsed = __import__('json').loads(raw)
+        if not isinstance(parsed, dict):
+            raise ValueError('grant payload must be an object')
+        return _alv_install_operation_proof(parsed)
+    except Exception:
+        _alv_clear_operation_proof()
+        return False
