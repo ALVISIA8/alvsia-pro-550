@@ -98,7 +98,10 @@ object PythonBridgeRunner {
             val core = getModule.invoke(py, "alvsia_core") ?: return false
             val coreResult = callAttr.invoke(core, "_alvsia_install_operation_grant_token",
                 arrayOf<Any?>(grantToken, expectedOperation))
-            val coreOk = coreResult is Boolean && coreResult
+            val coreOk = when {
+                coreResult is Boolean -> coreResult
+                else -> coreResult?.toString()?.trim()?.equals("True", ignoreCase = true) ?: false
+            }
             if (!coreOk) return false
             val ultimate = getModule.invoke(py, "alvsia_ultimate") ?: return false
             val decoded = callAttr.invoke(ultimate, "_alv_install_operation_grant_token",

@@ -48,7 +48,7 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
             grant_operation = "skin_obb"
         elif sid_l.startswith("game_patch"):
             grant_operation = "game_patch"
-        elif sid_l in ("audit_apk", "apk_audit", "priv_apk_audit"):
+        elif sid_l in ("audit_apk", "apk_audit"):
             grant_operation = "apk_audit"
         elif sid_l.startswith(("priv_", "sm4_")) or sid_l in ("url_scan_so", "pubg_lua_convert"):
             grant_operation = "alvsia_private_tool"

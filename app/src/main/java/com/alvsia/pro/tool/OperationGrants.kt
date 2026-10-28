@@ -10,7 +10,7 @@ object OperationGrants {
         val sid = subId.trim().lowercase()
         if (sid.startsWith("skin_obb")) return "skin_obb"
         if (sid.startsWith("game_patch")) return "game_patch"
-        if (sid in setOf("audit_apk", "apk_audit", "priv_apk_audit")) return "apk_audit"
+        if (sid in setOf("audit_apk", "apk_audit")) return "apk_audit"
         if (sid.startsWith("priv_") || sid.startsWith("sm4_") ||
             sid in setOf("url_scan_so", "pubg_lua_convert")) return "alvsia_private_tool"
         return when (moduleId) {
