@@ -203,6 +203,15 @@ jobs:
                   raise SystemExit("FAIL XopProtector runtime assets not found")
           print("PASS: XopProtector runtime payload verified in transformed APK")
           PY
+          # Guardrails: preserve package identity, launcher entry point, and every declared permission.
+          AAPT="$ANDROID_HOME/build-tools/34.0.0/aapt"
+          "$AAPT" dump permissions "$INPUT_APK" | sed -E '/^package:/d' | sort -u > "$RUNNER_TEMP/original-permissions.txt"
+          "$AAPT" dump permissions "$OUTPUT_APK" | sed -E '/^package:/d' | sort -u > "$RUNNER_TEMP/xop-permissions.txt"
+          diff -u "$RUNNER_TEMP/original-permissions.txt" "$RUNNER_TEMP/xop-permissions.txt"
+          BADGING="$("$AAPT" dump badging "$OUTPUT_APK")"
+          printf '%s\n' "$BADGING" | grep -Fq "package: name='com.alvsia.pro' versionCode='98' versionName='5.5.2-hardened'"
+          printf '%s\n' "$BADGING" | grep -Fq "launchable-activity: name='com.alvsia.pro.MainActivity'"
+          echo "PASS: package, launcher and declared permissions preserved by XopProtector"
           python3 tools/audit_release_apk.py "$OUTPUT_APK"
           echo "ALVSIA_XOP_UNSIGNED_APK=$OUTPUT_APK" >> "$GITHUB_ENV"
           echo "PASS: XopProtector candidate created; output will be signed only after audits"
