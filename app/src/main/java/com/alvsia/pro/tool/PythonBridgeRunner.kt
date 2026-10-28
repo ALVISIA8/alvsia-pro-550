@@ -100,10 +100,6 @@ object PythonBridgeRunner {
             val coreOk = coreResult is Boolean && coreResult
             if (!coreOk) return false
             val ultimate = getModule.invoke(py, "alvsia_ultimate") ?: return false
-            val proof = org.json.JSONObject(proofJson)
-            val ultimateResult = callAttr.invoke(ultimate, "_alv_install_operation_proof", arrayOf<Any?>(proof.toString()))
-            // PyObject receives a JSON object via the helper signature; call with parsed dict below is not portable,
-            // so the ultimate proof is installed by passing a Python dict decoded in the module.
             val decoded = callAttr.invoke(ultimate, "_alv_install_operation_proof_json", arrayOf<Any?>(proofJson))
             when {
                 decoded is Boolean -> decoded
