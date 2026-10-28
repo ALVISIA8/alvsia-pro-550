@@ -156,6 +156,10 @@ def _alvsia_install_operation_proof(proof):
         required = ('grant_id','nonce','build_id','manifest_hash','tool_hash','device_id','session_id','operation_id','issued_at','expires_at')
         if any(not str(p.get(k, '')).strip() for k in required):
             raise ValueError
+        _op_tokens = [x.strip() for x in str(p['operation_id']).split(',')]
+        if not _op_tokens or len(_op_tokens) > 8 or any(
+                not re.fullmatch(r'[a-z0-9_.]{1,48}', item) for item in _op_tokens):
+            raise ValueError
         # On Android, bind the signed grant to the exact SessionGate token and
         # HWID supplied by the trusted Kotlin bridge. Never accept a grant minted
         # for another device/session, even when its RSA signature is valid.
@@ -219,13 +223,7 @@ def _alvsia_set_expected_operation_identity(session_id, device_id):
     return True
 
 def _alvsia_require_operation(allowed_operations):
-    """Require a valid panel-authenticated Android session before tool execution.
-
-    The new panel does not implement operation_grant.php. Do not call a nonexistent
-    endpoint or block every PAK/OBB action waiting for a protocol it cannot issue.
-    Kotlin SessionGate validates the login session; the trusted bridge then installs
-    the SHA-256 session binding and device ID before dispatch.
-    """
+    """Require a live, server-signed RSA grant for each protected operation."""
     import os as _os, re as _re
     if _os.environ.get('ALVSIA_APK_SESSION') != '1':
         raise RuntimeError('Operation authorization failed: login required')
@@ -235,6 +233,23 @@ def _alvsia_require_operation(allowed_operations):
         raise RuntimeError('Operation authorization failed: session/device binding unavailable')
     if not allowed_operations:
         raise RuntimeError('Operation authorization failed: operation not specified')
+    proof = _ALVSIA_CORE_ACTIVE_PROOF
+    if not isinstance(proof, dict):
+        raise RuntimeError('Operation authorization failed: RSA grant missing')
+    if str(proof.get('session_id', '')) != session or str(proof.get('device_id', '')).lower() != device:
+        _alvsia_clear_operation_proof()
+        raise RuntimeError('Operation authorization failed: grant identity mismatch')
+    try:
+        expires = float(proof.get('_expires_epoch', 0) or 0)
+    except Exception:
+        expires = 0
+    if __import__('time').time() >= expires:
+        _alvsia_clear_operation_proof()
+        raise RuntimeError('Operation authorization failed: grant expired')
+    granted = {x.strip() for x in str(proof.get('operation_id', '')).split(',') if x.strip()}
+    allowed = {str(x).strip() for x in allowed_operations if str(x).strip()}
+    if not granted.intersection(allowed):
+        raise RuntimeError('Operation authorization failed: operation not granted')
     return True
 
 class _AlvsiaPakConsole:
