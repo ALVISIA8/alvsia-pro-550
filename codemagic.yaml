@@ -199,7 +199,7 @@ workflows:
           set -euo pipefail
           UNSIGNED="$(find app/build/outputs/apk/release -type f -name '*.apk' | head -n 1)"
           test -n "$UNSIGNED" || { echo "ERROR: release APK not found"; exit 1; }
-          SIGNED_APK="$SIGNED_APK"
+          SIGNED_APK="ALVISIA_PRO_5.5.2-hardened_signed.apk"
           if [ "${ALVSIA_XOPPROTECTOR_ENABLED:-false}" = "true" ]; then
             UNSIGNED="$CM_BUILD_DIR/ALVISIA_PRO_5.5.2-xop_candidate_unsigned.apk"
             SIGNED_APK="ALVISIA_PRO_5.5.2-xop_candidate_signed.apk"
