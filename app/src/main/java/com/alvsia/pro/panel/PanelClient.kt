@@ -18,6 +18,7 @@ import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
+data class LiveMessage(val id: Long, val title: String, val body: String, val createdAt: String, val isRead: Boolean)
 data class GrantResult(val ok: Boolean, val message: String, val proofJson: String = "")
 
 data class LoginResult(
@@ -309,6 +310,47 @@ class PanelClient {
         } catch (_: Exception) {
             false
         }
+    }
+
+
+    /** Poll authenticated panel inbox; server revalidates session, HWID and license. */
+    fun fetchMessages(hwid: String): List<LiveMessage> {
+        val token = sessionToken
+        if (token.length != 64 || hwid.isBlank()) return emptyList()
+        return try {
+            val json = JSONObject().put("session_token", token).put("hwid", hwid).put("action", "list")
+            val req = Request.Builder().url(base() + "messages.php")
+                .header("User-Agent", Vault.ua()).header("Accept", "application/json")
+                .post(json.toString().toRequestBody("application/json; charset=utf-8".toMediaType())).build()
+            clientPinned.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return emptyList()
+                val root = JSONObject(resp.body?.string() ?: return emptyList())
+                if (!root.optBoolean("success")) return emptyList()
+                val arr = root.optJSONArray("messages") ?: return emptyList()
+                val result = ArrayList<LiveMessage>()
+                for (i in 0 until arr.length()) {
+                    val item = arr.optJSONObject(i) ?: continue
+                    result.add(LiveMessage(item.optLong("id"), item.optString("title", "ALVSIA PRO"),
+                        item.optString("body"), item.optString("created_at"), item.optBoolean("is_read")))
+                }
+                result
+            }
+        } catch (_: Exception) { emptyList() }
+    }
+
+    fun markMessageRead(hwid: String, messageId: Long): Boolean {
+        val token = sessionToken
+        if (token.length != 64 || hwid.isBlank() || messageId < 1) return false
+        return try {
+            val json = JSONObject().put("session_token", token).put("hwid", hwid)
+                .put("action", "read").put("message_id", messageId)
+            val req = Request.Builder().url(base() + "messages.php")
+                .header("User-Agent", Vault.ua()).header("Accept", "application/json")
+                .post(json.toString().toRequestBody("application/json; charset=utf-8".toMediaType())).build()
+            clientPinned.newCall(req).execute().use { resp ->
+                resp.isSuccessful && JSONObject(resp.body?.string() ?: "{}").optBoolean("success")
+            }
+        } catch (_: Exception) { false }
     }
 
 }

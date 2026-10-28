@@ -23,6 +23,7 @@ import androidx.lifecycle.lifecycleScope
 import com.alvsia.pro.media.PulseAudio
 import com.alvsia.pro.panel.Hwid
 import com.alvsia.pro.panel.PanelClient
+import com.alvsia.pro.panel.LiveMessage
 import com.alvsia.pro.sec.Guard
 import com.alvsia.pro.sec.RaspEngine
 import com.alvsia.pro.sec.SessionGate
@@ -70,6 +71,7 @@ class MainActivity : ComponentActivity() {
                 var product by remember { mutableStateOf("") }
                 var expiry by remember { mutableStateOf("") }
                 var license by remember { mutableStateOf("") }
+                var liveMessages by remember { mutableStateOf(listOf<LiveMessage>()) }
                 var tools by remember { mutableStateOf(ToolCatalog.defaults()) }
                 var loadMsg by remember { mutableStateOf("Decrypting secure core...") }
                 var loadProgress by remember { mutableStateOf(0f) }
@@ -79,6 +81,19 @@ class MainActivity : ComponentActivity() {
                 var running by remember { mutableStateOf(false) }
                 val ctx = LocalContext.current
                 val hwid = remember { Hwid.deviceId(ctx) }
+
+                LaunchedEffect(screen, license, hwid) {
+                    if (screen == "home" && license.isNotBlank() && panel.sessionToken.length == 64) {
+                        while (true) {
+                            val fresh = withContext(Dispatchers.IO) { panel.fetchMessages(hwid) }
+                            liveMessages = fresh
+                            delay(30_000L)
+                        }
+                    } else {
+                        liveMessages = emptyList()
+                    }
+                }
+
                 // Never copy/decrypt JAR assets on Compose's main thread.
                 val engine = remember { ToolEngine(ctx) }
                 LaunchedEffect(engine) {
@@ -255,6 +270,13 @@ class MainActivity : ComponentActivity() {
                         expiry = expiry,
                         tools = tools,
                         status = info,
+                        messages = liveMessages,
+                        onMessageRead = { message ->
+                            lifecycleScope.launch {
+                                val ok = withContext(Dispatchers.IO) { panel.markMessageRead(hwid, message.id) }
+                                if (ok) liveMessages = liveMessages.map { if (it.id == message.id) it.copy(isRead = true) else it }
+                            }
+                        },
                         onProfile = { screen = "profile" },
                         onTool = { t ->
                             moduleId = t.id
