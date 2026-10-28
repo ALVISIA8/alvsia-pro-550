@@ -182,6 +182,7 @@ workflows:
             -o "$CM_BUILD_DIR/ALVISIA_PRO_5.5.2-xop_candidate_unsigned.apk" \
             --shell-dir "$XOP_DIR/executable/shell-files" \
             --profile balanced \
+            --no-protect-so \
             --hollow-prefix Lcom/alvsia/pro/xop_candidate_disabled/
           test -s "$CM_BUILD_DIR/ALVISIA_PRO_5.5.2-xop_candidate_unsigned.apk"
           echo "XopProtector candidate generated; not release-approved until runtime smoke tests pass."
