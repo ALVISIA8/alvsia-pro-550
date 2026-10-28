@@ -159,7 +159,8 @@ if ('cleartextTrafficPermitted="false"' not in network_config
         or "<pin-set>" in network_config):
     fail.append("network config must disable cleartext and avoid duplicating the panel host in plaintext XML")
 if ("_panel_host()" not in python_panel
-        or "int(" not in python_panel
+        or "encoded = (" not in python_panel
+        or "v ^ 0x5A ^ (i & 0x3F) ^ 0x33" not in python_panel
         or "84+S6cn1vo+IjlQMR5mvqIe5XKMPh28WV9xYVtFKTkk=" not in python_panel
         or "alvsiapro.cc.cd" in python_panel
         or "api.alvsiapro.cc.cd" in python_panel):
