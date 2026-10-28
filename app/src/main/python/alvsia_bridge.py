@@ -43,3 +43,22 @@ def run_tool(mid,sid,inp,out_root,engine_dir,jars_dir):
   return "X SEALED BRIDGE: operation failed"
 def bridge_run_sub(mid,sid,inp,en,wd,jd):
  return run_tool(int(mid),str(sid),str(inp) if inp else "",str(wd),str(jd),str(jd))
+
+def install_operation_proof(proof_json):
+    """Install a panel-signed RSA grant after checking the active APK session."""
+    if not _authorized() or os.environ.get("ALVSIA_APK_SESSION") != "1":
+        return False
+    try:
+        import json
+        import alvsia_core
+        return bool(alvsia_core._alvsia_install_operation_proof(json.loads(str(proof_json))))
+    except Exception:
+        return False
+
+def proof_status():
+    try:
+        import alvsia_core
+        proof = alvsia_core._ALVSIA_CORE_ACTIVE_PROOF
+        return str(proof.get("operation_id", "")) if isinstance(proof, dict) else ""
+    except Exception:
+        return ""
