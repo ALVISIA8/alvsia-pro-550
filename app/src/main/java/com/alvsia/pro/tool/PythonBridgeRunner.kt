@@ -84,6 +84,36 @@ object PythonBridgeRunner {
             .digest(value.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
 
+
+    /** Install the server-signed proof only after the Kotlin/Python session gate is active. */
+    fun installOperationProof(proofJson: String): Boolean {
+        return try {
+            val pyClass = Class.forName("com.chaquo.python.Python")
+            if (!(pyClass.getMethod("isStarted").invoke(null) as Boolean)) return false
+            val py = pyClass.getMethod("getInstance").invoke(null) ?: return false
+            val bridge = pyClass.getMethod("getModule", String::class.java).invoke(py, "alvsia_bridge") ?: return false
+            val pyObjectCls = Class.forName("com.chaquo.python.PyObject")
+            val callAttr = pyObjectCls.getMethod("callAttr", String::class.java, Array<Any?>::class.java)
+            val result = callAttr.invoke(bridge, "install_operation_proof", arrayOf<Any?>(proofJson))
+            when {
+                result is Boolean -> result
+                else -> result?.toString()?.trim()?.equals("True", ignoreCase = true) ?: false
+            }
+        } catch (_: Throwable) { false }
+    }
+
+    fun proofStatus(): String {
+        return try {
+            val pyClass = Class.forName("com.chaquo.python.Python")
+            if (!(pyClass.getMethod("isStarted").invoke(null) as Boolean)) return ""
+            val py = pyClass.getMethod("getInstance").invoke(null) ?: return ""
+            val bridge = pyClass.getMethod("getModule", String::class.java).invoke(py, "alvsia_bridge") ?: return ""
+            val pyObjectCls = Class.forName("com.chaquo.python.PyObject")
+            val callAttr = pyObjectCls.getMethod("callAttr", String::class.java, Array<Any?>::class.java)
+            callAttr.invoke(bridge, "proof_status", emptyArray<Any?>())?.toString() ?: ""
+        } catch (_: Throwable) { "" }
+    }
+
     fun runBridge(
         moduleId: Int,
         subId: String,
@@ -172,8 +202,20 @@ object PythonBridgeRunner {
                 return false to listOf("X AUTH: trusted device/session identity could not be installed")
             }
 
-            // The new panel authenticates the license and issues the session token.
-            // The bundled engine relies on SessionGate + device/session binding; the new panel has no grant endpoint.
+            // Protected operations require a panel-signed, short-lived RSA grant.
+            // Fail closed if the endpoint is missing, the session is invalid, or the
+            // Python verifier rejects the proof.
+            val grantOps = OperationGrants.operationsFor(moduleId, subId)
+            if (grantOps.isNotEmpty()) {
+                val (grantOk, grantDiag) = OperationGrants.obtainAndInstall(grantOps)
+                if (!grantOk) {
+                    return false to listOf(
+                        "X AUTH: RSA operation grant unavailable",
+                        "diagnostic: $grantDiag",
+                        "hint: verify /api/operation_grant.php and server signing-key configuration"
+                    )
+                }
+            }
 
             val rawResult = callAttr.invoke(
                 bridge,
