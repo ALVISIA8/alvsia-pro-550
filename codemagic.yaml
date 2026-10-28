@@ -154,6 +154,39 @@ workflows:
         script: |
           python3 tools/seal_python.py --restore || true
 
+      - name: Build XopProtector candidate (opt-in, preserves baseline APK)
+        script: |
+          set -euo pipefail
+          # Enable only for a deliberate candidate run; never silently replace baseline.
+          if [ "${ALVSIA_XOPPROTECTOR_ENABLED:-false}" != "true" ]; then
+            echo "SKIP: XopProtector candidate disabled; baseline release path unchanged"
+            exit 0
+          fi
+          BASE_APK="$(find app/build/outputs/apk/release -type f -name '*.apk' | head -n 1)"
+          test -n "$BASE_APK" && test -s "$BASE_APK"
+          XOP_DIR="$CM_BUILD_DIR/.xopprotector-src"
+          rm -rf "$XOP_DIR"
+          git clone --filter=blob:none https://github.com/xopJack/XopProtector.git "$XOP_DIR"
+          git -C "$XOP_DIR" checkout --detach 5990c31
+          cd "$XOP_DIR"
+          chmod +x ./gradlew
+          ./gradlew --no-daemon :packer:jar exportShellFiles
+          PACKER_JAR="$(find packer/build/libs -maxdepth 1 -type f -name 'protector-packer-*.jar' ! -name '*-sources.jar' | head -n 1)"
+          test -n "$PACKER_JAR" && test -s "$PACKER_JAR"
+          test -d executable/shell-files
+          cd "$CM_BUILD_DIR"
+          # Deliberately avoid SO/asset/resource rewriting and VMP on the first pass:
+          # Chaquopy, JNI, resource IDs and the custom Application require device smoke tests.
+          # The non-matching allowlist disables automatic business-class hollowing.
+          java -jar "$XOP_DIR/$PACKER_JAR" "$BASE_APK" \
+            -o "$CM_BUILD_DIR/ALVISIA_PRO_5.5.2-xop_candidate_unsigned.apk" \
+            --shell-dir "$XOP_DIR/executable/shell-files" \
+            --profile balanced \
+            --hollow-prefix Lcom/alvsia/pro/xop_candidate_disabled/
+          test -s "$CM_BUILD_DIR/ALVISIA_PRO_5.5.2-xop_candidate_unsigned.apk"
+          echo "XopProtector candidate generated; not release-approved until runtime smoke tests pass."
+          echo "ALVSIA_XOP_UNSIGNED=$CM_BUILD_DIR/ALVISIA_PRO_5.5.2-xop_candidate_unsigned.apk" >> "$CM_ENV"
+
       - name: Exclude VCS metadata from packaging
         script: |
           # Remove git metadata from release artifacts
@@ -165,6 +198,10 @@ workflows:
           set -euo pipefail
           UNSIGNED="$(find app/build/outputs/apk/release -type f -name '*.apk' | head -n 1)"
           test -n "$UNSIGNED" || { echo "ERROR: release APK not found"; exit 1; }
+          if [ "${ALVSIA_XOPPROTECTOR_ENABLED:-false}" = "true" ]; then
+            UNSIGNED="$CM_BUILD_DIR/ALVISIA_PRO_5.5.2-xop_candidate_unsigned.apk"
+            test -s "$UNSIGNED" || { echo "ERROR: XopProtector enabled but candidate APK is missing"; exit 1; }
+          fi
 
           # Release builds must never silently publish an unsigned APK.
           : "${CM_KEYSTORE_PASSWORD:?Missing CM_KEYSTORE_PASSWORD in Codemagic environment group signing}"
@@ -256,5 +293,6 @@ workflows:
     artifacts:
       - app/build/outputs/apk/**/*.apk
       - ALVISIA_PRO_5.5.2-hardened_signed.apk
+      - ALVISIA_PRO_5.5.2-xop_candidate_unsigned.apk
       - ALVISIA_PRO_5.5.2-hardened_unsigned.apk
       - build_full.log
