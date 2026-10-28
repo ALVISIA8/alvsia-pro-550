@@ -147,20 +147,23 @@ if "android.permission.DELETE_PACKAGES" in manifest or "android.permission.CHANG
     fail.append("unused package-delete/network-state permissions remain in manifest")
 if ".certificatePinner(Vault.certPinner())" not in panel or "clientPinned.newCall(req).execute()" not in panel:
     fail.append("PanelClient TLS policy is not wired")
-if 'sha256/84+S6cn1vo+IjlQMR5mvqIe5XKMPh28WV9xYVtFKTkk=' not in vault or '.add("alvsiapanel.unaux.com", "sha256/' not in vault:
-    fail.append("measured Unaux SPKI pin is missing from the active OkHttp certificate pinner")
+if ('sha256/84+S6cn1vo+IjlQMR5mvqIe5XKMPh28WV9xYVtFKTkk=' not in vault
+        or '.add(panelHost(), "sha256/' not in vault
+        or "private fun decodedOrigin()" not in vault
+        or "encoded[i] xor 0x5A xor (i and 0x3F) xor 0x33" not in vault):
+    fail.append("runtime-obfuscated endpoint or measured Unaux SPKI pin is missing from Vault")
 network_config = read(ROOT / "app/src/main/res/xml/network_security_config.xml")
-if ("networkSecurityConfig" not in manifest
-        or "alvsiapanel.unaux.com" not in network_config
-        or "<pin-set>" not in network_config
-        or "84+S6cn1vo+IjlQMR5mvqIe5XKMPh28WV9xYVtFKTkk=" not in network_config
-        or "alvsiapanel.unaux.com" not in vault):
-    fail.append("new-panel network security configuration or measured SPKI pin is missing")
-if ("alvsiapanel.unaux.com" not in python_panel
+if ('cleartextTrafficPermitted="false"' not in network_config
+        or "networkSecurityConfig" not in manifest
+        or "alvsiapanel.unaux.com" in network_config
+        or "<pin-set>" in network_config):
+    fail.append("network config must disable cleartext and avoid duplicating the panel host in plaintext XML")
+if ("_panel_host()" not in python_panel
+        or "int(" not in python_panel
         or "84+S6cn1vo+IjlQMR5mvqIe5XKMPh28WV9xYVtFKTkk=" not in python_panel
         or "alvsiapro.cc.cd" in python_panel
         or "api.alvsiapro.cc.cd" in python_panel):
-    fail.append("Python HTTP pinning must use only the active Unaux panel host and measured SPKI pin")
+    fail.append("Python HTTP pinning must decode the active host at runtime and use only the measured SPKI pin")
 if "KEY_ALGORITHM_HMAC_SHA256" not in session or "age in 0..SESSION_TTL" not in session:
     fail.append("SessionGate HMAC or future/expiry timestamp checks are missing")
 if ("if (runtimeHostile(ctx))" not in session
