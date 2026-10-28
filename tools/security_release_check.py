@@ -94,7 +94,7 @@ if "ALVSEAL2" not in seal_script or "AESGCM" not in seal_script:
     fail.append("Python sealing script is missing authenticated encryption")
 if "inspectXopPayload(ctx)" not in dex_guardian or '"assets/protector/dexes.zip"' not in dex_guardian:
     fail.append("DexGuardian does not recognize and validate the XopProtector payload")
-if '"PDX1"' not in dex_guardian or "xop_payload_invalid" not in dex_guardian:
+if "0x50, 0x44, 0x58, 0x31" not in dex_guardian or "xop_payload_invalid" not in dex_guardian:
     fail.append("DexGuardian Xop path is missing encrypted-container integrity checks")
 if "tools/seal_python.py --seal" not in codemagic or "tools/seal_python.py --restore" not in codemagic:
     fail.append("CodeMagic does not seal and restore protected Python modules")
