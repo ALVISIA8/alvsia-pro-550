@@ -12,9 +12,12 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.security.MessageDigest
 import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
+
+data class GrantResult(val ok: Boolean, val message: String, val proofJson: String = "")
 
 data class LoginResult(
     val ok: Boolean,
@@ -252,6 +255,49 @@ class PanelClient {
                 }
             }
             return s
+        }
+    }
+
+
+    /** Request a short-lived RSA-signed grant for protected operations. */
+    fun requestOperationGrant(
+        operations: List<String>,
+        buildId: String,
+        manifestHash: String,
+        toolHash: String,
+    ): GrantResult {
+        return try {
+            if (operations.isEmpty() || operations.size > 8) return GrantResult(false, "invalid operation list")
+            val token = sessionToken.trim().lowercase()
+            if (!token.matches(Regex("^[0-9a-f]{64}$")) || lastLicense.isBlank() || lastHwid.isBlank()) {
+                return GrantResult(false, "login required")
+            }
+            val sessionId = MessageDigest.getInstance("SHA-256")
+                .digest(token.toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }
+            val requestJson = JSONObject()
+                .put("license", lastLicense)
+                .put("hwid", lastHwid.lowercase())
+                .put("session_token", token)
+                .put("session_id", sessionId)
+                .put("operations", org.json.JSONArray(operations))
+                .put("build_id", buildId)
+                .put("manifest_hash", manifestHash)
+                .put("tool_hash", toolHash)
+                .toString()
+            ensureGate()
+            val raw = postJson(base() + Vault.pathOperationGrant(), requestJson)
+            if (raw.isNullOrBlank() || raw.trimStart().startsWith("<")) {
+                return GrantResult(false, "grant endpoint unavailable")
+            }
+            val response = JSONObject(raw)
+            if (response.optString("status") != "success") {
+                return GrantResult(false, response.optString("msg", "grant rejected"))
+            }
+            val proof = response.optJSONObject("proof") ?: return GrantResult(false, "malformed grant proof")
+            GrantResult(true, "ok", proof.toString())
+        } catch (_: Exception) {
+            GrantResult(false, "grant request failed")
         }
     }
 
