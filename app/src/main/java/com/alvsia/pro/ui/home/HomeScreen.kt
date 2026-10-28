@@ -40,6 +40,7 @@ import androidx.compose.ui.Alignment
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Locale
+import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -116,7 +117,11 @@ fun HomeScreen(
         var expiryMs = 0L
         for (fmt in formats) {
             try {
-                expiryMs = SimpleDateFormat(fmt, Locale.US).parse(expiry.take(19))?.time ?: 0L
+                val parser = SimpleDateFormat(fmt, Locale.US).apply {
+                    isLenient = false
+                    timeZone = TimeZone.getTimeZone("Asia/Jakarta")
+                }
+                expiryMs = parser.parse(expiry.take(19))?.time ?: 0L
                 if (expiryMs > 0) break
             } catch (_: Exception) {}
         }
