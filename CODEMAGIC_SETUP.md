@@ -1,56 +1,66 @@
-# Setup CodeMagic — ALVSIA PRO 5.5.1-hardened
+# Setup CodeMagic — ALVSIA PRO 5.5.2-hardened
 
-Workflow: `alvisia-android` (`ALVSIA PRO 5.5.1-hardened`)  
-Branch rilis: `main`  
-Package: `com.alvsia.pro`
+Workflow: `alvisia-android` (`ALVSIA PRO 5.5.2-hardened`)  
+Release branch: `main`  
+Package: `com.alvsia.pro`  
+Version: `versionCode 98`, `versionName 5.5.2-hardened`
 
-## 1. Hubungkan repositori
+## 1. Connect the repository
 
-1. Masuk ke Codemagic dan tambahkan repositori GitHub `ALVISIA8/alvsia-pro-550`.
-2. Pastikan Codemagic menggunakan konfigurasi `codemagic.yaml` dari branch `main`.
-3. Tambahkan environment variable group bernama persis `signing`.
+1. Connect GitHub repository `ALVISIA8/alvsia-pro-550` in CodeMagic.
+2. Ensure CodeMagic reads `codemagic.yaml` from `main`.
+3. Add an environment variable group named exactly `signing` and attach it to this workflow.
 
-## 2. Tambahkan signing secrets
+## 2. Configure release signing secrets
 
-Masukkan variable berikut ke group `signing` dan tandai password serta Base64 sebagai secret. Jika memakai `CM_KEYSTORE_PATH`, gunakan path file keystore yang tersedia pada build CodeMagic; jangan isi variabel itu dengan Base64.
+Set these variables in the CodeMagic UI. Do not commit the keystore, passwords, or Base64 keystore content.
 
-- `CM_KEYSTORE_PATH`: path keystore yang diunggah melalui CodeMagic Code signing identities (jika tersedia), **atau** `CM_KEYSTORE`: isi Base64 file keystore rilis.
-- `CM_KEYSTORE_PASSWORD`: password keystore.
+- `CM_KEYSTORE_PATH`: path to an uploaded keystore file available to the build, **or**
+- `CM_KEYSTORE`: Base64-encoded contents of the release keystore.
+- `CM_KEYSTORE_PASSWORD`: keystore password.
 - `CM_KEY_ALIAS`: `alvsia`
-- `CM_KEY_PASSWORD`: password private key; jika sama dengan password keystore, gunakan nilai yang sama.
+- `CM_KEY_PASSWORD`: private-key password; it may equal the keystore password.
 
-Jangan commit file keystore, password, atau hasil Base64 ke GitHub.
+Use one of the two keystore sources above, not a placeholder. The workflow fails early if the keystore or password is missing or invalid.
 
-### Membuat nilai CM_KEYSTORE dari Termux
-
-Pastikan file yang digunakan adalah keystore rilis yang sertifikatnya cocok dengan pin aplikasi. Contoh jika file berada di lokasi yang telah dipakai proyek:
-
+To produce Base64 in Termux without changing the keystore:
 ```bash
 base64 -w 0 "$HOME/ALVISIA_KEYSTORE/alvsia-release.jks"
 ```
+Copy the output directly into CodeMagic's secret variable `CM_KEYSTORE`. Do not send the output or passwords in chat or commit them to GitHub.
 
-Salin seluruh output sebagai nilai `CM_KEYSTORE` di Codemagic. Jangan mengirim output atau password ke chat. Jika keystore rilis berada di lokasi lain, ganti path dengan path file yang benar.
-
-Sertifikat yang diharapkan oleh source aplikasi memiliki SHA-256:
-
+The app expects signing certificate SHA-256:
 `99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c`
 
-Keystore dengan sertifikat berbeda akan ditolak oleh tahap verifikasi.
+The final signing step rejects a keystore whose certificate does not match this value.
 
-## 3. Jalankan build
+## 3. Run the release workflow
 
-Setelah repositori terhubung dan keempat variable disetel, jalankan workflow `alvisia-android` pada branch `main`, atau push commit ke `main` jika pemicu otomatis aktif. Workflow rilis hanya dipicu oleh push ke `main`; pull request tidak menjalankan workflow rilis.
+The workflow is configured to run on pushes to `main`. After the signing group is configured, start the `alvisia-android` workflow on `main` in CodeMagic or push an approved commit to `main`.
 
-Build akan memvalidasi signing secrets lebih awal, menjalankan pemeriksaan keamanan, menyegel aset, membangun APK release, menandatangani APK, lalu memverifikasi signature dan certificate pin. APK bertanda tangan yang diharapkan bernama:
+The pipeline validates secrets, runs source checks, seals Python modules and runtime assets, builds the release APK, signs it with V2/V3 (V1 disabled), and verifies the exact final signed APK. Expected artifact:
 
-`ALVISIA_PRO_5.5.1-hardened_signed.apk`
+`ALVISIA_PRO_5.5.2-hardened_signed.apk`
 
-Unduh APK dari bagian artifacts pada build Codemagic yang berhasil.
+Download only this signed artifact from a successful CodeMagic build. GitHub Actions validation APKs are **unsigned** and are not release-ready.
+
+## 4. Unaux runtime verification still required
+
+The Android source pins HTTPS to `alvsiapanel.unaux.com` using SPKI SHA-256 `84+S6cn1vo+IjlQMR5mvqIe5XKMPh28WV9xYVtFKTkk=`. CA and hostname verification remain enabled. CI verifies the configured pin policy, but it cannot prove the current live host presents that SPKI or that the hosting-side grant key/database configuration is installed correctly.
+
+After deployment, test on-device:
+1. Login using a valid license and device.
+2. Invoke one operation from each module group; confirm a fresh RS256 grant is accepted.
+3. Confirm invalid/expired grants fail closed.
+4. Confirm ordinary login and assets still work over HTTPS.
+5. Check the signed APK certificate, package/version, and all required modules.
+
+Do not disable pinning or weaken grant validation just to bypass a failed live test. If the live SPKI differs, re-measure it from the actual host and verify the host identity before changing the pin.
 
 ## Troubleshooting
 
-- `Missing CM_KEYSTORE_PATH` / `CM_KEYSTORE`: pastikan file keystore tersedia pada build atau isi `CM_KEYSTORE` dengan Base64 yang benar; pastikan group `signing` terpasang.
-- `Missing CM_KEYSTORE_PASSWORD`: periksa nama variable dan pastikan password di group `signing` benar.
-- `CM_KEYSTORE is not valid base64`: buat ulang Base64 dari file keystore yang benar dan salin output lengkap.
-- `certificate does not match`: keystore bukan keystore rilis yang sertifikatnya dipin oleh source. Jangan menghapus atau mengganti pin hanya untuk melewati verifikasi.
-- Build sukses belum membuktikan APK berjalan normal di perangkat; uji instalasi dan login setelah APK terverifikasi.
+- `Missing CM_KEYSTORE_PATH` / `CM_KEYSTORE`: configure one valid keystore source in group `signing`.
+- `Missing CM_KEYSTORE_PASSWORD`: correct the variable name and value in group `signing`.
+- `CM_KEYSTORE is not valid base64`: regenerate Base64 from the release keystore and copy the complete output.
+- `certificate does not match`: use the intended release keystore; do not remove the app certificate check.
+- Grant rejected or TLS pin mismatch: verify the live Unaux endpoint, deployed `operation_grant.php`, matching private/public RSA key, and live SPKI. Do not claim the release is production-verified until those checks pass.
