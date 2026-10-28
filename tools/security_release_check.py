@@ -163,7 +163,9 @@ if ("alvsiapanel.unaux.com" not in python_panel
     fail.append("Python HTTP pinning must use only the active Unaux panel host and measured SPKI pin")
 if "KEY_ALGORITHM_HMAC_SHA256" not in session or "age in 0..SESSION_TTL" not in session:
     fail.append("SessionGate HMAC or future/expiry timestamp checks are missing")
-if "if (Guard.runtimeHostile(ctx))" not in session or "native_rasp_unavailable" not in session:
+if ("if (runtimeHostile(ctx))" not in session
+        or "native_rasp_unavailable" not in session
+        or 'throw SecurityException("BLOCKED:runtime_hostile")' not in session):
     fail.append("SessionGate must recheck live hooks each dispatch and fail closed if release JNI RASP is unavailable")
 if "DualVmGuard.inspect(ctx)" not in session:
     fail.append("SessionGate must re-run the dual-layer runtime gate at each protected dispatch")
