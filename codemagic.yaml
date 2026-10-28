@@ -154,6 +154,84 @@ workflows:
         script: |
           python3 tools/seal_python.py --restore || true
 
+      - name: Build XopProtector candidate (opt-in, preserves baseline APK)
+        script: |
+          set -euo pipefail
+          # Enable only for a deliberate candidate run; never silently replace baseline.
+          if [ "${ALVSIA_XOPPROTECTOR_ENABLED:-false}" != "true" ]; then
+            echo "SKIP: XopProtector candidate disabled; baseline release path unchanged"
+            exit 0
+          fi
+          BASE_APK="$(find app/build/outputs/apk/release -type f -name '*.apk' | head -n 1)"
+          test -n "$BASE_APK" && test -s "$BASE_APK"
+          XOP_DIR="$CM_BUILD_DIR/.xopprotector-src"
+          rm -rf "$XOP_DIR"
+          git clone --filter=blob:none https://github.com/xopJack/XopProtector.git "$XOP_DIR"
+          git -C "$XOP_DIR" checkout --detach 5990c31
+          cd "$XOP_DIR"
+          chmod +x ./gradlew
+          ./gradlew --no-daemon :packer:jar exportShellFiles
+          PACKER_JAR="$(find packer/build/libs -maxdepth 1 -type f -name 'protector-packer-*.jar' ! -name '*-sources.jar' | head -n 1)"
+          test -n "$PACKER_JAR" && test -s "$PACKER_JAR"
+          test -d executable/shell-files
+          cd "$CM_BUILD_DIR"
+          # Deliberately avoid SO/asset/resource rewriting and VMP on the first pass:
+          # Chaquopy, JNI, resource IDs and the custom Application require device smoke tests.
+          # Use balanced auto policy for the app package; do not enable VMP/SO/assets/resources yet.
+          # This is an opt-in candidate only; runtime compatibility remains unproven until device tests.
+          java -jar "$XOP_DIR/$PACKER_JAR" "$BASE_APK" \
+            -o "$CM_BUILD_DIR/ALVISIA_PRO_5.5.2-xop_candidate_unsigned.apk" \
+            --shell-dir "$XOP_DIR/executable/shell-files" \
+            --profile balanced \
+            --no-protect-so
+          CANDIDATE="$CM_BUILD_DIR/ALVISIA_PRO_5.5.2-xop_candidate_unsigned.apk"
+          test -s "$CANDIDATE"
+          # Structural regression gates: required runtime payloads, package/version,
+          # and manifest permission set must survive packing unchanged.
+          python3 - "$BASE_APK" "$CANDIDATE" <<'PY'
+          import sys, zipfile
+          base, candidate = sys.argv[1:3]
+          base_required = {
+              "lib/arm64-v8a/librasp_guard.so",
+              "assets/chaquopy/app.imy",
+              "assets/nx/i.dat",
+          }
+          candidate_required = base_required | {"lib/arm64-v8a/libprotector.so"}
+          with zipfile.ZipFile(base) as a, zipfile.ZipFile(candidate) as b:
+              for label, z, required in (
+                  ("baseline", a, base_required),
+                  ("Xop candidate", b, candidate_required),
+              ):
+                  names = set(z.namelist())
+                  missing = sorted(required - names)
+                  if missing:
+                      raise SystemExit(f"{label} missing required runtime entries: {missing}")
+                  if z.testzip() is not None:
+                      raise SystemExit(f"{label} ZIP integrity check failed")
+          print("PASS: baseline and Xop candidate ZIP integrity; RASP, Xop shell, Chaquopy, sealed JAR index present")
+          PY
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          AAPT="$(find "$SDK_ROOT/build-tools" -type f -name aapt | head -n 1)"
+          test -x "$AAPT" || { echo "ERROR: aapt unavailable for Xop compatibility gates"; exit 1; }
+          BASE_BADGING="$("$AAPT" dump badging "$BASE_APK" | grep '^package:' | head -n 1)"
+          CAND_BADGING="$("$AAPT" dump badging "$CANDIDATE" | grep '^package:' | head -n 1)"
+          test -n "$BASE_BADGING" && test "$BASE_BADGING" = "$CAND_BADGING" || {
+            echo "ERROR: XopProtector changed package/version metadata"
+            echo "BASE: $BASE_BADGING"
+            echo "XOP:  $CAND_BADGING"
+            exit 1
+          }
+          BASE_PERMS="$("$AAPT" dump permissions "$BASE_APK" | sort)"
+          CAND_PERMS="$("$AAPT" dump permissions "$CANDIDATE" | sort)"
+          test "$BASE_PERMS" = "$CAND_PERMS" || {
+            echo "ERROR: XopProtector changed the APK permission set"
+            diff -u <(printf '%s\\n' "$BASE_PERMS") <(printf '%s\\n' "$CAND_PERMS") || true
+            exit 1
+          }
+          echo "PASS: package/version and manifest permission set unchanged by XopProtector"
+          echo "XopProtector candidate generated; runtime/device smoke tests are still mandatory."
+          echo "ALVSIA_XOP_UNSIGNED=$CM_BUILD_DIR/ALVISIA_PRO_5.5.2-xop_candidate_unsigned.apk" >> "$CM_ENV"
+
       - name: Exclude VCS metadata from packaging
         script: |
           # Remove git metadata from release artifacts
@@ -165,6 +243,12 @@ workflows:
           set -euo pipefail
           UNSIGNED="$(find app/build/outputs/apk/release -type f -name '*.apk' | head -n 1)"
           test -n "$UNSIGNED" || { echo "ERROR: release APK not found"; exit 1; }
+          SIGNED_APK="ALVISIA_PRO_5.5.2-hardened_signed.apk"
+          if [ "${ALVSIA_XOPPROTECTOR_ENABLED:-false}" = "true" ]; then
+            UNSIGNED="$CM_BUILD_DIR/ALVISIA_PRO_5.5.2-xop_candidate_unsigned.apk"
+            SIGNED_APK="ALVISIA_PRO_5.5.2-xop_candidate_signed.apk"
+            test -s "$UNSIGNED" || { echo "ERROR: XopProtector enabled but candidate APK is missing"; exit 1; }
+          fi
 
           # Release builds must never silently publish an unsigned APK.
           : "${CM_KEYSTORE_PASSWORD:?Missing CM_KEYSTORE_PASSWORD in Codemagic environment group signing}"
@@ -215,8 +299,8 @@ workflows:
             --v3-signing-enabled true \
             --ks "$KS" --ks-key-alias "$ALIAS" \
             --ks-pass "pass:$KSPASS" --key-pass "pass:$KEYPASS" \
-            --out ALVISIA_PRO_5.5.2-hardened_signed.apk /tmp/alvsia-release-aligned.apk
-          VERIFY_OUTPUT="$("$BUILD_TOOLS/apksigner" verify --verbose --print-certs ALVISIA_PRO_5.5.2-hardened_signed.apk)"
+            --out "$SIGNED_APK" /tmp/alvsia-release-aligned.apk
+          VERIFY_OUTPUT="$("$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$SIGNED_APK")"
           printf '%s\n' "$VERIFY_OUTPUT"
           printf '%s\n' "$VERIFY_OUTPUT" | grep -Eqi 'Verified using v1 scheme.*: false' || {
             echo "ERROR: v1/JAR signing must be disabled for release APK"
@@ -232,7 +316,7 @@ workflows:
           }
 
           EXPECTED_CERT_SHA256="$(grep -oE '[0-9a-fA-F]{64}' app/build.gradle.kts | head -n 1 | tr '[:upper:]' '[:lower:]')"
-          ACTUAL_CERT_SHA256="$("$BUILD_TOOLS/apksigner" verify --print-certs ALVISIA_PRO_5.5.2-hardened_signed.apk | awk -F': ' '/certificate SHA-256 digest/ {print $NF; exit}' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          ACTUAL_CERT_SHA256="$("$BUILD_TOOLS/apksigner" verify --print-certs "$SIGNED_APK" | awk -F': ' '/certificate SHA-256 digest/ {print $NF; exit}' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
           test -n "$EXPECTED_CERT_SHA256" || { echo "ERROR: CERT_SHA256 pin not found in app/build.gradle.kts"; exit 1; }
           test "$ACTUAL_CERT_SHA256" = "$EXPECTED_CERT_SHA256" || {
             echo "ERROR: APK signing certificate does not match app CERT_SHA256 pin"
@@ -241,20 +325,22 @@ workflows:
             exit 1
           }
           echo "PASS: signed APK verified and certificate pin matches"
-          ls -lh ALVISIA_PRO_5.5.2-hardened_signed.apk
+          ls -lh "$SIGNED_APK"
           # Verify the exact final signed artifact, not only its unsigned predecessor.
-          "$BUILD_TOOLS/zipalign" -c -v 4 ALVISIA_PRO_5.5.2-hardened_signed.apk
-          python3 tools/audit_release_apk.py ALVISIA_PRO_5.5.2-hardened_signed.apk
-          BADGING="$("$BUILD_TOOLS/aapt" dump badging ALVISIA_PRO_5.5.2-hardened_signed.apk)"
+          "$BUILD_TOOLS/zipalign" -c -v 4 "$SIGNED_APK"
+          python3 tools/audit_release_apk.py "$SIGNED_APK"
+          BADGING="$("$BUILD_TOOLS/aapt" dump badging "$SIGNED_APK")"
           printf '%s\n' "$BADGING" | grep -Fq "package: name='com.alvsia.pro' versionCode='98' versionName='5.5.2-hardened'" || {
             echo "ERROR: final APK package/version does not match release source"
             printf '%s\n' "$BADGING" | grep -E "^package:|^application-label:" || true
             exit 1
           }
           echo "PASS: final APK package/version verified"
-          sha256sum ALVISIA_PRO_5.5.2-hardened_signed.apk
+          sha256sum "$SIGNED_APK"
     artifacts:
       - app/build/outputs/apk/**/*.apk
       - ALVISIA_PRO_5.5.2-hardened_signed.apk
+      - ALVISIA_PRO_5.5.2-xop_candidate_unsigned.apk
+      - ALVISIA_PRO_5.5.2-xop_candidate_signed.apk
       - ALVISIA_PRO_5.5.2-hardened_unsigned.apk
       - build_full.log
