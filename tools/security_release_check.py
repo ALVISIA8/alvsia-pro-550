@@ -214,7 +214,9 @@ if ("ALVSIA_GRANT_KID='alvsia-unaux-rsa1'" not in grant_endpoint
         or "ALVSIA_GRANT_BUILD_ID='ALVSIA-UNaux-20261028-RSA1'" not in grant_endpoint
         or "openssl_sign($input,$sig,$privateKey,OPENSSL_ALGO_SHA256)" not in grant_endpoint
         or "grant_rate_limit('operation_grant',30,60)" not in grant_endpoint
-        or "ALVSIA_GRANT_TTL=180" not in grant_endpoint):
+        or "ALVSIA_GRANT_TTL=180" not in grant_endpoint
+        or "grant_signing_key_mismatch" not in grant_endpoint
+        or "ALVSIA_GRANT_PUBLIC_N_B64URL" not in grant_endpoint):
     fail.append("Unaux endpoint must sign the aligned JWT contract, rate-limit, and enforce 180-second TTL")
 
 if fail:

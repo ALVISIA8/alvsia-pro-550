@@ -11,6 +11,7 @@ const ALVSIA_GRANT_BUILD_ID='ALVSIA-UNaux-20261028-RSA1';
 const ALVSIA_GRANT_ISSUER='https://alvsiapanel.unaux.com';
 const ALVSIA_GRANT_AUDIENCE='com.alvsia.pro';
 const ALVSIA_GRANT_TTL=180;
+const ALVSIA_GRANT_PUBLIC_N_B64URL='p2G8SVBzL8Ic_aTg10HZcc35LJdw2Iv-rP0LyXyyKp-06Ju-_nOxTpDE9gpDoBegkXh7sj37qO94Fx-SZn3JDVdRzKMARzkRSevUX0wOGveXd6JzggcCDe70-P3QhHgPE91HM78QkGeBV0vSebOCLEVjP7l0MjmmBK_7zuK3FuPaMBZUBOi8CwGuW8lhjqbPwwiKM5tHKG5bd9-hWVZ6O-XBP_jiQSafnXX-3Gy_z6LuniDzK79CfxBoxQwJPOOxowHzeVvgcVSy7ubJO3ZzsATsi-JPYCyMtIOC7eKDHFourkFaOYd0i4r838nPAylbpL659vkP2DD3hd4SW5JStPIH20sShkpWsCglhGa0Hukt_kh-HrD9YMhRGdc0Ymc8dU6LnSU4KKb6wmk1LLhgtLC3NoTaM_Yx_3Z5iqrY9ELiLT6teSWlyEpJWOFPkPz39EoThQlDpWf0aO7syXoo3iAXJMUpWUli1qPCC94TSumUEAYwULv1m4_nbLO6WwNR';
 function grant_reply($status,array $body) { http_response_code((int)$status); echo json_encode($body,JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE); exit; }
 function grant_fail($status,$code) { grant_reply($status,['status'=>'error','code'=>$code]); }
 function grant_b64url($s) { return rtrim(strtr(base64_encode($s),'+/','-_'),'='); }
@@ -91,6 +92,7 @@ try {
  if($privateKey===false) grant_fail(503,'grant_signing_key_invalid');
  $details=openssl_pkey_get_details($privateKey);
  if(!$details||($details['type']??-1)!==OPENSSL_KEYTYPE_RSA||(int)($details['bits']??0)<3072) grant_fail(503,'grant_signing_key_weak');
+ if(!isset($details['rsa']['n'])||!hash_equals(ALVSIA_GRANT_PUBLIC_N_B64URL,grant_b64url($details['rsa']['n']))) grant_fail(503,'grant_signing_key_mismatch');
  $now=time(); $payload=['iss'=>ALVSIA_GRANT_ISSUER,'aud'=>ALVSIA_GRANT_AUDIENCE,'sub'=>(string)$keyId,'kid'=>ALVSIA_GRANT_KID,'jti'=>bin2hex(random_bytes(16)),'iat'=>$now,'nbf'=>$now-2,'exp'=>$now+ALVSIA_GRANT_TTL,'ttl'=>ALVSIA_GRANT_TTL,'build_id'=>ALVSIA_GRANT_BUILD_ID,'operation'=>$operation,'request_id'=>$requestId,'session_hash'=>hash('sha256',$token),'hwid_hash'=>hash('sha256',$hwid),'license_hash'=>hash('sha256',$license)];
  $head=grant_b64url(json_encode(['typ'=>'JWT','alg'=>'RS256','kid'=>ALVSIA_GRANT_KID],JSON_UNESCAPED_SLASHES));
  $bodyPart=grant_b64url(json_encode($payload,JSON_UNESCAPED_SLASHES)); $input=$head.'.'.$bodyPart; $sig='';
