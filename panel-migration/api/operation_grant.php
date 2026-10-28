@@ -17,6 +17,40 @@ function grant_b64url($s) { return rtrim(strtr(base64_encode($s),'+/','-_'),'=')
 function grant_operation_allowed($op) {
  return in_array($op,['pak_tools','obb_tools','skin_obb','lua_tools','file_scan','workspace','export_report','rebrand','so_analyzer','frida_tracer','xor_suite','decrypt_engine','string_recover','lua_inject','anti_re_audit','lua_protector','alvsia_private_tool','game_patch','apk_audit'],true);
 }
+function grant_audit($keyId,$operation,$requestId,$result) {
+ try {
+  $conn=db();
+  $conn->query("CREATE TABLE IF NOT EXISTS vp_operation_grant_audit (
+   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+   key_id INT UNSIGNED NOT NULL DEFAULT 0,
+   operation VARCHAR(64) NOT NULL,
+   request_id VARCHAR(64) NOT NULL,
+   result VARCHAR(24) NOT NULL,
+   ip_hash CHAR(64) NOT NULL,
+   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+   PRIMARY KEY(id), KEY idx_key_created(key_id,created_at), KEY idx_request(request_id)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+  $ip=(string)($_SERVER['REMOTE_ADDR']??''); $ipHash=hash('sha256',$ip);
+  $stmt=$conn->prepare('INSERT INTO vp_operation_grant_audit (key_id,operation,request_id,result,ip_hash) VALUES (?,?,?,?,?)');
+  if($stmt) { $stmt->bind_param('issss',$keyId,$operation,$requestId,$result,$ipHash); $stmt->execute(); }
+ } catch(Throwable $e) { error_log('[ALVSIA grant audit] '.get_class($e)); }
+}
+function grant_rate_limit($action,$limit,$windowSeconds) {
+ try {
+  $conn=db(); $ip=substr((string)($_SERVER['REMOTE_ADDR']??'unknown'),0,64);
+  $stmt=$conn->prepare('SELECT hits,window_start FROM vp_rate_limit WHERE ip_address=? AND action=? LIMIT 1');
+  if(!$stmt) return false;
+  $stmt->bind_param('ss',$ip,$action); if(!$stmt->execute()) return false;
+  $row=$stmt->get_result()->fetch_assoc();
+  if($row && (time()-strtotime((string)$row['window_start']))<$windowSeconds && (int)$row['hits'] >= $limit) return false;
+  if($row && (time()-strtotime((string)$row['window_start']))<$windowSeconds) {
+   $u=$conn->prepare('UPDATE vp_rate_limit SET hits=hits+1 WHERE ip_address=? AND action=?');
+   if(!$u) return false; $u->bind_param('ss',$ip,$action); return $u->execute();
+  }
+  $u=$conn->prepare('INSERT INTO vp_rate_limit (ip_address,action,hits,window_start) VALUES (?, ?, 1, NOW()) ON DUPLICATE KEY UPDATE hits=1, window_start=NOW()');
+  if(!$u) return false; $u->bind_param('ss',$ip,$action); return $u->execute();
+ } catch(Throwable $e) { return false; }
+}
 if (($_SERVER['REQUEST_METHOD']??'GET')!=='POST') { header('Allow: POST'); grant_fail(405,'method_not_allowed'); }
 $type=strtolower(trim(explode(';',(string)($_SERVER['CONTENT_TYPE']??''))[0]));
 if ($type!=='application/json') grant_fail(415,'json_required');
@@ -32,6 +66,7 @@ if($hwid===''||strlen($hwid)<8||strlen($hwid)>128) grant_fail(400,'invalid_hwid'
 if(!hash_equals(ALVSIA_GRANT_BUILD_ID,$build)) grant_fail(403,'build_not_allowed');
 if(!preg_match('/^[a-z0-9_]{2,64}$/',$operation)||!grant_operation_allowed($operation)) grant_fail(403,'operation_not_allowed');
 if(!preg_match('/^[a-f0-9]{16,64}$/',$requestId)) grant_fail(400,'invalid_request_id');
+if(!grant_rate_limit('operation_grant',30,60)) grant_fail(429,'rate_limited');
 try {
  if(!function_exists('session_validate')||!function_exists('db')) grant_fail(503,'panel_auth_unavailable');
  $session=session_validate($token,$hwid); if(!$session) grant_fail(401,'session_invalid');
@@ -60,5 +95,6 @@ try {
  $head=grant_b64url(json_encode(['typ'=>'JWT','alg'=>'RS256','kid'=>ALVSIA_GRANT_KID],JSON_UNESCAPED_SLASHES));
  $bodyPart=grant_b64url(json_encode($payload,JSON_UNESCAPED_SLASHES)); $input=$head.'.'.$bodyPart; $sig='';
  if(!openssl_sign($input,$sig,$privateKey,OPENSSL_ALGO_SHA256)) grant_fail(503,'grant_signing_failed');
+ grant_audit($keyId,$operation,$requestId,'issued');
  grant_reply(200,['status'=>'ok','contract_version'=>1,'alg'=>'RS256','kid'=>ALVSIA_GRANT_KID,'grant_token'=>$input.'.'.grant_b64url($sig),'ttl'=>ALVSIA_GRANT_TTL,'server_time'=>$now,'expires_at'=>$now+ALVSIA_GRANT_TTL]);
 } catch(Throwable $e) { error_log('[ALVSIA grant] service failure: '.get_class($e)); grant_fail(503,'grant_service_unavailable'); }

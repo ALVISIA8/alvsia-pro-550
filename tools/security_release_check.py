@@ -181,6 +181,42 @@ if "/SKIN_TOOL/main/SKIN_TOOL.zip" in ultimate or "/BGMI_CSV/main/" in ultimate:
     fail.append("external SKIN_TOOL/BGMI_CSV downloads are not commit-pinned")
 if "_verify_pinned_git_blob" not in ultimate or "cbd3d0e257963b54f34a908b6864040c7f96fbb1" not in ultimate:
     fail.append("external data download integrity verification is missing")
+
+# Unaux operation-grant contract must match the active panel, and every tool dispatch must fail closed.
+operation_grants = read(JAVA / "tool/OperationGrants.kt")
+grant_panel = read(JAVA / "panel/PanelClient.kt")
+grant_runner = read(JAVA / "tool/PythonBridgeRunner.kt")
+grant_core = read(PY / "alvsia_core.py")
+grant_ultimate = read(PY / "alvsia_ultimate.py")
+grant_bridge_impl = read(PY / "alvsia_bridge_impl.py")
+grant_endpoint = read(ROOT / "panel-migration/api/operation_grant.php")
+if ("ALVSIA-UNaux-20261028-RSA1" not in operation_grants
+        or "alvsia-unaux-rsa1" not in grant_core
+        or "alvsia-unaux-rsa1" not in grant_ultimate
+        or "grant_token" not in grant_panel
+        or 'response.optString("status") != "ok"' not in grant_panel):
+    fail.append("APK and Unaux operation-grant KID/build/response contract is not aligned")
+if ("operationFor(moduleId, subId)" not in grant_runner
+        or "?: return false to listOf" not in grant_runner
+        or "Unaux RSA operation grant unavailable" not in grant_runner):
+    fail.append("all Android tool dispatches must request a grant and fail closed on missing mappings or grants")
+if ("_alvsia_install_operation_grant_token" not in grant_core
+        or "_alv_install_operation_grant_token" not in grant_ultimate
+        or "claims.get('session_hash') != session" not in grant_core
+        or "claims.get('hwid_hash')" not in grant_core
+        or "expires-issued > 180" not in grant_core
+        or "ALVSIA_CORE_RSA_N_B64U" not in grant_core):
+    fail.append("Python core JWT verifier is missing signature/session/device/TTL checks")
+if ("core._alvsia_require_operation((grant_operation,))" not in grant_bridge_impl
+        or "module/subtool has no Unaux grant mapping" not in grant_bridge_impl):
+    fail.append("Python dispatch must enforce the signed module grant before tool execution")
+if ("ALVSIA_GRANT_KID='alvsia-unaux-rsa1'" not in grant_endpoint
+        or "ALVSIA_GRANT_BUILD_ID='ALVSIA-UNaux-20261028-RSA1'" not in grant_endpoint
+        or "openssl_sign($input,$sig,$privateKey,OPENSSL_ALGO_SHA256)" not in grant_endpoint
+        or "grant_rate_limit('operation_grant',30,60)" not in grant_endpoint
+        or "ALVSIA_GRANT_TTL=180" not in grant_endpoint):
+    fail.append("Unaux endpoint must sign the aligned JWT contract, rate-limit, and enforce 180-second TTL")
+
 if fail:
     print("SECURITY SOURCE CHECK: FAIL")
     print("\n".join("- " + x for x in fail))
