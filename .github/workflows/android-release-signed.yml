@@ -164,7 +164,7 @@ jobs:
           filtered = [line for line in lines if "E:/Android/SDK-Android@5.14-20260706/SDK/libs" not in line and "E:\\\\Android\\\\SDK-Android@5.14-20260706\\\\SDK\\\\libs" not in line]
           if len(filtered) == len(lines):
               raise SystemExit("Expected Windows-only UniMP SDK path not found in pinned XopProtector settings")
-          path.write_text("\\n".join(filtered) + "\\n")
+          path.write_text("\n".join(filtered) + "\n")
           print("PASS: removed optional Windows-only SDK path for Linux CI")
           PY
           chmod +x "$XOP_ROOT/gradlew"
