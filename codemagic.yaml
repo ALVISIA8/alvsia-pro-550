@@ -191,14 +191,17 @@ workflows:
           python3 - "$BASE_APK" "$CANDIDATE" <<'PY'
           import sys, zipfile
           base, candidate = sys.argv[1:3]
-          required = {
+          base_required = {
               "lib/arm64-v8a/librasp_guard.so",
-              "lib/arm64-v8a/libprotector.so",
               "assets/chaquopy/app.imy",
               "assets/nx/i.dat",
           }
+          candidate_required = base_required | {"lib/arm64-v8a/libprotector.so"}
           with zipfile.ZipFile(base) as a, zipfile.ZipFile(candidate) as b:
-              for label, z in (("baseline", a), ("Xop candidate", b)):
+              for label, z, required in (
+                  ("baseline", a, base_required),
+                  ("Xop candidate", b, candidate_required),
+              ):
                   names = set(z.namelist())
                   missing = sorted(required - names)
                   if missing:
