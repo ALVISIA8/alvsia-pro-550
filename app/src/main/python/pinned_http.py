@@ -75,6 +75,7 @@ def panel_post(url: str, **kwargs):
     session = requests.Session()
     session.trust_env = False
     kwargs["verify"] = True
+    kwargs["allow_redirects"] = False
     kwargs["stream"] = True
     response = None
     try:
