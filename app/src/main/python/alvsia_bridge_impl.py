@@ -42,6 +42,29 @@ def run_tool(module_id, sub_id, input_path, out_root, engine_dir, jars_dir):
         mid = int(module_id)
         sid = str(sub_id)
 
+        # Every tool dispatch requires a server-signed grant from the active Unaux panel.
+        sid_l = sid.strip().lower()
+        if sid_l.startswith("skin_obb"):
+            grant_operation = "skin_obb"
+        elif sid_l.startswith("game_patch"):
+            grant_operation = "game_patch"
+        elif sid_l in ("audit_apk", "apk_audit", "priv_apk_audit"):
+            grant_operation = "apk_audit"
+        elif sid_l.startswith(("priv_", "sm4_")) or sid_l in ("url_scan_so", "pubg_lua_convert"):
+            grant_operation = "alvsia_private_tool"
+        else:
+            grant_operation = {
+                1: "pak_tools", 2: "pak_tools", 3: "pak_tools", 4: "obb_tools",
+                5: "lua_tools", 6: "file_scan", 7: "workspace", 8: "export_report",
+                9: "rebrand", 10: "so_analyzer", 11: "frida_tracer", 12: "xor_suite",
+                13: "decrypt_engine", 14: "pak_tools", 15: "string_recover",
+                16: "lua_inject", 17: "anti_re_audit", 18: "lua_protector",
+                19: "alvsia_private_tool"
+            }.get(mid)
+        if not grant_operation:
+            return "X AUTH: module/subtool has no Unaux grant mapping"
+        core._alvsia_require_operation((grant_operation,))
+
         def need_file():
             if not ip or not Path(ip).exists():
                 lines.append("X input missing")

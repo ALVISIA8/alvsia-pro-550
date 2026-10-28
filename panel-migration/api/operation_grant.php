@@ -1,188 +1,64 @@
 <?php
 declare(strict_types=1);
-
-/**
- * ALVSIA PRO — RSA-signed operation grants for the new unaux panel.
- * Install as /api/operation_grant.php beside config.php and sec_lib.php.
- * Private key MUST be supplied through OPERATION_GRANT_PRIVATE_KEY_FILE
- * outside the webroot (or OPERATION_GRANT_PRIVATE_KEY environment variable).
- */
+/* ALVSIA PRO — Unaux JWT RS256 operation grant. Keep the login API unchanged. */
 require_once __DIR__ . '/config.php';
-require_once __DIR__ . '/sec_lib.php';
-
+@ini_set('display_errors','0'); error_reporting(0);
 header('Content-Type: application/json; charset=utf-8');
-header('Cache-Control: no-store, private');
-header('Pragma: no-cache');
-header('X-Content-Type-Options: nosniff');
-header('Access-Control-Allow-Headers: Content-Type, CF-Ray');
-header('Access-Control-Allow-Methods: POST, OPTIONS');
-
-function grant_reply(int $code, array $payload): void {
-    http_response_code($code);
-    echo json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
-    exit;
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache'); header('X-Content-Type-Options: nosniff'); header('Referrer-Policy: no-referrer');
+const ALVSIA_GRANT_KID='alvsia-unaux-rsa1';
+const ALVSIA_GRANT_BUILD_ID='ALVSIA-UNaux-20261028-RSA1';
+const ALVSIA_GRANT_ISSUER='https://alvsiapanel.unaux.com';
+const ALVSIA_GRANT_AUDIENCE='com.alvsia.pro';
+const ALVSIA_GRANT_TTL=180;
+function grant_reply($status,array $body) { http_response_code((int)$status); echo json_encode($body,JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE); exit; }
+function grant_fail($status,$code) { grant_reply($status,['status'=>'error','code'=>$code]); }
+function grant_b64url($s) { return rtrim(strtr(base64_encode($s),'+/','-_'),'='); }
+function grant_operation_allowed($op) {
+ return in_array($op,['pak_tools','obb_tools','skin_obb','lua_tools','file_scan','workspace','export_report','rebrand','so_analyzer','frida_tracer','xor_suite','decrypt_engine','string_recover','lua_inject','anti_re_audit','lua_protector','alvsia_private_tool','game_patch','apk_audit'],true);
 }
-function grant_fail(string $message, int $code = 403): void {
-    grant_reply($code, ['status' => 'error', 'msg' => $message]);
-}
-
-if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'OPTIONS') {
-    http_response_code(204);
-    exit;
-}
-if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
-    header('Allow: POST, OPTIONS');
-    grant_fail('Method not allowed', 405);
-}
-if (function_exists('alvsia_cf_ray_check') && !alvsia_cf_ray_check()) {
-    grant_fail('Duplicate request', 429);
-}
-
-const GRANT_KID = 'alvsia-r4-20260923';
-const GRANT_TTL = 180;
-const GRANT_BUILD_ID = 'ALVSIA-20260923-V46';
-const GRANT_MEASUREMENT = 'a2760b0984493be88bb9801091ee6c103b7a1f1690bd137d036fd88fa4dfa0f5';
-const GRANT_ALLOWED = [
-    'pak.unpack', 'pak.repack', 'pak.unpack_single', 'pak.repack_single',
-    'pak.delete_entry', 'pak.delete_all', 'pak.diagnostics',
-    'advanced.inject_any', 'advanced.inject_brplayer',
-    'advanced.same_size_hashfix', 'advanced.zsdic_hashfix',
-    'asset.unpack', 'obb.unpack', 'obb.repack',
-    'lab.editor.auto_pak', 'lab.playerpawn.auto_pak'
-];
-
-$body = json_decode((string)file_get_contents('php://input'), true);
-if (!is_array($body)) grant_fail('Bad request', 400);
-
-$license = trim((string)($body['license'] ?? ''));
-$hwid = strtolower(trim((string)($body['hwid'] ?? '')));
-$token = strtolower(trim((string)($body['session_token'] ?? '')));
-$sessionId = strtolower(trim((string)($body['session_id'] ?? '')));
-$buildId = trim((string)($body['build_id'] ?? ''));
-$manifestHash = strtolower(trim((string)($body['manifest_hash'] ?? '')));
-$toolHash = strtolower(trim((string)($body['tool_hash'] ?? '')));
-$opsInput = $body['operations'] ?? null;
-
-if ($license === '' || strlen($license) > 128 ||
-    !preg_match('/^[a-f0-9]{64}$/', $hwid) ||
-    !preg_match('/^[a-f0-9]{64}$/', $token) ||
-    !preg_match('/^[a-f0-9]{64}$/', $sessionId)) {
-    grant_fail('Missing or invalid session fields', 400);
-}
-if (!hash_equals(hash('sha256', $token), $sessionId)) {
-    grant_fail('Session binding mismatch', 403);
-}
-if (!hash_equals(GRANT_BUILD_ID, $buildId)) grant_fail('Build mismatch', 403);
-if (!preg_match('/^[a-f0-9]{64}$/', $manifestHash) ||
-    !preg_match('/^[a-f0-9]{64}$/', $toolHash) ||
-    !hash_equals(GRANT_MEASUREMENT, $manifestHash) ||
-    !hash_equals(GRANT_MEASUREMENT, $toolHash)) {
-    grant_fail('Measurement mismatch', 403);
-}
-if (!is_array($opsInput) || count($opsInput) < 1 || count($opsInput) > 8) {
-    grant_fail('Bad operations', 400);
-}
-$ops = [];
-foreach ($opsInput as $op) {
-    if (!is_string($op) || !in_array($op, GRANT_ALLOWED, true)) grant_fail('Operation not allowed', 403);
-    $ops[] = $op;
-}
-$ops = array_values(array_unique($ops));
-if (!$ops) grant_fail('Bad operations', 400);
-
-$ip = function_exists('alvsia_client_ip') ? (string)alvsia_client_ip() : (string)($_SERVER['REMOTE_ADDR'] ?? '');
-if (function_exists('is_ip_banned') && is_ip_banned($ip)) grant_fail('Access denied', 403);
-if (function_exists('alvsia_hwid_banned') && alvsia_hwid_banned($hwid)) grant_fail('Device banned', 403);
-if (function_exists('alvsia_rate_limit_key') && !alvsia_rate_limit_key($license, 'operation_grant', 20, 60)) {
-    if (function_exists('alvsia_anomaly_hit')) alvsia_anomaly_hit('grant_rate_exceeded', $license, $hwid);
-    grant_fail('Rate limited', 429);
-}
-
-/* Database is authoritative: never issue a grant when DB validation fails. */
+if (($_SERVER['REQUEST_METHOD']??'GET')!=='POST') { header('Allow: POST'); grant_fail(405,'method_not_allowed'); }
+$type=strtolower(trim(explode(';',(string)($_SERVER['CONTENT_TYPE']??''))[0]));
+if ($type!=='application/json') grant_fail(415,'json_required');
+$len=(int)($_SERVER['CONTENT_LENGTH']??0); if($len>8192) grant_fail(413,'request_too_large');
+$raw=file_get_contents('php://input',false,null,0,8193);
+if(!is_string($raw)||$raw===''||strlen($raw)>8192) grant_fail(400,'invalid_body');
+$body=json_decode($raw,true); if(!is_array($body)||json_last_error()!==JSON_ERROR_NONE) grant_fail(400,'invalid_json');
+$token=strtolower(trim((string)($body['session_token']??'')));
+$hwid=trim((string)($body['hwid']??'')); $build=trim((string)($body['build_id']??''));
+$operation=strtolower(trim((string)($body['operation']??''))); $requestId=strtolower(trim((string)($body['request_id']??'')));
+if(!preg_match('/^[a-f0-9]{64}$/',$token)) grant_fail(400,'invalid_session_token');
+if($hwid===''||strlen($hwid)<8||strlen($hwid)>128) grant_fail(400,'invalid_hwid');
+if(!hash_equals(ALVSIA_GRANT_BUILD_ID,$build)) grant_fail(403,'build_not_allowed');
+if(!preg_match('/^[a-z0-9_]{2,64}$/',$operation)||!grant_operation_allowed($operation)) grant_fail(403,'operation_not_allowed');
+if(!preg_match('/^[a-f0-9]{16,64}$/',$requestId)) grant_fail(400,'invalid_request_id');
 try {
-    $db = db();
-    if (!($db instanceof mysqli)) throw new RuntimeException('DB unavailable');
-    $stmt = $db->prepare(
-        'SELECT s.id, s.license_code, s.hwid, s.expires_at AS session_expires,
-                k.key_code, k.status AS license_status, k.expires_at AS key_expires
-           FROM vp_sessions s
-           INNER JOIN vp_license_keys k ON k.id = s.key_id
-          WHERE s.token = ? AND s.revoked = 0 LIMIT 1'
-    );
-    if (!$stmt) throw new RuntimeException('DB prepare failed');
-    $stmt->bind_param('s', $token);
-    if (!$stmt->execute()) throw new RuntimeException('DB query failed');
-    $row = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-    if (!$row) grant_fail('Session invalid. Re-login required.', 401);
-    if ((int)$row['session_expires'] <= time()) grant_fail('Session expired.', 401);
-    if (!hash_equals((string)$row['license_code'], $license) ||
-        !hash_equals((string)$row['key_code'], $license)) grant_fail('License mismatch', 403);
-    if (!hash_equals(strtolower((string)$row['hwid']), $hwid)) grant_fail('Device mismatch', 403);
-    if ((string)$row['license_status'] !== 'active') grant_fail('License blocked', 403);
-    $expiry = trim((string)($row['key_expires'] ?? ''));
-    if ($expiry !== '') {
-        $expiryTs = strtotime($expiry);
-        if ($expiryTs === false || $expiryTs <= time()) grant_fail('License expired', 403);
-    }
-    $touch = $db->prepare('UPDATE vp_sessions SET last_seen = NOW() WHERE id = ?');
-    if (!$touch) throw new RuntimeException('Session touch failed');
-    $sid = (int)$row['id'];
-    $touch->bind_param('i', $sid);
-    if (!$touch->execute()) throw new RuntimeException('Session touch failed');
-    $touch->close();
-} catch (Throwable $e) {
-    error_log('[ALVSIA operation_grant] DB/session validation failed: ' . get_class($e));
-    grant_fail('Authentication service unavailable', 503);
-}
-
-/* Load private signing key only from deployment environment, never from webroot/repo. */
-$pem = null;
-$envPem = getenv('OPERATION_GRANT_PRIVATE_KEY');
-if (is_string($envPem) && strpos($envPem, '-----BEGIN') !== false) {
-    $pem = str_replace('\\n', "\n", $envPem);
-} else {
-    $keyFile = getenv('OPERATION_GRANT_PRIVATE_KEY_FILE');
-    if (is_string($keyFile) && $keyFile !== '' && is_readable($keyFile)) {
-        $candidate = file_get_contents($keyFile);
-        if (is_string($candidate) && strpos($candidate, '-----BEGIN') !== false) $pem = $candidate;
-    }
-    // Shared-host fallback: private directory adjacent to htdocs, never under webroot.
-    if (!$pem) {
-        $privateCandidate = dirname(__DIR__, 2) . '/private/operation_grant.pem';
-        if (is_readable($privateCandidate)) {
-            $candidate = file_get_contents($privateCandidate);
-            if (is_string($candidate) && strpos($candidate, '-----BEGIN') !== false) $pem = $candidate;
-        }
-    }
-}
-if (!$pem) grant_fail('grant signer unavailable', 503);
-$key = @openssl_pkey_get_private($pem);
-if (!$key) grant_fail('grant signer unavailable', 503);
-
-$fields = [
-    'grant_id' => bin2hex(random_bytes(16)),
-    'nonce' => bin2hex(random_bytes(16)),
-    'build_id' => $buildId,
-    'manifest_hash' => $manifestHash,
-    'tool_hash' => $toolHash,
-    'device_id' => $hwid,
-    'session_id' => $sessionId,
-    'operation_id' => implode(',', $ops),
-    'issued_at' => gmdate('Y-m-d H:i:s', time() - 5),
-    'expires_at' => gmdate('Y-m-d H:i:s', time() + GRANT_TTL)
-];
-$order = ['grant_id','nonce','build_id','manifest_hash','tool_hash','device_id','session_id','operation_id','issued_at','expires_at'];
-$canonical = "ALVSIA-R4\nkind=operation_grant";
-foreach ($order as $name) $canonical .= "\n" . $name . '=' . $fields[$name];
-$signature = '';
-if (!openssl_sign($canonical, $signature, $key, OPENSSL_ALGO_SHA256)) grant_fail('grant signing failed', 500);
-$value = rtrim(strtr(base64_encode($signature), '+/', '-_'), '=');
-try {
-    if (function_exists('log_activity')) log_activity(null, 'operation_grant', 'ops=' . implode(',', $ops));
-} catch (Throwable $e) {
-    // Logging failure does not invalidate the already-authorized grant.
-}
-grant_reply(200, ['status' => 'success', 'proof' => $fields + [
-    'signature' => ['alg' => 'RS256', 'kid' => GRANT_KID, 'value' => $value]
-]]);
+ if(!function_exists('session_validate')||!function_exists('db')) grant_fail(503,'panel_auth_unavailable');
+ $session=session_validate($token,$hwid); if(!$session) grant_fail(401,'session_invalid');
+ $keyId=(int)($session['key_id']??0); $license=(string)($session['license_code']??'');
+ if($keyId<1||$license==='') grant_fail(401,'session_binding_invalid');
+ $conn=db(); $stmt=$conn->prepare('SELECT id,key_code,status,expires_at FROM vp_license_keys WHERE id=? AND key_code=? LIMIT 1');
+ if(!$stmt) grant_fail(503,'license_check_unavailable');
+ $stmt->bind_param('is',$keyId,$license); if(!$stmt->execute()) grant_fail(503,'license_check_unavailable');
+ $keyRow=$stmt->get_result()->fetch_assoc();
+ if(!$keyRow||(string)$keyRow['status']!=='active') grant_fail(403,'license_inactive');
+ if(!empty($keyRow['expires_at'])&&strtotime((string)$keyRow['expires_at'])<=time()) grant_fail(403,'license_expired');
+ try {
+  $ban=$conn->prepare('SELECT id FROM vp_hwid WHERE key_id=? AND hwid=? AND is_banned=1 LIMIT 1');
+  if(!$ban) grant_fail(503,'device_check_unavailable');
+  $ban->bind_param('is',$keyId,$hwid); if(!$ban->execute()) grant_fail(503,'device_check_unavailable');
+  if($ban->get_result()->fetch_assoc()) grant_fail(403,'device_banned');
+ } catch(Throwable $e) { grant_fail(503,'device_check_unavailable'); }
+ if(function_exists('is_ip_banned')) { $ip=function_exists('client_ip')?client_ip():($_SERVER['REMOTE_ADDR']??''); if(is_ip_banned($ip)) grant_fail(403,'access_denied'); }
+ $privatePath=__DIR__.'/.private/operation_grant_private.pem';
+ if(!is_file($privatePath)||!is_readable($privatePath)) grant_fail(503,'grant_signing_key_missing');
+ $privatePem=file_get_contents($privatePath); $privateKey=$privatePem?openssl_pkey_get_private($privatePem):false;
+ if($privateKey===false) grant_fail(503,'grant_signing_key_invalid');
+ $details=openssl_pkey_get_details($privateKey);
+ if(!$details||($details['type']??-1)!==OPENSSL_KEYTYPE_RSA||(int)($details['bits']??0)<3072) grant_fail(503,'grant_signing_key_weak');
+ $now=time(); $payload=['iss'=>ALVSIA_GRANT_ISSUER,'aud'=>ALVSIA_GRANT_AUDIENCE,'sub'=>(string)$keyId,'kid'=>ALVSIA_GRANT_KID,'jti'=>bin2hex(random_bytes(16)),'iat'=>$now,'nbf'=>$now-2,'exp'=>$now+ALVSIA_GRANT_TTL,'ttl'=>ALVSIA_GRANT_TTL,'build_id'=>ALVSIA_GRANT_BUILD_ID,'operation'=>$operation,'request_id'=>$requestId,'session_hash'=>hash('sha256',$token),'hwid_hash'=>hash('sha256',$hwid),'license_hash'=>hash('sha256',$license)];
+ $head=grant_b64url(json_encode(['typ'=>'JWT','alg'=>'RS256','kid'=>ALVSIA_GRANT_KID],JSON_UNESCAPED_SLASHES));
+ $bodyPart=grant_b64url(json_encode($payload,JSON_UNESCAPED_SLASHES)); $input=$head.'.'.$bodyPart; $sig='';
+ if(!openssl_sign($input,$sig,$privateKey,OPENSSL_ALGO_SHA256)) grant_fail(503,'grant_signing_failed');
+ grant_reply(200,['status'=>'ok','contract_version'=>1,'alg'=>'RS256','kid'=>ALVSIA_GRANT_KID,'grant_token'=>$input.'.'.grant_b64url($sig),'ttl'=>ALVSIA_GRANT_TTL,'server_time'=>$now,'expires_at'=>$now+ALVSIA_GRANT_TTL]);
+} catch(Throwable $e) { error_log('[ALVSIA grant] service failure: '.get_class($e)); grant_fail(503,'grant_service_unavailable'); }

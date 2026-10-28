@@ -85,10 +85,10 @@ object PythonBridgeRunner {
             .joinToString("") { "%02x".format(it) }
 
 
-    /** Install the server-signed proof only after the Kotlin session gate is active. */
-    fun installOperationProof(proofJson: String): Boolean {
+    /** Verify and install the compact JWT signed by the current Unaux panel. */
+    fun installOperationProof(grantToken: String, expectedOperation: String): Boolean {
         return try {
-            if (!SessionGate.isSessionAuthorized()) return false
+            if (!SessionGate.isSessionAuthorized() || grantToken.split(".").size != 3) return false
             val pyClass = Class.forName("com.chaquo.python.Python")
             if (!(pyClass.getMethod("isStarted").invoke(null) as Boolean)) return false
             val py = pyClass.getMethod("getInstance").invoke(null) ?: return false
@@ -96,11 +96,13 @@ object PythonBridgeRunner {
             val pyObjectCls = Class.forName("com.chaquo.python.PyObject")
             val callAttr = pyObjectCls.getMethod("callAttr", String::class.java, Array<Any?>::class.java)
             val core = getModule.invoke(py, "alvsia_core") ?: return false
-            val coreResult = callAttr.invoke(core, "_alvsia_install_operation_proof_json", arrayOf<Any?>(proofJson))
+            val coreResult = callAttr.invoke(core, "_alvsia_install_operation_grant_token",
+                arrayOf<Any?>(grantToken, expectedOperation))
             val coreOk = coreResult is Boolean && coreResult
             if (!coreOk) return false
             val ultimate = getModule.invoke(py, "alvsia_ultimate") ?: return false
-            val decoded = callAttr.invoke(ultimate, "_alv_install_operation_proof_json", arrayOf<Any?>(proofJson))
+            val decoded = callAttr.invoke(ultimate, "_alv_install_operation_grant_token",
+                arrayOf<Any?>(grantToken, expectedOperation))
             when {
                 decoded is Boolean -> decoded
                 else -> decoded?.toString()?.trim()?.equals("True", ignoreCase = true) ?: false
@@ -211,16 +213,15 @@ object PythonBridgeRunner {
             // Protected operations require a panel-signed, short-lived RSA grant.
             // Fail closed if the endpoint is missing, the session is invalid, or the
             // Python verifier rejects the proof.
-            val grantOps = OperationGrants.operationsFor(moduleId, subId)
-            if (grantOps.isNotEmpty()) {
-                val (grantOk, grantDiag) = OperationGrants.obtainAndInstall(grantOps)
-                if (!grantOk) {
-                    return false to listOf(
-                        "X AUTH: RSA operation grant unavailable",
-                        "diagnostic: $grantDiag",
-                        "hint: verify /api/operation_grant.php and server signing-key configuration"
-                    )
-                }
+            val grantOperation = OperationGrants.operationFor(moduleId, subId)
+                ?: return false to listOf("X AUTH: module/subtool has no Unaux grant mapping")
+            val (grantOk, grantDiag) = OperationGrants.obtainAndInstall(grantOperation)
+            if (!grantOk) {
+                return false to listOf(
+                    "X AUTH: Unaux RSA operation grant unavailable",
+                    "diagnostic: $grantDiag",
+                    "hint: verify /api/operation_grant.php and the configured server key"
+                )
             }
 
             val rawResult = callAttr.invoke(

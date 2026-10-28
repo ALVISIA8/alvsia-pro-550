@@ -13,6 +13,7 @@ import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.security.MessageDigest
+import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
@@ -259,31 +260,23 @@ class PanelClient {
     }
 
 
-    /** Request a short-lived RSA-signed grant for protected operations. */
-    fun requestOperationGrant(
-        operations: List<String>,
-        buildId: String,
-        manifestHash: String,
-        toolHash: String,
-    ): GrantResult {
+    /** Request one short-lived JWT grant from the active Unaux panel contract. */
+    fun requestOperationGrant(operation: String, buildId: String): GrantResult {
         return try {
-            if (operations.isEmpty() || operations.size > 8) return GrantResult(false, "invalid operation list")
+            if (!operation.matches(Regex("^[a-z0-9_]{2,64}$"))) return GrantResult(false, "invalid operation")
             val token = sessionToken.trim().lowercase()
-            if (!token.matches(Regex("^[0-9a-f]{64}$")) || lastLicense.isBlank() || lastHwid.isBlank()) {
+            val hwid = lastHwid.trim().lowercase()
+            if (!token.matches(Regex("^[0-9a-f]{64}$")) || lastLicense.isBlank() || hwid.length < 8) {
                 return GrantResult(false, "login required")
             }
-            val sessionId = MessageDigest.getInstance("SHA-256")
-                .digest(token.toByteArray(Charsets.UTF_8))
+            val requestId = ByteArray(16).also { SecureRandom().nextBytes(it) }
                 .joinToString("") { "%02x".format(it) }
             val requestJson = JSONObject()
-                .put("license", lastLicense)
-                .put("hwid", lastHwid.lowercase())
                 .put("session_token", token)
-                .put("session_id", sessionId)
-                .put("operations", org.json.JSONArray(operations))
+                .put("hwid", hwid)
                 .put("build_id", buildId)
-                .put("manifest_hash", manifestHash)
-                .put("tool_hash", toolHash)
+                .put("operation", operation)
+                .put("request_id", requestId)
                 .toString()
             ensureGate()
             val raw = postJson(base() + Vault.pathOperationGrant(), requestJson)
@@ -291,11 +284,12 @@ class PanelClient {
                 return GrantResult(false, "grant endpoint unavailable")
             }
             val response = JSONObject(raw)
-            if (response.optString("status") != "success") {
-                return GrantResult(false, response.optString("msg", "grant rejected"))
+            if (response.optString("status") != "ok") {
+                return GrantResult(false, response.optString("code", "grant rejected"))
             }
-            val proof = response.optJSONObject("proof") ?: return GrantResult(false, "malformed grant proof")
-            GrantResult(true, "ok", proof.toString())
+            val grantToken = response.optString("grant_token", "")
+            if (grantToken.split(".").size != 3) return GrantResult(false, "malformed grant token")
+            GrantResult(true, "ok", grantToken)
         } catch (_: Exception) {
             GrantResult(false, "grant request failed")
         }
