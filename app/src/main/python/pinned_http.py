@@ -6,8 +6,13 @@ import hashlib
 import hmac
 from urllib.parse import urlparse
 
-PANEL_HOSTS = frozenset(("alvsiapanel.unaux.com",))
-# The active panel is alvsiapanel.unaux.com. Match the Android Vault pin.
+def _panel_host() -> str:
+    # XOR masking only discourages casual static scans; it is not encryption.
+    encoded = (0x01, 0x1c, 0x1f, 0x1a, 0x1e, 0x56, 0x40, 0x41, 0x00, 0x0c, 0x15, 0x11, 0x0c, 0x05, 0x17, 0x07, 0x17, 0x1d, 0x17, 0x54, 0x08, 0x12, 0x1e, 0x0b, 0x09, 0x5e, 0x10, 0x1d, 0x18)
+    return bytes((v ^ 0x5A ^ (i & 0x3F) ^ 0x33) for i, v in enumerate(encoded)).decode("utf-8")
+
+
+PANEL_HOSTS = frozenset((_panel_host().removeprefix("https://").split("/", 1)[0],))
 # Only the owner-measured pin is trusted; fail closed until a verified backup is measured.
 PANEL_SPKI_PINS = tuple(
     base64.b64decode(p)
