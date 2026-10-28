@@ -51,7 +51,11 @@ def install_operation_proof(proof_json):
     try:
         import json
         import alvsia_core
-        return bool(alvsia_core._alvsia_install_operation_proof(json.loads(str(proof_json))))
+        import alvsia_ultimate
+        proof = json.loads(str(proof_json))
+        core_ok = bool(alvsia_core._alvsia_install_operation_proof(proof))
+        ultimate_ok = bool(alvsia_ultimate._alv_install_operation_proof(proof))
+        return core_ok and ultimate_ok
     except Exception:
         return False
 
