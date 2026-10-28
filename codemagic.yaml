@@ -181,22 +181,23 @@ workflows:
           kept = []
           removed = []
           for line in lines:
-              if "SDK-Android@5.14-20260706" in line and ("E:/" in line or "E:\\\\" in line or "E:\\" in line):
+              # Upstream has both slash-normalized and Windows-backslash variants.
+              # Remove every settings entry referencing this machine-specific SDK,
+              # regardless of quoting or slash escaping.
+              if "SDK-Android@5.14-20260706" in line or "E:\\\\Android" in line or "E:\\Android" in line:
                   removed.append(line.rstrip())
               else:
                   kept.append(line)
-          if not removed:
-              if "SDK-Android@5.14-20260706" in s:
-                  raise SystemExit("ERROR: SDK path found in an unexpected format; refusing unsafe patch")
-              print("OK: no hard-coded Windows SDK path present in cloned settings.gradle.kts")
-          else:
+          if removed:
               p.write_text("".join(kept))
-              print("PATCH: removed Windows-only SDK path(s) from cloned XopProtector settings:")
+              print("PATCH: removed machine-specific Windows SDK entry/entries from cloned XopProtector settings:")
               for line in removed:
                   print("  " + line.strip())
-          # Fail closed if the known absolute Windows path remains anywhere in settings.
+          else:
+              print("OK: no known Windows SDK entry present in cloned settings.gradle.kts")
+          # Fail closed if any Windows SDK path remains in settings.
           check = p.read_text()
-          if "E:/Android/SDK-Android@5.14-20260706/SDK/libs" in check or "E:\\\\Android\\\\SDK-Android@5.14-20260706\\\\SDK\\\\libs" in check:
+          if "SDK-Android@5.14-20260706" in check or "E:\\\\Android" in check or "E:\\Android" in check:
               raise SystemExit("ERROR: Windows-only SDK path remains after patch")
           PY
           cd "$XOP_DIR"
