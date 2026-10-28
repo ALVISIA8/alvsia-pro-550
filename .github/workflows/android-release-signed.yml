@@ -45,16 +45,17 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      - name: Set up Android SDK tools
-        uses: android-actions/setup-android@v3
-        with:
-          accept-android-sdk-licenses: true
-
       - name: Install Android SDK, NDK and CMake packages
         shell: bash
         run: |
           set -euo pipefail
-          sdkmanager --install \
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager 2>/dev/null | sort -V | tail -n 1)"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "No Android sdkmanager found under ANDROID_HOME=$ANDROID_HOME"
+            exit 1
+          fi
+          yes | "$SDKMANAGER" --licenses >/dev/null
+          "$SDKMANAGER" --install \
             "platform-tools" \
             "platforms;android-34" \
             "build-tools;34.0.0" \
