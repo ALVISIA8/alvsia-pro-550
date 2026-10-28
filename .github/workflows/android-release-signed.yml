@@ -153,6 +153,20 @@ jobs:
           XOP_ROOT="$RUNNER_TEMP/XopProtector"
           git clone --filter=blob:none https://github.com/xopJack/XopProtector.git "$XOP_ROOT"
           git -C "$XOP_ROOT" checkout --detach b4b3c8ab3c47e536adb324cfafeb5e24964cc2bd
+          # This pinned upstream revision includes a Windows-only SDK path in settings.gradle.kts.
+          # Remove that optional path on Linux CI; ANDROID_HOME remains the authoritative SDK.
+          python3 - "$XOP_ROOT/settings.gradle.kts" <<'PY'
+          import sys
+          from pathlib import Path
+          path = Path(sys.argv[1])
+          source = path.read_text()
+          lines = source.splitlines()
+          filtered = [line for line in lines if "E:/Android/SDK-Android@5.14-20260706/SDK/libs" not in line and "E:\\\\Android\\\\SDK-Android@5.14-20260706\\\\SDK\\\\libs" not in line]
+          if len(filtered) == len(lines):
+              raise SystemExit("Expected Windows-only UniMP SDK path not found in pinned XopProtector settings")
+          path.write_text("\\n".join(filtered) + "\\n")
+          print("PASS: removed optional Windows-only SDK path for Linux CI")
+          PY
           chmod +x "$XOP_ROOT/gradlew"
           (
             cd "$XOP_ROOT"
