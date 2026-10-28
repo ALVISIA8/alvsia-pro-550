@@ -45,16 +45,21 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      - name: Set up Android SDK, NDK and CMake
+      - name: Set up Android SDK tools
         uses: android-actions/setup-android@v3
         with:
-          packages: |
-            platform-tools
-            platforms;android-34
-            build-tools;34.0.0
-          ndk-version: '27.0.12077973'
-          cmake-version: '3.22.1'
           accept-android-sdk-licenses: true
+
+      - name: Install Android SDK, NDK and CMake packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-34" \
+            "build-tools;34.0.0" \
+            "ndk;27.0.12077973" \
+            "cmake;3.22.1"
 
       - name: Validate signing secrets and release source
         shell: bash
