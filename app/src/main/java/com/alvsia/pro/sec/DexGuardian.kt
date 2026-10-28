@@ -65,24 +65,35 @@ object DexGuardian {
     private fun runChecks(ctx: Context): DexReport {
         val reasons = mutableListOf<String>()
 
-        // 1. Verify DEX hash
-        val dexHash = computeDexHash(ctx)
-        if (dexHash == null) {
-            reasons += "dex_hash_unreadable"
+        // 1. Verify DEX integrity. XopProtector replaces classes.dex with its
+        // signed shell and moves business DEX into PDX1-encrypted assets. In that
+        // mode, the original BuildConfig DEX hash cannot describe the shell DEX;
+        // validate the Xop payload structure and let Xop's native HMAC gate verify
+        // the encrypted business DEX/code instead. Keep the legacy hash path intact
+        // for APKs which have not been processed by XopProtector.
+        val xop = inspectXopPayload(ctx)
+        if (xop.detected) {
+            if (!xop.valid) reasons += "xop_payload_invalid"
         } else {
-            val expected = BuildConfig.DEX_SHA256
-            // Allow the placeholder zero hash in debug builds where seal script
-            // didn't patch it. Fail-closed in release where hash should be set.
-            if (expected == "0000000000000000000000000000000000000000000000000000000000000000") {
-                // Debug build — placeholder hash, skip check
-            } else if (!dexHash.equals(expected, ignoreCase = true)) {
-                reasons += "dex_hash_mismatch:expected=$expected got=${dexHash.take(16)}…"
+            val dexHash = computeDexHash(ctx)
+            if (dexHash == null) {
+                reasons += "dex_hash_unreadable"
+            } else {
+                val expected = BuildConfig.DEX_SHA256
+                // Allow the placeholder zero hash in debug builds where seal script
+                // didn't patch it. Fail-closed in release where hash should be set.
+                if (expected == "0000000000000000000000000000000000000000000000000000000000000000") {
+                    // Debug build — placeholder hash, skip check
+                } else if (!dexHash.equals(expected, ignoreCase = true)) {
+                    reasons += "dex_hash_mismatch:expected=$expected got=${dexHash.take(16)}…"
+                }
             }
         }
 
-        // 2. Verify DEX count
+        // 2. Verify DEX count. Xop uses one shell DEX plus one junk DEX after
+        // encrypting business DEX into assets/protector/dexes.zip.
         val dexCount = countDexFiles(ctx)
-        val expectedCount = BuildConfig.EXPECTED_DEX_COUNT
+        val expectedCount = if (xop.detected) 2 else BuildConfig.EXPECTED_DEX_COUNT
         if (dexCount > 0 && dexCount != expectedCount) {
             reasons += "dex_count_mismatch:expected=$expectedCount got=$dexCount"
         }
@@ -104,6 +115,59 @@ object DexGuardian {
             clean = reasons.isEmpty(),
             reasons = reasons
         )
+    }
+
+    private data class XopPayloadState(val detected: Boolean, val valid: Boolean)
+
+    /**
+     * Recognize XopProtector output without changing the behavior of ordinary APKs.
+     * The DEX container must use PDX1, the authenticated runtime config must carry
+     * its HMAC fields, and the arm64 shell library plus both shell/junk DEX entries
+     * must be present. Xop's native shell performs the cryptographic HMAC checks
+     * over encrypted payloads at runtime.
+     */
+    private fun inspectXopPayload(ctx: Context): XopPayloadState {
+        return try {
+            ZipFile(ctx.applicationInfo.sourceDir).use { zf ->
+                val dexZip = zf.getEntry("assets/protector/dexes.zip")
+                val configEntry = zf.getEntry("assets/protector/config.json")
+                val codeEntry = zf.getEntry("assets/protector/code.bin")
+                val shellLib = zf.getEntry("lib/arm64-v8a/libprotector.so")
+                val marker = dexZip != null || configEntry != null || codeEntry != null || shellLib != null
+                if (!marker) return XopPayloadState(detected = false, valid = true)
+
+                val requiredPresent = dexZip != null && configEntry != null && codeEntry != null &&
+                    shellLib != null && zf.getEntry("classes.dex") != null &&
+                    zf.getEntry("classes2.dex") != null
+                if (!requiredPresent) return XopPayloadState(detected = true, valid = false)
+
+                val pdx1 = zf.getInputStream(dexZip!!).use { input ->
+                    val magic = ByteArray(4)
+                    var offset = 0
+                    while (offset < magic.size) {
+                        val read = input.read(magic, offset, magic.size - offset)
+                        if (read <= 0) break
+                        offset += read
+                    }
+                    offset == 4 && magic.contentEquals(byteArrayOf(0x50, 0x44, 0x58, 0x31))
+                }
+                val configOk = if (configEntry!!.size in 1..262144) {
+                    zf.getInputStream(configEntry).use { input ->
+                        val config = input.readBytes().toString(Charsets.UTF_8)
+                        config.contains("\"dex_hmac\":\"") &&
+                            config.contains("\"code_hmac\":\"") &&
+                            config.contains("\"bitcode_hmac\":") &&
+                            config.contains("\"_hmac\":\"")
+                    }
+                } else {
+                    false
+                }
+                XopPayloadState(detected = true, valid = pdx1 && configOk)
+            }
+        } catch (_: Exception) {
+            // A malformed archive is handled by the regular DEX integrity checks.
+            XopPayloadState(detected = false, valid = true)
+        }
     }
 
     /** Compute SHA-256 of classes.dex from the APK. */
