@@ -56,6 +56,7 @@ import com.alvsia.pro.ui.theme.AlvisiaBlue
 import com.alvsia.pro.ui.theme.AlvisiaCyan
 import com.alvsia.pro.ui.theme.AlvisiaRed
 import com.alvsia.pro.ui.theme.AlvisiaSilver
+import com.alvsia.pro.panel.LiveMessage
 
 data class ToolItem(val id: Int, val title: String, val desc: String)
 
@@ -74,6 +75,8 @@ fun HomeScreen(
     expiry: String,
     tools: List<ToolItem>,
     status: String?,
+    messages: List<LiveMessage> = emptyList(),
+    onMessageRead: (LiveMessage) -> Unit = {},
     onProfile: () -> Unit,
     onTool: (ToolItem) -> Unit
 ) {
@@ -178,6 +181,26 @@ fun HomeScreen(
                     Text("19", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black)
                     Text("TOOLS", color = AlvisiaCyan, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
                 }
+            }
+
+            if (messages.isNotEmpty()) {
+                val unread = messages.firstOrNull { !it.isRead }
+                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                    .background(Color(0xFF101D28))
+                    .border(1.dp, AlvisiaCyan.copy(alpha = 0.45f), RoundedCornerShape(14.dp))
+                    .padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("LIVE PANEL MESSAGES · ${messages.size}", color = AlvisiaCyan, fontWeight = FontWeight.Black, fontSize = 11.sp)
+                    if (unread != null) {
+                        Text(unread.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(unread.body, color = AlvisiaSilver, fontSize = 12.sp)
+                        TextButton(onClick = { onMessageRead(unread) }) {
+                            Text("MARK AS READ", color = AlvisiaCyan, fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        Text("All messages read. Latest: ${messages.first().title}", color = AlvisiaSilver, fontSize = 12.sp)
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
             }
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
