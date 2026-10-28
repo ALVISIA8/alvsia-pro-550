@@ -112,12 +112,13 @@ object SessionGate {
 
         // Recheck live hooks at every dispatch
         if (runtimeHostile(ctx)) {
+            // Fail closed on every hostile result, including DualVmGuard failure
+            // or a missing native library. Do not re-check only Guard here:
+            // that previously allowed a DualVM/native failure to fall through.
             val reason = "runtime_hostile:${Guard.lastReason}"
-            ThreatReport.emit(ctx, "GATE_BLOCK", reason)
-            if (Guard.runtimeHostile(ctx)) {
-                lock(ctx)
-                throw SecurityException("BLOCKED:hostile")
-            }
+            try { ThreatReport.emit(ctx, "GATE_BLOCK", reason) } catch (_: Throwable) {}
+            lock(ctx)
+            throw SecurityException("BLOCKED:runtime_hostile")
         }
 
         if (!NativeGate.sessionUnlocked) {
