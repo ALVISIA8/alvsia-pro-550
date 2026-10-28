@@ -145,8 +145,13 @@ if "android.permission.DUMP" in manifest:
     fail.append("unnecessary android.permission.DUMP remains in manifest")
 if "android.permission.DELETE_PACKAGES" in manifest or "android.permission.CHANGE_NETWORK_STATE" in manifest:
     fail.append("unused package-delete/network-state permissions remain in manifest")
-if ".certificatePinner(Vault.certPinner())" not in panel or "clientPinned.newCall(req).execute()" not in panel:
-    fail.append("PanelClient TLS policy is not wired")
+if (".certificatePinner(Vault.certPinner())" not in panel
+        or "clientPinned.newCall(req).execute()" not in panel
+        or ".followRedirects(false)" not in panel
+        or ".followSslRedirects(false)" not in panel):
+    fail.append("PanelClient must pin TLS and reject redirects to prevent unpinned-origin requests")
+if 'kwargs["allow_redirects"] = False' not in python_panel:
+    fail.append("Python pinned HTTP must reject redirects to prevent unpinned-origin requests")
 if ('sha256/84+S6cn1vo+IjlQMR5mvqIe5XKMPh28WV9xYVtFKTkk=' not in vault
         or '.add(panelHost(), "sha256/' not in vault
         or "private fun decodedOrigin()" not in vault
