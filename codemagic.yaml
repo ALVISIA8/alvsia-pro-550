@@ -174,33 +174,27 @@ workflows:
           # :unimp-host when the SDK directory is absent.
           # Patch the cloned upstream settings file, not the app repository's working directory.
           python3 - "$XOP_DIR/settings.gradle.kts" <<'PY'
-          import pathlib, sys
+          import pathlib, re, sys
           p = pathlib.Path(sys.argv[1])
           s = p.read_text()
-          lines = s.splitlines(keepends=True)
-          kept = []
-          removed = []
-          for line in lines:
-              # Upstream has both slash-normalized and Windows-backslash variants.
-              # Remove every settings entry referencing this machine-specific SDK,
-              # regardless of quoting or slash escaping.
-              if "SDK-Android@5.14-20260706" in line or "E:\\\\Android" in line or "E:\\Android" in line:
-                  removed.append(line.rstrip())
-              else:
-                  kept.append(line)
-          if removed:
-              p.write_text("".join(kept))
-              print("PATCH: removed machine-specific Windows SDK entry/entries from cloned XopProtector settings:")
-              for line in removed:
-                  print("  " + line.strip())
-          else:
-              print("OK: no known Windows SDK entry present in cloned settings.gradle.kts")
-          # Fail closed if any Windows SDK path remains in settings.
+          # Remove the entire optional UniMP SDK lookup block. The previous patch
+          # removed only the literal absolute-path entry; Gradle was still receiving
+          # a Windows path through the unimp.sdk.libs Gradle property.
+          start = s.find("val unimpLibsProp =")
+          if start < 0:
+              raise SystemExit("ERROR: expected unimpLibsProp block not found; refusing to patch unknown upstream settings")
+          end = s.find("if (unimpLibsCandidates.any", start)
+          if end < 0:
+              raise SystemExit("ERROR: expected unimpLibsCandidates block terminator not found")
+          s = s[:start] + 'val unimpLibsCandidates = listOf(\n    file("../SDK-Android@5.14-20260706/SDK/libs"),\n)\n' + s[end:]
+          p.write_text(s)
           check = p.read_text()
-          if "SDK-Android@5.14-20260706" in check or "E:\\\\Android" in check or "E:\\Android" in check:
-              raise SystemExit("ERROR: Windows-only SDK path remains after patch")
+          forbidden = ("E:/Android/", "E:\\\\Android", "SDK-Android@5.14-20260706/SDK/libs\\" )
+          if "unimpLibsProp" in check or "unimp.sdk.libs" in check or any(x in check for x in forbidden):
+              raise SystemExit("ERROR: machine-specific SDK path/property remains in patched settings.gradle.kts")
+          print("PASS: removed absolute SDK lookup and unimp.sdk.libs property lookup; optional UniMP host will be skipped when local SDK AARs are absent")
           PY
-          cd "$XOP_DIR"
+          cd "$XOP_DIR"          cd "$XOP_DIR"
           chmod +x ./gradlew
           ./gradlew --no-daemon :packer:jar exportShellFiles
           PACKER_JAR="$(find packer/build/libs -maxdepth 1 -type f -name 'protector-packer-*.jar' ! -name '*-sources.jar' | head -n 1)"
