@@ -85,7 +85,9 @@ jobs:
           set -euo pipefail
           python3 - <<'PY' >> "$GITHUB_ENV"
           import secrets
-          print("ALVSIA_SEAL_SEED_HEX=" + secrets.token_hex(32))
+          seed = secrets.token_hex(32)
+          print("::add-mask::" + seed)
+          print("ALVSIA_SEAL_SEED_HEX=" + seed)
           PY
           echo "PASS: unique release seal seed generated"
 
@@ -181,7 +183,7 @@ jobs:
           # Validate the configured key password first; if this keystore uses the
           # store password for its private key too, retry without exposing secrets.
           if ! "$BUILD_TOOLS/apksigner" sign \
-            --v1-signing-enabled false \
+            --v1-signing-enabled true \
             --v2-signing-enabled true \
             --v3-signing-enabled true \
             --ks "$KS" \
@@ -204,7 +206,7 @@ jobs:
 
           VERIFY_OUTPUT="$("$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$SIGNED_APK")"
           printf '%s\n' "$VERIFY_OUTPUT"
-          printf '%s\n' "$VERIFY_OUTPUT" | grep -Eqi 'Verified using v1 scheme.*: false'
+          printf '%s\n' "$VERIFY_OUTPUT" | grep -Eqi 'Verified using v1 scheme.*: true'
           printf '%s\n' "$VERIFY_OUTPUT" | grep -Eqi 'Verified using v2 scheme.*: true'
           printf '%s\n' "$VERIFY_OUTPUT" | grep -Eqi 'Verified using v3 scheme.*: true'
 
