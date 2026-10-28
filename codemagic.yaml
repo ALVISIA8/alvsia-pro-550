@@ -177,13 +177,13 @@ workflows:
           cd "$CM_BUILD_DIR"
           # Deliberately avoid SO/asset/resource rewriting and VMP on the first pass:
           # Chaquopy, JNI, resource IDs and the custom Application require device smoke tests.
-          # The non-matching allowlist disables automatic business-class hollowing.
+          # Use balanced auto policy for the app package; do not enable VMP/SO/assets/resources yet.
+          # This is an opt-in candidate only; runtime compatibility remains unproven until device tests.
           java -jar "$XOP_DIR/$PACKER_JAR" "$BASE_APK" \
             -o "$CM_BUILD_DIR/ALVISIA_PRO_5.5.2-xop_candidate_unsigned.apk" \
             --shell-dir "$XOP_DIR/executable/shell-files" \
             --profile balanced \
-            --no-protect-so \
-            --hollow-prefix Lcom/alvsia/pro/xop_candidate_disabled/
+            --no-protect-so
           CANDIDATE="$CM_BUILD_DIR/ALVISIA_PRO_5.5.2-xop_candidate_unsigned.apk"
           test -s "$CANDIDATE"
           # Structural regression gates: required runtime payloads, package/version,
