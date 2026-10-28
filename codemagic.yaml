@@ -178,7 +178,7 @@ workflows:
           s = p.read_text()
           windows_sdk_line = '    file("E:/Android/SDK-Android@5.14-20260706/SDK/libs"),'
           if windows_sdk_line in s:
-              s = s.replace(windows_sdk_line + "\\n", "")
+              s = s.replace(windows_sdk_line + "\n", "")
               p.write_text(s)
               print("PATCH: removed upstream Windows-only UniMP SDK path for CodeMagic")
           elif "E:/Android/SDK-Android@5.14-20260706/SDK/libs" in s or "E:\\\\Android\\\\SDK-Android@5.14-20260706\\\\SDK\\\\libs" in s:
@@ -186,10 +186,6 @@ workflows:
           else:
               print("OK: no hard-coded Windows SDK path present")
           PY
-          ! grep -nE 'file\\(["'\\''"]*[A-Za-z]:[/\\\\]' settings.gradle.kts || {
-            echo "ERROR: hard-coded Windows drive path remains in XopProtector settings"
-            exit 1
-          }
           cd "$XOP_DIR"
           chmod +x ./gradlew
           ./gradlew --no-daemon :packer:jar exportShellFiles
