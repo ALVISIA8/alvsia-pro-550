@@ -194,7 +194,7 @@ workflows:
               raise SystemExit("ERROR: machine-specific SDK path/property remains in patched settings.gradle.kts")
           print("PASS: removed absolute SDK lookup and unimp.sdk.libs property lookup; optional UniMP host will be skipped when local SDK AARs are absent")
           PY
-          cd "$XOP_DIR"          cd "$XOP_DIR"
+          cd "$XOP_DIR"
           chmod +x ./gradlew
           ./gradlew --no-daemon :packer:jar exportShellFiles
           PACKER_JAR="$(find packer/build/libs -maxdepth 1 -type f -name 'protector-packer-*.jar' ! -name '*-sources.jar' | head -n 1)"
