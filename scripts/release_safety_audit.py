@@ -45,20 +45,30 @@ for required in (
 print("PASS: required existing permissions and backup setting are present")
 
 network_text = network.read_text(encoding="utf-8")
+vault_path = ROOT / "app/src/main/java/com/alvsia/pro/panel/Vault.kt"
+vault_text = vault_path.read_text(encoding="utf-8") if vault_path.is_file() else ""
+panel_client_path = ROOT / "app/src/main/java/com/alvsia/pro/panel/PanelClient.kt"
+panel_client_text = panel_client_path.read_text(encoding="utf-8") if panel_client_path.is_file() else ""
 if 'cleartextTrafficPermitted="false"' not in network_text:
     fail("cleartext traffic must remain disabled")
-if "<domain includeSubdomains=\"true\">alvsiapanel.unaux.com</domain>" not in network_text:
-    fail("new panel hostname is missing from network security config")
-pins = re.findall(r"<pin digest=\"SHA-256\">([^<]+)</pin>", network_text)
-if not pins:
-    fail("no SHA-256 SPKI pin configured for the panel")
-for pin in pins:
-    try:
-        decoded = base64.b64decode(pin, validate=True)
-    except Exception:
-        fail("SPKI pin is not valid base64")
-    if len(decoded) != 32:
-        fail(f"SPKI SHA-256 pin must decode to 32 bytes, got {len(decoded)}")
-print("PASS: HTTPS-only panel config and SHA-256 SPKI pin format")
+if "alvsiapanel.unaux.com" in network_text:
+    fail("panel hostname must not be duplicated in plaintext network XML")
+pin_match = re.search(r'sha256/([A-Za-z0-9+/]{43}=)', vault_text)
+if not pin_match:
+    fail("no SHA-256 SPKI pin configured in Vault")
+try:
+    decoded_pin = base64.b64decode(pin_match.group(1), validate=True)
+except Exception:
+    fail("Vault SPKI pin is not valid base64")
+if len(decoded_pin) != 32:
+    fail(f"SPKI SHA-256 pin must decode to 32 bytes, got {len(decoded_pin)}")
+if ("private fun decodedOrigin()" not in vault_text
+        or "intArrayOf(" not in vault_text
+        or "encoded[i] xor 0x5A xor (i and 0x3F) xor 0x33" not in vault_text
+        or '.add(panelHost(), "sha256/' not in vault_text):
+    fail("runtime endpoint decoder or host-bound pin configuration is missing")
+if ".certificatePinner(Vault.certPinner())" not in panel_client_text:
+    fail("active PanelClient does not attach the Vault certificate pinner")
+print("PASS: HTTPS-only config, runtime-obfuscated endpoint, and SHA-256 SPKI pin format")
 
 print("PASS: release safety audit completed; runtime and device tests are still required")

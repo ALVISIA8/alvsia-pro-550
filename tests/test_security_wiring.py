@@ -18,13 +18,31 @@ class SecurityWiringTests(unittest.TestCase):
 
     def test_unaux_tls_pin_is_strictly_configured(self):
         x = read("app/src/main/res/xml/network_security_config.xml")
-        self.assertIn("alvsiapanel.unaux.com", x)
+        vault = read("app/src/main/java/com/alvsia/pro/panel/Vault.kt")
+        panel = read("app/src/main/java/com/alvsia/pro/panel/PanelClient.kt")
+        py = read("app/src/main/python/pinned_http.py")
         self.assertIn('cleartextTrafficPermitted="false"', x)
-        pins = re.findall(r'<pin digest="SHA-256">([^<]+)</pin>', x)
-        self.assertTrue(pins, "missing TLS SPKI pin")
+        self.assertNotIn("alvsiapanel.unaux.com", x,
+                         "panel hostname must not be duplicated in plaintext XML")
+        self.assertIn("private fun decodedOrigin()", vault)
+        self.assertIn('.add(panelHost(), "sha256/', vault)
+        pins = re.findall(r'sha256/([A-Za-z0-9+/]{43}=)', vault)
+        self.assertTrue(pins, "missing runtime OkHttp SPKI pin")
         import base64
         for pin in pins:
             self.assertEqual(len(base64.b64decode(pin, validate=True)), 32)
+        self.assertIn(".certificatePinner(Vault.certPinner())", panel)
+        self.assertIn(".followRedirects(false)", panel)
+        self.assertIn(".followSslRedirects(false)", panel)
+        self.assertIn('kwargs["allow_redirects"] = False', py)
+        encoded = (0x01, 0x1c, 0x1f, 0x1a, 0x1e, 0x56, 0x40, 0x41,
+                   0x00, 0x0c, 0x15, 0x11, 0x0c, 0x05, 0x17, 0x07,
+                   0x17, 0x1d, 0x17, 0x54, 0x08, 0x12, 0x1e, 0x0b,
+                   0x09, 0x5e, 0x10, 0x1d, 0x18)
+        origin = bytes(v ^ 0x5A ^ (i & 0x3F) ^ 0x33
+                       for i, v in enumerate(encoded)).decode("utf-8")
+        self.assertEqual(origin, "https://alvsiapanel.unaux.com")
+        self.assertIn("_panel_host()", py)
 
     def test_runtime_security_bootstrap_is_wired(self):
         app = read("app/src/main/java/com/alvsia/pro/AlvisiaApp.kt")

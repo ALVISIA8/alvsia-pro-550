@@ -63,6 +63,20 @@ def main() -> int:
         with zipfile.ZipFile(io.BytesIO(data)) as outer:
             check(outer.testzip() is None, "APK ZIP integrity")
             names = set(outer.namelist())
+            # The origin must not be recoverable by a simple plaintext scan of packaged files.
+            # This is a regression check, not a claim that runtime traffic is secret.
+            panel_host_marker = b"alvsiapanel.unaux.com"
+            plaintext_host_entries = []
+            for entry_name in sorted(names):
+                try:
+                    entry_bytes = outer.read(entry_name)
+                except Exception:
+                    continue
+                if panel_host_marker in entry_bytes:
+                    plaintext_host_entries.append(entry_name)
+            check(not plaintext_host_entries,
+                  "panel hostname absent from plaintext APK entries" if not plaintext_host_entries
+                  else "panel hostname found in plaintext APK entries: " + ", ".join(plaintext_host_entries))
             forbidden_package_names = {"rebrand_config.txt", "app-metadata.properties"}
             packaged_forbidden = sorted(n for n in names if Path(n).name.lower() in forbidden_package_names)
             check(not packaged_forbidden,
@@ -115,6 +129,13 @@ def main() -> int:
                     check(inner.testzip() is None, "Chaquopy app.imy ZIP integrity")
                     check(not any("version-control-info.textproto" in n for n in inner.namelist()), "VCS metadata absent from Chaquopy bundle")
                     members = inner.namelist()
+                    inner_plaintext_host = sorted(
+                        n for n in members
+                        if panel_host_marker in inner.read(n)
+                    )
+                    check(not inner_plaintext_host,
+                          "panel hostname absent from plaintext Chaquopy members" if not inner_plaintext_host
+                          else "panel hostname found in Chaquopy members: " + ", ".join(inner_plaintext_host))
                     forbidden_inner = sorted(n for n in members if Path(n).name.lower() in forbidden_package_names)
                     check(not forbidden_inner,
                           "sensitive local rebrand/build metadata absent from app.imy" if not forbidden_inner
