@@ -83,13 +83,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY' >> "$GITHUB_ENV"
-          import secrets
-          seed = secrets.token_hex(32)
-          print("::add-mask::" + seed)
-          print("ALVSIA_SEAL_SEED_HEX=" + seed)
-          PY
-          echo "PASS: unique release seal seed generated"
+          SEED="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+          echo "::add-mask::$SEED"
+          printf 'ALVSIA_SEAL_SEED_HEX=%s\n' "$SEED" >> "$GITHUB_ENV"
+          unset SEED
+          echo "PASS: unique release seal seed generated and masked"
 
       - name: Install Python audit dependency
         run: python3 -m pip install --user --disable-pip-version-check cryptography
@@ -148,6 +146,62 @@ jobs:
           python3 tools/audit_release_apk.py "$APK"
           python3 tools/audit_release_metadata.py "$APK"
 
+      - name: Build pinned XopProtector packer and native shell
+        shell: bash
+        run: |
+          set -euo pipefail
+          XOP_ROOT="$RUNNER_TEMP/XopProtector"
+          git clone --filter=blob:none https://github.com/xopJack/XopProtector.git "$XOP_ROOT"
+          git -C "$XOP_ROOT" checkout --detach b4b3c8ab3c47e536adb324cfafeb5e24964cc2bd
+          chmod +x "$XOP_ROOT/gradlew"
+          (
+            cd "$XOP_ROOT"
+            ./gradlew --no-daemon :packer:jar exportShellFiles
+          )
+          PACKER_JAR="$(find "$XOP_ROOT/packer/build/libs" -maxdepth 1 -type f -name 'protector-packer-*.jar' | sort -V | tail -n 1)"
+          test -s "$PACKER_JAR"
+          test -s "$XOP_ROOT/executable/shell-files/dex/classes.dex"
+          test -s "$XOP_ROOT/executable/shell-files/libs/arm64-v8a/libprotector.so"
+          echo "PASS: pinned XopProtector packer and arm64 shell built"
+          echo "XOP_ROOT=$XOP_ROOT" >> "$GITHUB_ENV"
+          echo "XOP_PACKER_JAR=$PACKER_JAR" >> "$GITHUB_ENV"
+
+      - name: Apply XopProtector to ALVSIA APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          INPUT_APK="$(find app/build/outputs/apk/release -type f -name '*.apk' | head -n 1)"
+          OUTPUT_APK="$RUNNER_TEMP/ALVSIA_PRO_5.5.2-hardened_xop_unsigned.apk"
+          test -s "$INPUT_APK"
+          java -jar "$XOP_PACKER_JAR" "$INPUT_APK" -o "$OUTPUT_APK" \
+            --shell-dir "$XOP_ROOT/executable/shell-files" \
+            --profile industry \
+            --rasp-action alert
+          test -s "$OUTPUT_APK"
+          # Ensure packer actually transformed the APK and added its runtime payload.
+          python3 - "$OUTPUT_APK" <<'PY'
+          import sys, zipfile
+          from pathlib import Path
+          apk = Path(sys.argv[1])
+          with zipfile.ZipFile(apk) as z:
+              names = set(z.namelist())
+              required = {
+                  "assets/protector/dexes.zip",
+                  "assets/protector/code.bin",
+                  "assets/protector/config.json",
+                  "assets/protector/sokeys.bin",
+              }
+              missing = sorted(required - names)
+              if missing:
+                  raise SystemExit("FAIL XopProtector payload missing: " + ", ".join(missing))
+              if not any(n.startswith("assets/protector/") for n in names):
+                  raise SystemExit("FAIL XopProtector runtime assets not found")
+          print("PASS: XopProtector runtime payload verified in transformed APK")
+          PY
+          python3 tools/audit_release_apk.py "$OUTPUT_APK"
+          echo "ALVSIA_XOP_UNSIGNED_APK=$OUTPUT_APK" >> "$GITHUB_ENV"
+          echo "PASS: XopProtector candidate created; output will be signed only after audits"
+
       - name: Restore sealed Python sources in workspace
         if: always()
         run: python3 tools/seal_python.py --restore || true
@@ -156,7 +210,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          UNSIGNED="$(find app/build/outputs/apk/release -type f -name '*.apk' | head -n 1)"
+          UNSIGNED="${ALVSIA_XOP_UNSIGNED_APK:?XopProtector candidate path missing}"
           test -s "$UNSIGNED"
 
           KS="$RUNNER_TEMP/alvsia-release.keystore"
@@ -225,7 +279,7 @@ jobs:
           BADGING="$("$BUILD_TOOLS/aapt" dump badging "$SIGNED_APK")"
           printf '%s\n' "$BADGING" | grep -Fq "package: name='com.alvsia.pro' versionCode='98' versionName='5.5.2-hardened'"
           sha256sum "$SIGNED_APK" | tee "$GITHUB_WORKSPACE/SHA256SUMS.txt"
-          echo "PASS: signed APK, v2/v3 signatures, certificate pin, zip alignment, package and version verified"
+          echo "PASS: XopProtector-protected APK, v1/v2/v3 signatures, certificate pin, zip alignment, package and version verified"
           rm -f "$KS"
 
       - name: Upload signed release APK and audit logs
@@ -239,3 +293,4 @@ jobs:
             ALVSIA_PRO_5.5.2-hardened_signed.apk
             SHA256SUMS.txt
             build_full.log
+            release_security_audit.txt
