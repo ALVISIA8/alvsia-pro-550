@@ -161,7 +161,7 @@ jobs:
           path = Path(sys.argv[1])
           source = path.read_text()
           lines = source.splitlines()
-          filtered = [line for line in lines if "E:/Android/SDK-Android@5.14-20260706/SDK/libs" not in line and "E:\\\\Android\\\\SDK-Android@5.14-20260706\\\\SDK\\\\libs" not in line]
+          filtered = [line for line in lines if not ("E:" in line and "SDK-Android@5.14-20260706" in line and "SDK" in line and "libs" in line)]
           if len(filtered) == len(lines):
               raise SystemExit("Expected Windows-only UniMP SDK path not found in pinned XopProtector settings")
           path.write_text("\n".join(filtered) + "\n")
