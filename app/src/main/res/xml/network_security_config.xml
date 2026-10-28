@@ -1,19 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
+    <!-- Keep cleartext disabled globally. Panel SPKI pinning is enforced by
+         OkHttp's CertificatePinner in PanelClient, where the host is decoded
+         at runtime instead of being duplicated in this XML resource. -->
     <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>
     </base-config>
-    <!-- New panel only. Platform CA + hostname validation and measured SPKI pin are enforced.
-         Re-measure the key before certificate rotation; do not reuse retired-host pins. -->
-    <domain-config cleartextTrafficPermitted="false">
-        <domain includeSubdomains="true">alvsiapanel.unaux.com</domain>
-        <!-- SPKI measured by the owner's Termux audit on 2026-10-26.
-             Keep CA and hostname validation enabled. Re-measure before key rotation;
-             no verified backup SPKI was present in the supplied audit. -->
-        <pin-set>
-            <pin digest="SHA-256">84+S6cn1vo+IjlQMR5mvqIe5XKMPh28WV9xYVtFKTkk=</pin>
-        </pin-set>
-    </domain-config>
 </network-security-config>
