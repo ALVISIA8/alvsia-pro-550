@@ -17,12 +17,12 @@ header('X-Content-Type-Options: nosniff');
 header('Access-Control-Allow-Headers: Content-Type, CF-Ray');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
 
-function grant_reply(int $code, array $payload): never {
+function grant_reply(int $code, array $payload): void {
     http_response_code($code);
     echo json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
     exit;
 }
-function grant_fail(string $message, int $code = 403): never {
+function grant_fail(string $message, int $code = 403): void {
     grant_reply($code, ['status' => 'error', 'msg' => $message]);
 }
 
@@ -146,6 +146,14 @@ if (is_string($envPem) && strpos($envPem, '-----BEGIN') !== false) {
     if (is_string($keyFile) && $keyFile !== '' && is_readable($keyFile)) {
         $candidate = file_get_contents($keyFile);
         if (is_string($candidate) && strpos($candidate, '-----BEGIN') !== false) $pem = $candidate;
+    }
+    // Shared-host fallback: private directory adjacent to htdocs, never under webroot.
+    if (!$pem) {
+        $privateCandidate = dirname(__DIR__, 2) . '/private/operation_grant.pem';
+        if (is_readable($privateCandidate)) {
+            $candidate = file_get_contents($privateCandidate);
+            if (is_string($candidate) && strpos($candidate, '-----BEGIN') !== false) $pem = $candidate;
+        }
     }
 }
 if (!$pem) grant_fail('grant signer unavailable', 503);
