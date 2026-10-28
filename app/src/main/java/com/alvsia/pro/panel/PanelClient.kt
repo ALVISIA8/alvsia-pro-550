@@ -12,9 +12,13 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.security.MessageDigest
+import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
+
+data class GrantResult(val ok: Boolean, val message: String, val proofJson: String = "")
 
 data class LoginResult(
     val ok: Boolean,
@@ -252,6 +256,42 @@ class PanelClient {
                 }
             }
             return s
+        }
+    }
+
+
+    /** Request one short-lived JWT grant from the active Unaux panel contract. */
+    fun requestOperationGrant(operation: String, buildId: String): GrantResult {
+        return try {
+            if (!operation.matches(Regex("^[a-z0-9_]{2,64}$"))) return GrantResult(false, "invalid operation")
+            val token = sessionToken.trim().lowercase()
+            val hwid = lastHwid.trim().lowercase()
+            if (!token.matches(Regex("^[0-9a-f]{64}$")) || lastLicense.isBlank() || hwid.length < 8) {
+                return GrantResult(false, "login required")
+            }
+            val requestId = ByteArray(16).also { SecureRandom().nextBytes(it) }
+                .joinToString("") { "%02x".format(it) }
+            val requestJson = JSONObject()
+                .put("session_token", token)
+                .put("hwid", hwid)
+                .put("build_id", buildId)
+                .put("operation", operation)
+                .put("request_id", requestId)
+                .toString()
+            ensureGate()
+            val raw = postJson(base() + Vault.pathOperationGrant(), requestJson)
+            if (raw.isNullOrBlank() || raw.trimStart().startsWith("<")) {
+                return GrantResult(false, "grant endpoint unavailable")
+            }
+            val response = JSONObject(raw)
+            if (response.optString("status") != "ok") {
+                return GrantResult(false, response.optString("code", "grant rejected"))
+            }
+            val grantToken = response.optString("grant_token", "")
+            if (grantToken.split(".").size != 3) return GrantResult(false, "malformed grant token")
+            GrantResult(true, "ok", grantToken)
+        } catch (_: Exception) {
+            GrantResult(false, "grant request failed")
         }
     }
 

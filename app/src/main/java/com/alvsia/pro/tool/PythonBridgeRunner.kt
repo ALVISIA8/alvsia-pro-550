@@ -84,6 +84,47 @@ object PythonBridgeRunner {
             .digest(value.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
 
+
+    /** Verify and install the compact JWT signed by the current Unaux panel. */
+    fun installOperationProof(grantToken: String, expectedOperation: String): Boolean {
+        return try {
+            if (!SessionGate.isSessionAuthorized() || grantToken.split(".").size != 3) return false
+            val pyClass = Class.forName("com.chaquo.python.Python")
+            if (!(pyClass.getMethod("isStarted").invoke(null) as Boolean)) return false
+            val py = pyClass.getMethod("getInstance").invoke(null) ?: return false
+            val getModule = pyClass.getMethod("getModule", String::class.java)
+            val pyObjectCls = Class.forName("com.chaquo.python.PyObject")
+            val callAttr = pyObjectCls.getMethod("callAttr", String::class.java, Array<Any?>::class.java)
+            val core = getModule.invoke(py, "alvsia_core") ?: return false
+            val coreResult = callAttr.invoke(core, "_alvsia_install_operation_grant_token",
+                arrayOf<Any?>(grantToken, expectedOperation))
+            val coreOk = when {
+                coreResult is Boolean -> coreResult
+                else -> coreResult?.toString()?.trim()?.equals("True", ignoreCase = true) ?: false
+            }
+            if (!coreOk) return false
+            val ultimate = getModule.invoke(py, "alvsia_ultimate") ?: return false
+            val decoded = callAttr.invoke(ultimate, "_alv_install_operation_grant_token",
+                arrayOf<Any?>(grantToken, expectedOperation))
+            when {
+                decoded is Boolean -> decoded
+                else -> decoded?.toString()?.trim()?.equals("True", ignoreCase = true) ?: false
+            }
+        } catch (_: Throwable) { false }
+    }
+
+    fun proofStatus(): String {
+        return try {
+            val pyClass = Class.forName("com.chaquo.python.Python")
+            if (!(pyClass.getMethod("isStarted").invoke(null) as Boolean)) return ""
+            val py = pyClass.getMethod("getInstance").invoke(null) ?: return ""
+            val core = pyClass.getMethod("getModule", String::class.java).invoke(py, "alvsia_core") ?: return ""
+            val pyObjectCls = Class.forName("com.chaquo.python.PyObject")
+            val callAttr = pyObjectCls.getMethod("callAttr", String::class.java, Array<Any?>::class.java)
+            callAttr.invoke(core, "_alvsia_core_active_proof_status", emptyArray<Any?>())?.toString() ?: ""
+        } catch (_: Throwable) { "" }
+    }
+
     fun runBridge(
         moduleId: Int,
         subId: String,
@@ -172,8 +213,19 @@ object PythonBridgeRunner {
                 return false to listOf("X AUTH: trusted device/session identity could not be installed")
             }
 
-            // The new panel authenticates the license and issues the session token.
-            // The bundled engine relies on SessionGate + device/session binding; the new panel has no grant endpoint.
+            // Protected operations require a panel-signed, short-lived RSA grant.
+            // Fail closed if the endpoint is missing, the session is invalid, or the
+            // Python verifier rejects the proof.
+            val grantOperation = OperationGrants.operationFor(moduleId, subId)
+                ?: return false to listOf("X AUTH: module/subtool has no Unaux grant mapping")
+            val (grantOk, grantDiag) = OperationGrants.obtainAndInstall(grantOperation)
+            if (!grantOk) {
+                return false to listOf(
+                    "X AUTH: Unaux RSA operation grant unavailable",
+                    "diagnostic: $grantDiag",
+                    "hint: verify /api/operation_grant.php and the configured server key"
+                )
+            }
 
             val rawResult = callAttr.invoke(
                 bridge,

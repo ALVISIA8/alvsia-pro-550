@@ -1072,9 +1072,9 @@ sp_NULL = os.path.join(STAND_POSH_BASE, "null.txt")
 # ---------------------------------------------------------------------------
 # ALVSIA V3 R4P3 — core self-verification (server-signed operation proof)
 # ---------------------------------------------------------------------------
-_ALVSIA_CORE_BUILD_ID = 'ALVSIA-20260923-V46'
+_ALVSIA_CORE_BUILD_ID = 'ALVSIA-UNaux-20261028-RSA1'
 _ALVSIA_CORE_VERSION = '4.0.0'
-_ALVSIA_CORE_RSA_N_B64U = '59rkifaSC8v07GndYOsL_D7H6W1VEnKnVlvLfxvtUgztjUYqKvea7AseAeAW59yqpiaQ7e1Nq3J-z9lfWUpJfETQFldk8F4g0ZBKdJLqzvw-Vw9be7Ky5x78B4Z9qYyN0vQinMIfhLLL2ctOeOGe01lYeEQ8m2y6v5OhTlY9wYRM_oKljG0h9HfKlbGuFLxGRCM-iK6fT33b2tzyxAO_bvsnHF-9IcHYdjyPgRVewZ_kWbAZ7FeabA8HtCqgizepjdlTtj6m8eufYodQw4a2kfe-r_0PMZhmnzOvzEeCQMxfnHwXAeQhTA9tB1GtO3eFJEAOCxVoq66sR8T3NuW6kw'
+_ALVSIA_CORE_RSA_N_B64U = 'p2G8SVBzL8Ic_aTg10HZcc35LJdw2Iv-rP0LyXyyKp-06Ju-_nOxTpDE9gpDoBegkXh7sj37qO94Fx-SZn3JDVdRzKMARzkRSevUX0wOGveXd6JzggcCDe70-P3QhHgPE91HM78QkGeBV0vSebOCLEVjP7l0MjmmBK_7zuK3FuPaMBZUBOi8CwGuW8lhjqbPwwiKM5tHKG5bd9-hWVZ6O-XBP_jiQSafnXX-3Gy_z6LuniDzK79CfxBoxQwJPOOxowHzeVvgcVSy7ubJO3ZzsATsi-JPYCyMtIOC7eKDHFourkFaOYd0i4r838nPAylbpL659vkP2DD3hd4SW5JStPIH20sShkpWsCglhGa0Hukt_kh-HrD9YMhRGdc0Ymc8dU6LnSU4KKb6wmk1LLhgtLC3NoTaM_Yx_3Z5iqrY9ELiLT6teSWlyEpJWOFPkPz39EoThQlDpWf0aO7syXoo3iAXJMUpWUli1qPCC94TSumUEAYwULv1m4_nbLO6WwNR'
 _ALVSIA_CORE_RSA_E_B64U = 'AQAB'
 _ALVSIA_CORE_DIGESTINFO = bytes.fromhex('3031300d060960864801650304020105000420')
 _ALVSIA_CORE_CRITICAL = (
@@ -1129,7 +1129,10 @@ def _alv_core_sha256_file(path):
     return h.hexdigest()
 
 def _alv_core_live_measurement():
-    import pathlib as _pl
+    import pathlib as _pl, os as _os
+    if _os.environ.get('ALVSIA_APK_SESSION') == '1':
+        h = __import__('hashlib').sha256(b'ALVSIA-APK-SESSION').hexdigest()
+        return {'manifest_hash': h, 'tool_hash': h}
     root = _pl.Path(__file__).resolve().parent
     files = {}
     for name in _ALVSIA_CORE_CRITICAL:
@@ -1158,6 +1161,7 @@ def _alv_core_parse_utc(value):
 
 def _alv_install_operation_proof(proof):
     global _ALVSIA_CORE_ACTIVE_PROOF
+    import os as _os
     try:
         p = dict(proof or {})
         sig = dict(p.pop('signature', {}) or {})
@@ -1166,6 +1170,14 @@ def _alv_install_operation_proof(proof):
         required = ('grant_id','nonce','build_id','manifest_hash','tool_hash','device_id','session_id','operation_id','issued_at','expires_at')
         if any(not str(p.get(k, '')).strip() for k in required):
             raise ValueError
+        _op_tokens = [x.strip() for x in str(p['operation_id']).split(',')]
+        if not _op_tokens or len(_op_tokens) > 8 or any(not re.fullmatch(r'[a-z0-9_.]{1,48}', item) for item in _op_tokens):
+            raise ValueError
+        if _os.environ.get('ALVSIA_APK_SESSION') == '1':
+            expected_device = _os.environ.get('ALVSIA_EXPECTED_DEVICE_ID', '').strip().lower()
+            expected_session = _os.environ.get('ALVSIA_EXPECTED_SESSION_ID', '').strip()
+            if not expected_device or not expected_session or str(p['device_id']).lower() != expected_device or str(p['session_id']) != expected_session:
+                raise ValueError
         if str(p['build_id']) != _ALVSIA_CORE_BUILD_ID:
             raise ValueError
         measurement = _alv_core_live_measurement()
@@ -1188,24 +1200,87 @@ def _alv_install_operation_proof(proof):
         _ALVSIA_CORE_ACTIVE_PROOF = None
         return False
 
+def _alv_install_operation_grant_token(token, expected_operation):
+    """Verify and install a compact RS256 JWT from the current Unaux panel."""
+    global _ALVSIA_CORE_ACTIVE_PROOF
+    try:
+        parts = str(token or '').split('.')
+        if len(parts) != 3 or not expected_operation:
+            raise ValueError
+        header = __import__('json').loads(_alv_core_b64u_decode(parts[0]).decode('utf-8'))
+        claims = __import__('json').loads(_alv_core_b64u_decode(parts[1]).decode('utf-8'))
+        if header.get('alg') != 'RS256' or header.get('kid') != 'alvsia-unaux-rsa1':
+            raise ValueError
+        if claims.get('kid') != 'alvsia-unaux-rsa1' or claims.get('iss') != 'https://alvsiapanel.unaux.com':
+            raise ValueError
+        if claims.get('aud') != 'com.alvsia.pro' or claims.get('build_id') != _ALVSIA_CORE_BUILD_ID:
+            raise ValueError
+        if claims.get('operation') != expected_operation or not re.fullmatch(r'[a-z0-9_]{2,64}', str(claims.get('operation',''))):
+            raise ValueError
+        if not re.fullmatch(r'[a-f0-9]{32}', str(claims.get('jti',''))):
+            raise ValueError
+        if not re.fullmatch(r'[a-f0-9]{16,64}', str(claims.get('request_id',''))):
+            raise ValueError
+        session = __import__('os').environ.get('ALVSIA_EXPECTED_SESSION_ID', '').strip()
+        device = __import__('os').environ.get('ALVSIA_EXPECTED_DEVICE_ID', '').strip().lower()
+        if not re.fullmatch(r'[a-f0-9]{64}', session) or not re.fullmatch(r'[a-f0-9]{64}', device):
+            raise ValueError
+        if claims.get('session_hash') != session:
+            raise ValueError
+        if claims.get('hwid_hash') != __import__('hashlib').sha256(device.encode('utf-8')).hexdigest():
+            raise ValueError
+        if not re.fullmatch(r'[a-f0-9]{64}', str(claims.get('license_hash',''))):
+            raise ValueError
+        now = __import__('time').time()
+        issued, nbf, expires = float(claims.get('iat',0)), float(claims.get('nbf',0)), float(claims.get('exp',0))
+        if issued <= 0 or expires <= issued or expires-issued > 180 or nbf > now+5 or issued > now+30 or now >= expires:
+            raise ValueError
+        if int(claims.get('ttl',0)) < 1 or int(claims.get('ttl',0)) > 180:
+            raise ValueError
+        if not _alv_core_verify_rs256(parts[0] + '.' + parts[1], parts[2]):
+            raise ValueError
+        _ALVSIA_CORE_ACTIVE_PROOF = {
+            'grant_id': claims['jti'], 'nonce': claims['request_id'],
+            'build_id': claims['build_id'], 'device_id': device,
+            'session_id': session, 'operation_id': claims['operation'],
+            '_expires_epoch': expires
+        }
+        return True
+    except Exception:
+        _ALVSIA_CORE_ACTIVE_PROOF = None
+        return False
+
 def _alv_clear_operation_proof():
     global _ALVSIA_CORE_ACTIVE_PROOF
     _ALVSIA_CORE_ACTIVE_PROOF = None
 
 def _alv_require_operation(allowed_operations):
-    # APK: panel session already verified in native layer — do not alter crypto/PAK logic
     import os as _os
-    if _os.environ.get('ALVSIA_APK_SESSION') == '1':
-        return True
+    if _os.environ.get('ALVSIA_APK_SESSION') != '1':
+        raise RuntimeError('Operation authorization failed: login required')
+    session = _os.environ.get('ALVSIA_EXPECTED_SESSION_ID', '').strip()
+    device = _os.environ.get('ALVSIA_EXPECTED_DEVICE_ID', '').strip().lower()
+    if not re.fullmatch(r'[0-9a-f]{64}', session) or not re.fullmatch(r'[0-9a-f]{64}', device):
+        raise RuntimeError('Operation authorization failed: identity unavailable')
     p = _ALVSIA_CORE_ACTIVE_PROOF
     if not isinstance(p, dict):
-        raise RuntimeError('Operation authorization failed')
-    allowed = {str(x) for x in allowed_operations}
-    if str(p.get('operation_id','')) not in allowed:
-        raise RuntimeError('Operation authorization failed')
+        raise RuntimeError('Operation authorization failed: RSA grant missing')
+    if str(p.get('session_id', '')) != session or str(p.get('device_id', '')).lower() != device:
+        _alv_clear_operation_proof()
+        raise RuntimeError('Operation authorization failed: grant identity mismatch')
     if __import__('time').time() >= float(p.get('_expires_epoch', 0) or 0):
         _alv_clear_operation_proof()
-        raise RuntimeError('Operation authorization failed')
+        raise RuntimeError('Operation authorization failed: grant expired')
+    granted = {x.strip() for x in str(p.get('operation_id', '')).split(',') if x.strip()}
+    allowed = {str(x).strip() for x in allowed_operations if str(x).strip()}
+    if any(x.startswith(('pak.', 'advanced.', 'asset.', 'lab.')) for x in allowed):
+        allowed.add('pak_tools')
+    if any(x.startswith('obb.') for x in allowed):
+        allowed.add('obb_tools')
+    if any(x.startswith('lua_') for x in allowed):
+        allowed.add('lua_tools')
+    if not granted.intersection(allowed):
+        raise RuntimeError('Operation authorization failed: operation not granted')
     return True
 
 
@@ -13210,3 +13285,15 @@ def audit_so(input_path, out_dir):
     out_file = out_dir / "so_report.txt"
     out_file.write_text("\n".join(lines), encoding="utf-8")
     return {"ok": True, "out": str(out_file)}
+
+
+def _alv_install_operation_proof_json(proof_json):
+    try:
+        raw = proof_json.decode('utf-8') if isinstance(proof_json, bytes) else str(proof_json or '')
+        parsed = __import__('json').loads(raw)
+        if not isinstance(parsed, dict):
+            raise ValueError('grant payload must be an object')
+        return _alv_install_operation_proof(parsed)
+    except Exception:
+        _alv_clear_operation_proof()
+        return False

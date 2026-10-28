@@ -24,6 +24,7 @@ object Vault {
     fun pathGetAsset(): String = "get_asset.php"
     fun pathDownloadAsset(): String = "download_asset.php"
     fun pathSecurity(): String = "security_event.php"
+    fun pathOperationGrant(): String = "operation_grant.php"
 
     /**
      * SPKI pin measured from the live alvsiapanel.unaux.com TLS chain by the
