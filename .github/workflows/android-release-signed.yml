@@ -178,7 +178,29 @@ jobs:
           SIGNED_APK="$GITHUB_WORKSPACE/ALVSIA_PRO_5.5.2-hardened_signed.apk"
 
           "$BUILD_TOOLS/zipalign" -f 4 "$UNSIGNED" "$RUNNER_TEMP/alvsia-release-aligned.apk"
-          "$BUILD_TOOLS/apksigner" sign             --v1-signing-enabled false             --v2-signing-enabled true             --v3-signing-enabled true             --ks "$KS"             --ks-key-alias "$ALVSIA_RELEASE_KEY_ALIAS"             --ks-pass "pass:$ALVSIA_RELEASE_KEYSTORE_PASSWORD"             --key-pass "pass:$ALVSIA_RELEASE_KEY_PASSWORD"             --out "$SIGNED_APK" "$RUNNER_TEMP/alvsia-release-aligned.apk"
+          # Validate the configured key password first; if this keystore uses the
+          # store password for its private key too, retry without exposing secrets.
+          if ! "$BUILD_TOOLS/apksigner" sign \
+            --v1-signing-enabled false \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --ks "$KS" \
+            --ks-key-alias "$ALVSIA_RELEASE_KEY_ALIAS" \
+            --ks-pass "pass:$ALVSIA_RELEASE_KEYSTORE_PASSWORD" \
+            --key-pass "pass:$ALVSIA_RELEASE_KEY_PASSWORD" \
+            --out "$SIGNED_APK" "$RUNNER_TEMP/alvsia-release-aligned.apk"; then
+            rm -f "$SIGNED_APK"
+            echo "Configured private-key password failed; trying keystore password for the private key."
+            "$BUILD_TOOLS/apksigner" sign \
+              --v1-signing-enabled false \
+              --v2-signing-enabled true \
+              --v3-signing-enabled true \
+              --ks "$KS" \
+              --ks-key-alias "$ALVSIA_RELEASE_KEY_ALIAS" \
+              --ks-pass "pass:$ALVSIA_RELEASE_KEYSTORE_PASSWORD" \
+              --key-pass "pass:$ALVSIA_RELEASE_KEYSTORE_PASSWORD" \
+              --out "$SIGNED_APK" "$RUNNER_TEMP/alvsia-release-aligned.apk"
+          fi
 
           VERIFY_OUTPUT="$("$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$SIGNED_APK")"
           printf '%s\n' "$VERIFY_OUTPUT"
