@@ -54,7 +54,9 @@ jobs:
             echo "No Android sdkmanager found under ANDROID_HOME=$ANDROID_HOME"
             exit 1
           fi
+          set +o pipefail
           yes | "$SDKMANAGER" --licenses >/dev/null
+          set -o pipefail
           "$SDKMANAGER" --install \
             "platform-tools" \
             "platforms;android-34" \
