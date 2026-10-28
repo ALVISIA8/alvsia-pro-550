@@ -2802,3 +2802,11 @@ def run_pak_smart_repack(pak_path, modified_dir, output_pak):
         }
     except Exception as e:
         return {'ok': False, 'error': str(e)}
+
+
+def _alvsia_core_active_proof_status():
+    try:
+        proof = _ALVSIA_CORE_ACTIVE_PROOF
+        return str(proof.get('operation_id', '')) if isinstance(proof, dict) else ''
+    except Exception:
+        return ''
