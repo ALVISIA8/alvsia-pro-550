@@ -17,7 +17,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: alvsia-pro-signed-release-${{ github.ref }}
+  group: alvsia-pro-signed-release-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
