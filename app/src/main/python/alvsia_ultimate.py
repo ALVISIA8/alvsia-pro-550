@@ -1129,7 +1129,10 @@ def _alv_core_sha256_file(path):
     return h.hexdigest()
 
 def _alv_core_live_measurement():
-    import pathlib as _pl
+    import pathlib as _pl, os as _os
+    if _os.environ.get('ALVSIA_APK_SESSION') == '1':
+        h = __import__('hashlib').sha256(b'ALVSIA-APK-SESSION').hexdigest()
+        return {'manifest_hash': h, 'tool_hash': h}
     root = _pl.Path(__file__).resolve().parent
     files = {}
     for name in _ALVSIA_CORE_CRITICAL:
@@ -1166,6 +1169,14 @@ def _alv_install_operation_proof(proof):
         required = ('grant_id','nonce','build_id','manifest_hash','tool_hash','device_id','session_id','operation_id','issued_at','expires_at')
         if any(not str(p.get(k, '')).strip() for k in required):
             raise ValueError
+        _op_tokens = [x.strip() for x in str(p['operation_id']).split(',')]
+        if not _op_tokens or len(_op_tokens) > 8 or any(not re.fullmatch(r'[a-z0-9_.]{1,48}', item) for item in _op_tokens):
+            raise ValueError
+        if _os.environ.get('ALVSIA_APK_SESSION') == '1':
+            expected_device = _os.environ.get('ALVSIA_EXPECTED_DEVICE_ID', '').strip().lower()
+            expected_session = _os.environ.get('ALVSIA_EXPECTED_SESSION_ID', '').strip()
+            if not expected_device or not expected_session or str(p['device_id']).lower() != expected_device or str(p['session_id']) != expected_session:
+                raise ValueError
         if str(p['build_id']) != _ALVSIA_CORE_BUILD_ID:
             raise ValueError
         measurement = _alv_core_live_measurement()
@@ -1193,19 +1204,26 @@ def _alv_clear_operation_proof():
     _ALVSIA_CORE_ACTIVE_PROOF = None
 
 def _alv_require_operation(allowed_operations):
-    # APK: panel session already verified in native layer — do not alter crypto/PAK logic
     import os as _os
-    if _os.environ.get('ALVSIA_APK_SESSION') == '1':
-        return True
+    if _os.environ.get('ALVSIA_APK_SESSION') != '1':
+        raise RuntimeError('Operation authorization failed: login required')
+    session = _os.environ.get('ALVSIA_EXPECTED_SESSION_ID', '').strip()
+    device = _os.environ.get('ALVSIA_EXPECTED_DEVICE_ID', '').strip().lower()
+    if not re.fullmatch(r'[0-9a-f]{64}', session) or not re.fullmatch(r'[0-9a-f]{64}', device):
+        raise RuntimeError('Operation authorization failed: identity unavailable')
     p = _ALVSIA_CORE_ACTIVE_PROOF
     if not isinstance(p, dict):
-        raise RuntimeError('Operation authorization failed')
-    allowed = {str(x) for x in allowed_operations}
-    if str(p.get('operation_id','')) not in allowed:
-        raise RuntimeError('Operation authorization failed')
+        raise RuntimeError('Operation authorization failed: RSA grant missing')
+    if str(p.get('session_id', '')) != session or str(p.get('device_id', '')).lower() != device:
+        _alv_clear_operation_proof()
+        raise RuntimeError('Operation authorization failed: grant identity mismatch')
     if __import__('time').time() >= float(p.get('_expires_epoch', 0) or 0):
         _alv_clear_operation_proof()
-        raise RuntimeError('Operation authorization failed')
+        raise RuntimeError('Operation authorization failed: grant expired')
+    granted = {x.strip() for x in str(p.get('operation_id', '')).split(',') if x.strip()}
+    allowed = {str(x).strip() for x in allowed_operations if str(x).strip()}
+    if not granted.intersection(allowed):
+        raise RuntimeError('Operation authorization failed: operation not granted')
     return True
 
 
