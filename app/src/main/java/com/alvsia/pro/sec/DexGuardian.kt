@@ -152,7 +152,7 @@ object DexGuardian {
                     offset == 4 && magic.contentEquals(byteArrayOf(0x50, 0x44, 0x58, 0x31))
                 }
                 val configOk = if (configEntry!!.size in 1L..262144L) {
-                    zf.getInputStream(configEntry).use { input ->
+                    zf.getInputStream(configEntry!!).use { input ->
                         val config = input.readBytes().toString(Charsets.UTF_8)
                         config.contains("\"dex_hmac\":\"") &&
                             config.contains("\"code_hmac\":\"") &&
