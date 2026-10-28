@@ -1161,6 +1161,7 @@ def _alv_core_parse_utc(value):
 
 def _alv_install_operation_proof(proof):
     global _ALVSIA_CORE_ACTIVE_PROOF
+    import os as _os
     try:
         p = dict(proof or {})
         sig = dict(p.pop('signature', {}) or {})
