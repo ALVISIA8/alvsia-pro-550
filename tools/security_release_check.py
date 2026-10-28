@@ -95,11 +95,11 @@ if "tools/seal_python.py --seal" not in codemagic or "tools/seal_python.py --res
     fail.append("CodeMagic does not seal and restore protected Python modules")
 if "tools/audit_release_apk.py" not in codemagic or "tools/audit_release_apk.py" not in workflow:
     fail.append("actual APK audit is not wired into both release pipelines")
-if "audit_release_apk.py ALVISIA_PRO_5.5.2-hardened_signed.apk" not in codemagic:
-    fail.append("CodeMagic must audit the exact final signed APK after signing")
-if 'aapt" dump badging ALVISIA_PRO_5.5.2-hardened_signed.apk' not in codemagic or "versionCode='98' versionName='5.5.2-hardened'" not in codemagic:
+if 'python3 tools/audit_release_apk.py "$SIGNED_APK"' not in codemagic:
+    fail.append("CodeMagic must audit the exact final signed APK selected for signing after signing")
+if 'aapt" dump badging "$SIGNED_APK"' not in codemagic or "versionCode='98' versionName='5.5.2-hardened'" not in codemagic:
     fail.append("CodeMagic must verify final APK package, versionCode, and versionName")
-if 'zipalign" -c -v 4 ALVISIA_PRO_5.5.2-hardened_signed.apk' not in codemagic or "sha256sum ALVISIA_PRO_5.5.2-hardened_signed.apk" not in codemagic:
+if 'zipalign" -c -v 4 "$SIGNED_APK"' not in codemagic or 'sha256sum "$SIGNED_APK"' not in codemagic:
     fail.append("CodeMagic must verify final APK alignment and emit its SHA-256 fingerprint")
 if "BuildConfig.VERSION_NAME" not in profile:
     fail.append("profile version label must use the actual built APK version")
