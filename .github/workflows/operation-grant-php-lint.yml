@@ -28,7 +28,7 @@ jobs:
         run: php -l panel-migration/api/operation_grant.php
       - name: Ensure no private key is committed
         run: |
-          if grep -E '-----BEGIN (RSA )?PRIVATE KEY-----' panel-migration/api/operation_grant.php; then
+          if grep -E -- '-----BEGIN (RSA )?PRIVATE KEY-----' panel-migration/api/operation_grant.php; then
             echo "Private key material must never be committed"
             exit 1
           fi
