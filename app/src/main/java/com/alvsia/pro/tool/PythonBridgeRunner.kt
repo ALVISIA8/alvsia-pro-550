@@ -85,19 +85,29 @@ object PythonBridgeRunner {
             .joinToString("") { "%02x".format(it) }
 
 
-    /** Install the server-signed proof only after the Kotlin/Python session gate is active. */
+    /** Install the server-signed proof only after the Kotlin session gate is active. */
     fun installOperationProof(proofJson: String): Boolean {
         return try {
+            if (!SessionGate.isSessionAuthorized()) return false
             val pyClass = Class.forName("com.chaquo.python.Python")
             if (!(pyClass.getMethod("isStarted").invoke(null) as Boolean)) return false
             val py = pyClass.getMethod("getInstance").invoke(null) ?: return false
-            val bridge = pyClass.getMethod("getModule", String::class.java).invoke(py, "alvsia_bridge") ?: return false
+            val getModule = pyClass.getMethod("getModule", String::class.java)
             val pyObjectCls = Class.forName("com.chaquo.python.PyObject")
             val callAttr = pyObjectCls.getMethod("callAttr", String::class.java, Array<Any?>::class.java)
-            val result = callAttr.invoke(bridge, "install_operation_proof", arrayOf<Any?>(proofJson))
+            val core = getModule.invoke(py, "alvsia_core") ?: return false
+            val coreResult = callAttr.invoke(core, "_alvsia_install_operation_proof_json", arrayOf<Any?>(proofJson))
+            val coreOk = coreResult is Boolean && coreResult
+            if (!coreOk) return false
+            val ultimate = getModule.invoke(py, "alvsia_ultimate") ?: return false
+            val proof = org.json.JSONObject(proofJson)
+            val ultimateResult = callAttr.invoke(ultimate, "_alv_install_operation_proof", arrayOf<Any?>(proof.toString()))
+            // PyObject receives a JSON object via the helper signature; call with parsed dict below is not portable,
+            // so the ultimate proof is installed by passing a Python dict decoded in the module.
+            val decoded = callAttr.invoke(ultimate, "_alv_install_operation_proof_json", arrayOf<Any?>(proofJson))
             when {
-                result is Boolean -> result
-                else -> result?.toString()?.trim()?.equals("True", ignoreCase = true) ?: false
+                decoded is Boolean -> decoded
+                else -> decoded?.toString()?.trim()?.equals("True", ignoreCase = true) ?: false
             }
         } catch (_: Throwable) { false }
     }
@@ -107,10 +117,10 @@ object PythonBridgeRunner {
             val pyClass = Class.forName("com.chaquo.python.Python")
             if (!(pyClass.getMethod("isStarted").invoke(null) as Boolean)) return ""
             val py = pyClass.getMethod("getInstance").invoke(null) ?: return ""
-            val bridge = pyClass.getMethod("getModule", String::class.java).invoke(py, "alvsia_bridge") ?: return ""
+            val core = pyClass.getMethod("getModule", String::class.java).invoke(py, "alvsia_core") ?: return ""
             val pyObjectCls = Class.forName("com.chaquo.python.PyObject")
             val callAttr = pyObjectCls.getMethod("callAttr", String::class.java, Array<Any?>::class.java)
-            callAttr.invoke(bridge, "proof_status", emptyArray<Any?>())?.toString() ?: ""
+            callAttr.invoke(core, "_alvsia_core_active_proof_status", emptyArray<Any?>())?.toString() ?: ""
         } catch (_: Throwable) { "" }
     }
 
