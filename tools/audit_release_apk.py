@@ -129,6 +129,13 @@ def main() -> int:
                     check(inner.testzip() is None, "Chaquopy app.imy ZIP integrity")
                     check(not any("version-control-info.textproto" in n for n in inner.namelist()), "VCS metadata absent from Chaquopy bundle")
                     members = inner.namelist()
+                    inner_plaintext_host = sorted(
+                        n for n in members
+                        if panel_host_marker in inner.read(n)
+                    )
+                    check(not inner_plaintext_host,
+                          "panel hostname absent from plaintext Chaquopy members" if not inner_plaintext_host
+                          else "panel hostname found in Chaquopy members: " + ", ".join(inner_plaintext_host))
                     forbidden_inner = sorted(n for n in members if Path(n).name.lower() in forbidden_package_names)
                     check(not forbidden_inner,
                           "sensitive local rebrand/build metadata absent from app.imy" if not forbidden_inner
