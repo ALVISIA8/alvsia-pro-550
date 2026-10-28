@@ -28,7 +28,7 @@ private data class ModuleChip(val icon: String, val name: String)
 @Composable
 fun ProfileScreen(product: String, expiry: String, hwidShort: String, toolCount: Int, onBack: () -> Unit) {
     val uri = LocalUriHandler.current
-    val accent = Color(0xFFB7C99A)
+    val accent = AlvisiaCyan
     val muted = AlvisiaSilver.copy(alpha = 0.52f)
     val modules = listOf(
         ModuleChip("📦","PAK Unpack"), ModuleChip("🔧","PAK Rebuild"), ModuleChip("🗜","PAK Compact"),
@@ -39,8 +39,10 @@ fun ProfileScreen(product: String, expiry: String, hwidShort: String, toolCount:
         ModuleChip("💉","Lua Inject"), ModuleChip("🛡","Anti-RE Audit"), ModuleChip("🔐","Lua Protector"),
         ModuleChip("⚙","ALVSIA PRIVATE TOOL")
     )
-    Column(Modifier.fillMaxSize().background(AlvisiaDeep).verticalScroll(rememberScrollState())
-        .padding(horizontal=16.dp, vertical=20.dp), horizontalAlignment=Alignment.CenterHorizontally) {
+    Column(Modifier.fillMaxSize()
+        .background(Brush.verticalGradient(listOf(Color(0xFF101D30), AlvisiaDeep, Color(0xFF07191D))))
+        .verticalScroll(rememberScrollState())
+        .padding(horizontal=16.dp, vertical=24.dp), horizontalAlignment=Alignment.CenterHorizontally) {
         Box(Modifier.size(58.dp).clip(CircleShape)
             .background(Brush.radialGradient(listOf(accent.copy(alpha=.28f), Color.Transparent)))
             .border(1.dp, accent.copy(alpha=.65f), CircleShape), contentAlignment=Alignment.Center) {
@@ -48,7 +50,7 @@ fun ProfileScreen(product: String, expiry: String, hwidShort: String, toolCount:
         }
         Spacer(Modifier.height(8.dp))
         Text("ALVSIA PRO", color=accent, fontSize=21.sp, fontWeight=FontWeight.Black, letterSpacing=3.sp)
-        Text("SECURE TOOL SYSTEM · ${BuildConfig.VERSION_NAME}", color=Color(0xFFC5A86A), fontSize=10.sp, letterSpacing=1.2.sp)
+        Text("SECURE TOOL SYSTEM · ${BuildConfig.VERSION_NAME}", color=AlvisiaCyan.copy(alpha=.8f), fontSize=10.sp, letterSpacing=1.2.sp)
         Spacer(Modifier.height(15.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(7.dp)) {
             _InfoTile("PLAN", product.ifBlank { "PREMIUM" }, Modifier.weight(1f))
@@ -74,13 +76,13 @@ fun ProfileScreen(product: String, expiry: String, hwidShort: String, toolCount:
                 Text("DEVICE ID", color=muted, fontSize=9.sp, letterSpacing=.7.sp)
                 Text(hwidShort.take(12).ifBlank { "—" } + "…", color=AlvisiaSilver, fontSize=11.sp, fontWeight=FontWeight.SemiBold)
             }
-            Text("SESSION-GATED · INTEGRITY CHECK", color=accent.copy(alpha=.75f), fontSize=8.sp, textAlign=TextAlign.End)
+            Text("SESSION GATE  ·  INTEGRITY", color=accent.copy(alpha=.85f), fontSize=8.sp, textAlign=TextAlign.End)
         }
         Spacer(Modifier.height(15.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment=Alignment.CenterVertically) {
             Text("TOOL MODULES", color=muted, fontSize=10.sp, letterSpacing=1.5.sp)
             Spacer(Modifier.weight(1f))
-            Text("${modules.size} / 19 MODULES", color=Color(0xFFC5A86A), fontSize=9.sp)
+            Text("${modules.size} / 19 MODULES", color=AlvisiaCyan, fontSize=9.sp)
         }
         Spacer(Modifier.height(7.dp))
         modules.chunked(3).forEach { items ->

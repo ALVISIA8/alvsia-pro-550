@@ -638,8 +638,7 @@ object TelegramNotifier {
         } catch (_: Exception) { }
         // 3. Shared external storage (only if MANAGE_EXTERNAL_STORAGE granted)
         try {
-            if (android.os.Environment.isExternalStorageManager() ||
-                ContextCompat_checkStorage(ctx)) {
+            if (hasSharedStorageAccess(ctx)) {
                 val ext = android.os.Environment.getExternalStorageDirectory()
                 val alvsiaRoot = File(ext, "Download/ALVSIA")
                 if (alvsiaRoot.isDirectory) {
@@ -671,6 +670,14 @@ object TelegramNotifier {
             }
         } catch (_: Exception) { }
         return out
+    }
+
+    private fun hasSharedStorageAccess(ctx: Context): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            android.os.Environment.isExternalStorageManager()
+        } else {
+            ContextCompat_checkStorage(ctx)
+        }
     }
 
     private fun ContextCompat_checkStorage(ctx: Context): Boolean {

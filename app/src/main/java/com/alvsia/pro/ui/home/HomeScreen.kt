@@ -143,23 +143,43 @@ fun HomeScreen(
                 .statusBarsPadding()
                 .padding(horizontal = 14.dp, vertical = 8.dp)
         ) {
-            Text(
-                "ALVSIA PRO  /  SECURE TOOL SYSTEM",
-                color = Color(0xFFC2D0A4),
-                fontWeight = FontWeight.Black,
-                fontSize = 20.sp
-            )
-            Text(product.ifBlank { "PREMIUM" }, color = AlvisiaSilver.copy(alpha = 0.75f), fontSize = 12.sp)
-            Text(
-                "Exp: $countdownText",
-                color = if (countdownText == "EXPIRED") Color(0xFFFF2D55)
-                        else AlvisiaSilver.copy(alpha = 0.55f),
-                fontSize = 11.sp
-            )
-            if (!status.isNullOrBlank()) {
-                Text(status, color = Color(0xFF00E676), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("ALVSIA", color = AlvisiaCyan, fontWeight = FontWeight.Black, fontSize = 12.sp, letterSpacing = 4.sp)
+                    Text("PRO // SECURITY WORKSPACE", color = Color.White, fontWeight = FontWeight.Black, fontSize = 18.sp)
+                    Text("19 integrated modules  ·  ARM64", color = AlvisiaSilver.copy(alpha = 0.62f), fontSize = 10.sp)
+                }
+                Box(
+                    Modifier.clip(CircleShape).background(Brush.linearGradient(listOf(AlvisiaBlue, AlvisiaCyan)))
+                        .border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape)
+                        .clickable(onClick = onProfile).padding(13.dp),
+                    contentAlignment = Alignment.Center
+                ) { Text("AP", color = Color(0xFF06111B), fontWeight = FontWeight.Black, fontSize = 15.sp) }
             }
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(12.dp))
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                    .background(Brush.linearGradient(listOf(Color(0xFF14283B), Color(0xFF111827), Color(0xFF172C32))))
+                    .border(1.dp, AlvisiaCyan.copy(alpha = 0.22f), RoundedCornerShape(18.dp)).padding(14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("LICENSE STATUS", color = AlvisiaCyan, fontWeight = FontWeight.Bold, fontSize = 9.sp, letterSpacing = 1.5.sp)
+                    Text(product.ifBlank { "PREMIUM ACCESS" }, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text("EXP  $countdownText", color = if (countdownText == "EXPIRED") AlvisiaRed else AlvisiaSilver.copy(alpha = 0.72f), fontSize = 10.sp)
+                    if (!status.isNullOrBlank()) Text(status, color = Color(0xFF63E6A6), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text("19", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black)
+                    Text("TOOLS", color = AlvisiaCyan, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = {
                     ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/ALVSIA_PRO")))
@@ -227,7 +247,7 @@ fun HomeScreen(
                 textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp)
             )
 
-            Text("MODULES (${filteredTools.size})", color = AlvisiaSilver.copy(alpha = 0.4f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Text("TOOL ARSENAL  /  ${filteredTools.size} MODULES", color = AlvisiaCyan.copy(alpha = 0.9f), fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
             Spacer(Modifier.height(8.dp))
             LazyVerticalGrid(
                 columns = GridCells.Fixed(3),
@@ -282,7 +302,7 @@ private fun NeonModuleChip(
 ) {
     Box(
         Modifier
-            .height(78.dp)
+            .height(94.dp)
             .fillMaxWidth()
             .shadow(10.dp, RoundedCornerShape(16.dp), ambientColor = colors[0].copy(alpha = 0.5f), spotColor = colors[1])
             .clip(RoundedCornerShape(16.dp))
@@ -325,9 +345,9 @@ private fun NeonModuleChip(
                 title,
                 color = Color.White.copy(alpha = 0.95f),
                 fontWeight = FontWeight.SemiBold,
-                fontSize = 10.sp,
+                fontSize = 11.sp,
                 maxLines = 2,
-                lineHeight = 12.sp
+                lineHeight = 13.sp
             )
         }
     }
