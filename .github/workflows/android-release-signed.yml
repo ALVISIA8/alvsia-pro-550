@@ -189,11 +189,15 @@ jobs:
                   "assets/protector/dexes.zip",
                   "assets/protector/code.bin",
                   "assets/protector/config.json",
-                  "assets/protector/sokeys.bin",
               }
               missing = sorted(required - names)
               if missing:
                   raise SystemExit("FAIL XopProtector payload missing: " + ", ".join(missing))
+              if "lib/arm64-v8a/libprotector.so" not in names:
+                  raise SystemExit("FAIL XopProtector native shell missing for arm64-v8a")
+              with z.open("assets/protector/dexes.zip") as stream:
+                  if stream.read(4) != b"PDX1":
+                      raise SystemExit("FAIL XopProtector DEX payload is not PDX1 encrypted")
               if not any(n.startswith("assets/protector/") for n in names):
                   raise SystemExit("FAIL XopProtector runtime assets not found")
           print("PASS: XopProtector runtime payload verified in transformed APK")
@@ -248,7 +252,7 @@ jobs:
             rm -f "$SIGNED_APK"
             echo "Configured private-key password failed; trying keystore password for the private key."
             "$BUILD_TOOLS/apksigner" sign \
-              --v1-signing-enabled false \
+              --v1-signing-enabled true \
               --v2-signing-enabled true \
               --v3-signing-enabled true \
               --ks "$KS" \
