@@ -1,0 +1,34 @@
+name: Operation Grant PHP Validation
+
+on:
+  pull_request:
+    paths:
+      - "panel-migration/api/operation_grant.php"
+      - "panel-migration/OPERATION_GRANT_DEPLOYMENT.md"
+      - ".github/workflows/operation-grant-php-lint.yml"
+  push:
+    branches: [main]
+    paths:
+      - "panel-migration/api/operation_grant.php"
+      - ".github/workflows/operation-grant-php-lint.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  php-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          extensions: openssl, mysqli
+      - name: PHP syntax check
+        run: php -l panel-migration/api/operation_grant.php
+      - name: Ensure no private key is committed
+        run: |
+          if grep -E '-----BEGIN (RSA )?PRIVATE KEY-----' panel-migration/api/operation_grant.php; then
+            echo "Private key material must never be committed"
+            exit 1
+          fi
