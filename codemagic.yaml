@@ -168,6 +168,28 @@ workflows:
           rm -rf "$XOP_DIR"
           git clone --filter=blob:none https://github.com/xopJack/XopProtector.git "$XOP_DIR"
           git -C "$XOP_DIR" checkout --detach 5990c31
+          # Upstream settings.gradle.kts contains a Windows-only absolute SDK path.
+          # Remove that optional UniMP SDK lookup on CodeMagic; the packer/native targets
+          # do not require those local SDK AARs, and settings.gradle.kts already skips
+          # :unimp-host when the SDK directory is absent.
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("settings.gradle.kts")
+          s = p.read_text()
+          windows_sdk_line = '    file("E:/Android/SDK-Android@5.14-20260706/SDK/libs"),'
+          if windows_sdk_line in s:
+              s = s.replace(windows_sdk_line + "\\n", "")
+              p.write_text(s)
+              print("PATCH: removed upstream Windows-only UniMP SDK path for CodeMagic")
+          elif "E:/Android/SDK-Android@5.14-20260706/SDK/libs" in s or "E:\\\\Android\\\\SDK-Android@5.14-20260706\\\\SDK\\\\libs" in s:
+              raise SystemExit("ERROR: Windows-only SDK path format changed; refusing unsafe patch")
+          else:
+              print("OK: no hard-coded Windows SDK path present")
+          PY
+          ! grep -nE 'file\\(["'\\''"]*[A-Za-z]:[/\\\\]' settings.gradle.kts || {
+            echo "ERROR: hard-coded Windows drive path remains in XopProtector settings"
+            exit 1
+          }
           cd "$XOP_DIR"
           chmod +x ./gradlew
           ./gradlew --no-daemon :packer:jar exportShellFiles
