@@ -77,6 +77,7 @@ fun HomeScreen(
     tools: List<ToolItem>,
     status: String?,
     messages: List<LiveMessage> = emptyList(),
+    messageStatus: String? = null,
     onMessageRead: (LiveMessage) -> Unit = {},
     onProfile: () -> Unit,
     onTool: (ToolItem) -> Unit
@@ -186,6 +187,17 @@ fun HomeScreen(
                     Text("19", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black)
                     Text("TOOLS", color = AlvisiaCyan, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
                 }
+            }
+
+            if (messages.isEmpty() && !messageStatus.isNullOrBlank()) {
+                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF101D28))
+                    .border(1.dp, AlvisiaSilver.copy(alpha = 0.22f), RoundedCornerShape(12.dp))
+                    .padding(11.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("PANEL MESSAGE STATUS", color = AlvisiaCyan, fontWeight = FontWeight.Black, fontSize = 10.sp)
+                    Text(messageStatus, color = AlvisiaSilver, fontSize = 11.sp)
+                }
+                Spacer(Modifier.height(8.dp))
             }
 
             if (messages.isNotEmpty()) {

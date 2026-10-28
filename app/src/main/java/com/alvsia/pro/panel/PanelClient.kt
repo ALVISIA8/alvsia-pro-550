@@ -313,44 +313,97 @@ class PanelClient {
     }
 
 
-    /** Poll authenticated panel inbox; server revalidates session, HWID and license. */
+    /** Non-sensitive diagnostic shown in Home so a broken/missing PHP endpoint is not hidden as an empty inbox. */
+    @Volatile
+    var messageEndpointStatus: String = "Messages have not been checked"
+        private set
+
+    /** Poll authenticated panel inbox; server must revalidate session, HWID and license. */
     fun fetchMessages(hwid: String): List<LiveMessage> {
         val token = sessionToken
-        if (token.length != 64 || hwid.isBlank()) return emptyList()
+        if (!token.matches(Regex("^[0-9a-fA-F]{64}$")) || hwid.isBlank()) {
+            messageEndpointStatus = "Messages unavailable: login session or device ID is invalid"
+            return emptyList()
+        }
         return try {
             val json = JSONObject().put("session_token", token).put("hwid", hwid).put("action", "list")
             val req = Request.Builder().url(base() + "messages.php")
                 .header("User-Agent", Vault.ua()).header("Accept", "application/json")
+                .header("Cache-Control", "no-store")
                 .post(json.toString().toRequestBody("application/json; charset=utf-8".toMediaType())).build()
             clientPinned.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return emptyList()
-                val root = JSONObject(resp.body?.string() ?: return emptyList())
-                if (!root.optBoolean("success")) return emptyList()
-                val arr = root.optJSONArray("messages") ?: return emptyList()
+                val raw = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) {
+                    messageEndpointStatus = "Messages API HTTP ${resp.code} — check /api/messages.php"
+                    return emptyList()
+                }
+                val root = try { JSONObject(raw) } catch (_: Exception) {
+                    messageEndpointStatus = if (raw.trimStart().startsWith("<"))
+                        "Messages API returned HTML, not JSON — verify PHP path and hosting gateway"
+                    else "Messages API returned invalid JSON"
+                    return emptyList()
+                }
+                if (!root.optBoolean("success")) {
+                    messageEndpointStatus = "Messages API rejected request: " +
+                        root.optString("message", root.optString("error", "success=false"))
+                    return emptyList()
+                }
+                val arr = root.optJSONArray("messages")
+                if (arr == null) {
+                    messageEndpointStatus = "Messages API JSON is missing the messages array"
+                    return emptyList()
+                }
                 val result = ArrayList<LiveMessage>()
                 for (i in 0 until arr.length()) {
                     val item = arr.optJSONObject(i) ?: continue
-                    result.add(LiveMessage(item.optLong("id"), item.optString("title", "ALVSIA PRO"),
-                        item.optString("body"), item.optString("created_at"), item.optBoolean("is_read")))
+                    val id = item.optLong("id", -1L)
+                    if (id < 1L) continue
+                    val title = item.optString("title", "ALVSIA PRO").take(120)
+                    val body = item.optString("body").take(4000)
+                    val createdAt = item.optString("created_at").take(64)
+                    result.add(LiveMessage(id, title, body, createdAt, item.optBoolean("is_read")))
                 }
+                messageEndpointStatus = if (result.isEmpty()) "Panel connected · no messages yet"
+                    else "Panel connected · ${result.size} message(s)"
                 result
             }
-        } catch (_: Exception) { emptyList() }
+        } catch (e: Exception) {
+            messageEndpointStatus = when {
+                e.message.orEmpty().contains("Certificate pinning", ignoreCase = true) ->
+                    "Panel TLS pin mismatch — verify the active Unaux certificate before release"
+                e.message.orEmpty().contains("timeout", ignoreCase = true) ->
+                    "Messages API timed out"
+                else -> "Messages API connection failed: " + e.javaClass.simpleName
+            }
+            emptyList()
+        }
     }
 
     fun markMessageRead(hwid: String, messageId: Long): Boolean {
         val token = sessionToken
-        if (token.length != 64 || hwid.isBlank() || messageId < 1) return false
+        if (!token.matches(Regex("^[0-9a-fA-F]{64}$")) || hwid.isBlank() || messageId < 1L) {
+            messageEndpointStatus = "Cannot mark message read: invalid session, device ID or message ID"
+            return false
+        }
         return try {
             val json = JSONObject().put("session_token", token).put("hwid", hwid)
                 .put("action", "read").put("message_id", messageId)
             val req = Request.Builder().url(base() + "messages.php")
                 .header("User-Agent", Vault.ua()).header("Accept", "application/json")
+                .header("Cache-Control", "no-store")
                 .post(json.toString().toRequestBody("application/json; charset=utf-8".toMediaType())).build()
             clientPinned.newCall(req).execute().use { resp ->
-                resp.isSuccessful && JSONObject(resp.body?.string() ?: "{}").optBoolean("success")
+                val raw = resp.body?.string().orEmpty()
+                val ok = if (resp.isSuccessful) {
+                    try { JSONObject(raw).optBoolean("success") } catch (_: Exception) { false }
+                } else false
+                if (!ok) messageEndpointStatus = "Could not mark message read (HTTP ${resp.code}); verify PHP read action"
+                ok
             }
-        } catch (_: Exception) { false }
+        } catch (e: Exception) {
+            messageEndpointStatus = "Mark-read request failed: " + e.javaClass.simpleName
+            false
+        }
     }
 
 }

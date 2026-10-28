@@ -72,6 +72,7 @@ class MainActivity : ComponentActivity() {
                 var expiry by remember { mutableStateOf("") }
                 var license by remember { mutableStateOf("") }
                 var liveMessages by remember { mutableStateOf(listOf<LiveMessage>()) }
+                var messageEndpointStatus by remember { mutableStateOf("Waiting for authenticated panel check") }
                 var tools by remember { mutableStateOf(ToolCatalog.defaults()) }
                 var loadMsg by remember { mutableStateOf("Decrypting secure core...") }
                 var loadProgress by remember { mutableStateOf(0f) }
@@ -87,10 +88,12 @@ class MainActivity : ComponentActivity() {
                         while (true) {
                             val fresh = withContext(Dispatchers.IO) { panel.fetchMessages(hwid) }
                             liveMessages = fresh
+                            messageEndpointStatus = panel.messageEndpointStatus
                             delay(30_000L)
                         }
                     } else {
                         liveMessages = emptyList()
+                        messageEndpointStatus = "Sign in to check panel messages"
                     }
                 }
 
@@ -271,6 +274,7 @@ class MainActivity : ComponentActivity() {
                         tools = tools,
                         status = info,
                         messages = liveMessages,
+                        messageStatus = messageEndpointStatus,
                         onMessageRead = { message ->
                             lifecycleScope.launch {
                                 val ok = withContext(Dispatchers.IO) { panel.markMessageRead(hwid, message.id) }
