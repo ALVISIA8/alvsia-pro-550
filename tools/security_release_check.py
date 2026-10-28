@@ -23,6 +23,7 @@ vault = read(JAVA / "panel/Vault.kt")
 session = read(JAVA / "sec/SessionGate.kt")
 native = read(ROOT / "app/src/main/cpp/rasp_guard.cpp")
 native_guard = read(JAVA / "sec/NativeGuard.kt")
+dex_guardian = read(JAVA / "sec/DexGuardian.kt")
 rasp_engine = read(JAVA / "sec/RaspEngine.kt")
 tool_engine = read(JAVA / "tool/ToolEngine.kt")
 bridge = read(PY / "alvsia_bridge.py")
@@ -91,6 +92,10 @@ if "AES/GCM/NoPadding" not in native_guard or "cipher.updateAAD(magic)" not in n
     fail.append("Kotlin/native bridge lacks authenticated AES-GCM decryption")
 if "ALVSEAL2" not in seal_script or "AESGCM" not in seal_script:
     fail.append("Python sealing script is missing authenticated encryption")
+if "inspectXopPayload(ctx)" not in dex_guardian or '"assets/protector/dexes.zip"' not in dex_guardian:
+    fail.append("DexGuardian does not recognize and validate the XopProtector payload")
+if '"PDX1"' not in dex_guardian or "xop_payload_invalid" not in dex_guardian:
+    fail.append("DexGuardian Xop path is missing encrypted-container integrity checks")
 if "tools/seal_python.py --seal" not in codemagic or "tools/seal_python.py --restore" not in codemagic:
     fail.append("CodeMagic does not seal and restore protected Python modules")
 if "tools/audit_release_apk.py" not in codemagic or "tools/audit_release_apk.py" not in workflow:
