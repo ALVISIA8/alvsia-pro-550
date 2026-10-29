@@ -46,6 +46,12 @@ class SecurityWiringTests(unittest.TestCase):
         self.assertIn('<device-transfer>', extraction)
         self.assertIn('<exclude domain="sharedpref" path="." />', extraction)
 
+    def test_release_never_falls_back_to_plaintext_jars(self):
+        engine = read("app/src/main/java/com/alvsia/pro/tool/ToolEngine.kt")
+        self.assertIn("if (!com.alvsia.pro.BuildConfig.DEBUG)", engine)
+        self.assertIn("sealedCount > 0 || !com.alvsia.pro.BuildConfig.DEBUG", engine)
+        self.assertIn("Debug/CI only fallback", engine)
+
     def test_file_provider_is_limited_to_output_files(self):
         paths = read("app/src/main/res/xml/file_paths.xml")
         self.assertIn('path="ALVSIA/OUT/"', paths)
