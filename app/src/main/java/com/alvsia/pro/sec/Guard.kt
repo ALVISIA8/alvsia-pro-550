@@ -12,7 +12,7 @@ object Guard {
         "frida-agent", "frida-gadget", "frida_agent", "libfrida",
         "libgadget", "xposed", "lsposed", "edxposed", "substrate",
         "libsandhook", "libepic", "linjector",
-        "libdobby", "dobby", "shadowhook", "bhook", "bytehook",
+        "libdobby", "shadowhook", "bhook", "bytehook",
         "libandroid_inline_hook"
     )
 
@@ -30,8 +30,11 @@ object Guard {
             try { ThreatReport.emit(ctx, "GUARD_HOSTILE", _lastReason, license) } catch (_: Exception) {}
             degraded = true
             if (hardEnforcement) return false
+            // Soft pre-login check records the signal but must not reject the
+            // license before the authenticated, hard-enforcement check runs.
+            return true
         }
-        return !active
+        return true
     }
 
     fun hostile(ctx: Context): Boolean {
