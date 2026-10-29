@@ -224,7 +224,10 @@ workflows:
               "assets/chaquopy/app.imy",
               "assets/nx/i.dat",
           }
-          candidate_required = base_required | {"lib/arm64-v8a/libprotector.so"}
+          candidate_required = base_required | {
+              "lib/arm64-v8a/libprotector.so",
+              "assets/protector/dexes.zip",
+          }
           with zipfile.ZipFile(base) as a, zipfile.ZipFile(candidate) as b:
               for label, z, required in (
                   ("baseline", a, base_required),
@@ -257,6 +260,8 @@ workflows:
             exit 1
           }
           echo "PASS: package/version and manifest permission set unchanged by XopProtector"
+          # Run the same release payload audit against the Xop candidate before publishing it.
+          python3 tools/audit_release_apk.py "$CANDIDATE"
           # Publish only after every structural gate passes; failed/partial candidates
           # must never be mistaken for the APK intended for ReArk handoff.
           mv "$CANDIDATE" "$CM_BUILD_DIR/ALVISIA_PRO_5.5.2-xop_candidate_unsigned.apk"
