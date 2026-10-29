@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
-    <files-path name="app_files" path="." />
-    <external-files-path name="external_files" path="." />
-    <external-path name="external_storage" path="." />
-    <cache-path name="cache" path="." />
+    <!-- Only generated outputs may be opened/shared through FileProvider. -->
+    <files-path name="alvsia_private_output" path="ALVSIA/OUT/" />
+    <external-files-path name="alvsia_app_output" path="ALVSIA/OUT/" />
+    <external-path name="alvsia_public_output" path="Download/ALVSIA/OUT/" />
 </paths>
