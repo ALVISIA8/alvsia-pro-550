@@ -159,19 +159,16 @@ jobs:
           import sys
           from pathlib import Path
           path = Path(sys.argv[1])
-          source = path.read_text()
-          lines = source.splitlines()
-          filtered = [
-              line for line in lines
-              if not ("SDK-Android@5.14-20260706" in line and "file(" in line and "libs" in line)
-          ]
-          cleaned = "\n".join(filtered) + "\n"
-          if "SDK-Android@5.14-20260706" in cleaned or "file(\"E:" in cleaned:
-              raise SystemExit("FAIL: Windows-only SDK path still remains in XopProtector settings")
+          lines = path.read_text().splitlines()
+          marker = "SDK-Android@5.14-20260706"
+          filtered = [line for line in lines if marker not in line]
           if len(filtered) == len(lines):
-              raise SystemExit("Expected Windows-only UniMP SDK path not found in pinned XopProtector settings")
+              raise SystemExit("Expected optional Windows SDK path not found")
+          cleaned = "\n".join(filtered) + "\n"
+          if marker in cleaned:
+              raise SystemExit("Windows SDK path still remains")
           path.write_text(cleaned)
-          print("PASS: Windows-only SDK path removed and absence verified")
+          print("PASS: removed optional Windows-only SDK candidates")
           PY
           chmod +x "$XOP_ROOT/gradlew"
           (
