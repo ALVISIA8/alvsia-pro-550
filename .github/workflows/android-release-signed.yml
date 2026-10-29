@@ -301,7 +301,8 @@ jobs:
 
           VERIFY_OUTPUT="$("$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$SIGNED_APK")"
           printf '%s\n' "$VERIFY_OUTPUT"
-          printf '%s\n' "$VERIFY_OUTPUT" | grep -Eqi 'Verified using v1 scheme.*: true'
+          # minSdk is 26, so Android 8+ supports APK Signature Scheme v2/v3.
+          # v1/JAR verification is reported for diagnostics but is not a release gate.
           printf '%s\n' "$VERIFY_OUTPUT" | grep -Eqi 'Verified using v2 scheme.*: true'
           printf '%s\n' "$VERIFY_OUTPUT" | grep -Eqi 'Verified using v3 scheme.*: true'
 
@@ -320,7 +321,7 @@ jobs:
           BADGING="$("$BUILD_TOOLS/aapt" dump badging "$SIGNED_APK")"
           printf '%s\n' "$BADGING" | grep -Fq "package: name='com.alvsia.pro' versionCode='98' versionName='5.5.2-hardened'"
           sha256sum "$SIGNED_APK" | tee "$GITHUB_WORKSPACE/SHA256SUMS.txt"
-          echo "PASS: XopProtector-protected APK, v1/v2/v3 signatures, certificate pin, zip alignment, package and version verified"
+          echo "PASS: XopProtector-protected APK, v2/v3 signatures, certificate pin, zip alignment, package and version verified"
           rm -f "$KS"
 
       - name: Upload signed release APK and audit logs
