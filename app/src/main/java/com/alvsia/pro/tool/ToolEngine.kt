@@ -503,6 +503,19 @@ class ToolEngine(private val context: Context) {
         return lines
     }
 
+    /** Resolve archive paths before writing; reject traversal, absolute paths, and symlink escapes. */
+    private fun safeZipTarget(root: File, entryName: String): File? {
+        if (entryName.isBlank() || entryName.indexOf('\u0000') >= 0) return null
+        return try {
+            val canonicalRoot = root.canonicalFile
+            val target = File(canonicalRoot, entryName).canonicalFile
+            val prefix = canonicalRoot.path + File.separator
+            if (target.path.startsWith(prefix)) target else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private fun zipExtract(f: File, dest: File): List<String> {
         val lines = mutableListOf<String>()
         dest.mkdirs()
@@ -512,7 +525,11 @@ class ToolEngine(private val context: Context) {
                 val en = zf.entries()
                 while (en.hasMoreElements()) {
                     val e = en.nextElement()
-                    val out = File(dest, e.name)
+                    val out = safeZipTarget(dest, e.name)
+                    if (out == null) {
+                        lines.add("WARN skipped unsafe archive path")
+                        continue
+                    }
                     if (e.isDirectory) {
                         out.mkdirs()
                     } else {
@@ -533,8 +550,10 @@ class ToolEngine(private val context: Context) {
                 ZipInputStream(BufferedInputStream(FileInputStream(f))).use { zis ->
                     var entry = zis.nextEntry
                     while (entry != null) {
-                        val out = File(dest, entry.name)
-                        if (entry.isDirectory) out.mkdirs()
+                        val out = safeZipTarget(dest, entry.name)
+                        if (out == null) {
+                            lines.add("WARN skipped unsafe archive path")
+                        } else if (entry.isDirectory) out.mkdirs()
                         else {
                             out.parentFile?.mkdirs()
                             FileOutputStream(out).use { outs -> zis.copyTo(outs) }
