@@ -156,12 +156,22 @@ jobs:
           # This pinned upstream revision includes a Windows-only SDK path in settings.gradle.kts.
           # Remove that optional path on Linux CI; ANDROID_HOME remains the authoritative SDK.
           python3 - "$XOP_ROOT/settings.gradle.kts" <<'PY'
-          import re, sys
+          import sys
           from pathlib import Path
           path = Path(sys.argv[1])
           source = path.read_text()
-          # Remove the Windows-only UniMP SDK candidate regardless of slash style.
-          pattern = r'^\s*file\(["\']E:[\\/].*?SDK-Android@5\.14-20260706[\\/]SDK[\\/]libs["\']\),?\s*
+          lines = source.splitlines()
+          filtered = [
+              line for line in lines
+              if not ("SDK-Android@5.14-20260706" in line and "file(" in line and "libs" in line)
+          ]
+          cleaned = "\n".join(filtered) + "\n"
+          if "SDK-Android@5.14-20260706" in cleaned or "file(\"E:" in cleaned:
+              raise SystemExit("FAIL: Windows-only SDK path still remains in XopProtector settings")
+          if len(filtered) == len(lines):
+              raise SystemExit("Expected Windows-only UniMP SDK path not found in pinned XopProtector settings")
+          path.write_text(cleaned)
+          print("PASS: Windows-only SDK path removed and absence verified")
           PY
           chmod +x "$XOP_ROOT/gradlew"
           (
