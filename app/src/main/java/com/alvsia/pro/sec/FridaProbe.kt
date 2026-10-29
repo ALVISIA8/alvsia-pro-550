@@ -33,13 +33,14 @@ object FridaProbe {
     )
 
     // ── /proc/self/maps markers ───────────────────────────────────────
-    private val MAP_MARKERS = listOf(
+    private val HARD_MAP_MARKERS = listOf(
         "frida-agent", "frida-gadget", "frida_agent", "frida_gadget",
-        "libfrida", "libgadget",
+        "libfrida", "libgadget", "linjector"
+    )
+    private val SOFT_HOOK_LIBRARY_MARKERS = listOf(
         "xposed", "lsposed", "edxposed", "de.robv.android.xposed",
         "com.saurik.substrate", "libsubstrate", "substrate32", "substrate64",
         "libsandhook", "libepic", "epic-arm", "epic-arm64",
-        "linjector",
         "libdobby", "dobby", "libandroid_inline_hook",
         "shadowhook", "shadow_hook", "bhook", "bytehook",
         "com.taichi.hookprovider"
@@ -82,7 +83,8 @@ object FridaProbe {
                 if (fields.size < 2 || 'x' !in fields[1]) continue
                 val mappedName = fields.getOrNull(5)?.lowercase().orEmpty()
                 if (mappedName.isBlank()) continue
-                MAP_MARKERS.filter { it in mappedName }.forEach { out += "maps:$it" }
+                HARD_MAP_MARKERS.filter { it in mappedName }.forEach { out += "maps:$it" }
+                SOFT_HOOK_LIBRARY_MARKERS.filter { it in mappedName }.forEach { out += "hooklib:$it" }
             }
         } catch (_: Exception) {
             // Unavailable procfs is not proof of tampering.

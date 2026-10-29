@@ -4,16 +4,17 @@ import android.content.Context
 import java.io.File
 
 object Guard {
-
-    // Only treat a marker in an executable mapping as active instrumentation.
-    // Looking at the whole maps file can produce false positives from unrelated
-    // non-executable mappings and metadata.
-    private val RUNTIME_MARKERS = listOf(
+    // Hard blocks require high-confidence active instrumentation evidence.
+    // Generic hook bridges can also be loaded by native protectors.
+    private val HARD_RUNTIME_MARKERS = listOf(
         "frida-agent", "frida-gadget", "frida_agent", "frida_gadget",
-        "libfrida", "libgadget", "xposed", "lsposed", "edxposed",
-        "substrate", "libsandhook", "libepic", "linjector",
-        "libdobby", "shadowhook", "shadow_hook", "bhook", "bytehook",
-        "libandroid_inline_hook"
+        "libfrida", "libgadget", "linjector"
+    )
+    private val SOFT_HOOK_MARKERS = listOf(
+        "xposed", "lsposed", "edxposed", "substrate", "libsandhook",
+        "libepic", "libdobby", "dobby", "shadowhook", "shadow_hook",
+        "bhook", "bytehook", "libbytehook", "libwhale", "riru", "zygisk",
+        "libnative_hook", "libandroid_inline_hook", "libhookprovider"
     )
 
     @Volatile var degraded: Boolean = false
@@ -25,22 +26,25 @@ object Guard {
         license: String = "",
         hardEnforcement: Boolean = true
     ): Boolean {
-        val active = hostile(ctx)
-        if (active) {
+        if (hostile(ctx)) {
             try { ThreatReport.emit(ctx, "GUARD_HOSTILE", _lastReason, license) } catch (_: Exception) {}
             degraded = true
             if (hardEnforcement) return false
-            // A soft pre-login check records signals without rejecting the license
-            // before the authenticated hard-enforcement check runs.
             return true
         }
-        degraded = false
+
+        val softMarker = softHookSignal()
+        if (softMarker != null) {
+            degraded = true
+            try { ThreatReport.emit(ctx, "GUARD_SOFT_HOOK", softMarker, license) } catch (_: Exception) {}
+        } else {
+            degraded = false
+        }
         return true
     }
 
     fun hostile(ctx: Context): Boolean {
-        // TracerPid > 0 means this process is actually being traced; developer
-        // options or ADB being enabled by themselves are not a block condition.
+        // TracerPid is high-confidence evidence; ADB/developer options alone are not.
         try {
             val status = File("/proc/self/status").readText()
             val tracer = status.lineSequence()
@@ -51,22 +55,19 @@ object Guard {
                 return true
             }
         } catch (_: Exception) {
-            // Procfs permission/OS differences are not evidence of a hostile process.
+            // OS permission differences are not evidence of tampering.
         }
 
         try {
             val maps = File("/proc/self/maps").readLines()
             for (line in maps) {
-                // Linux maps fields: address, permissions, offset, device, inode,
-                // then optional pathname. Match only executable mappings and their
-                // pathname (including named anonymous executable mappings).
                 val fields = line.trim().split(Regex("\\s+"), limit = 6)
                 if (fields.size < 2 || 'x' !in fields[1]) continue
                 val mappedName = fields.getOrNull(5)?.lowercase().orEmpty()
                 if (mappedName.isBlank()) continue
-                val hit = RUNTIME_MARKERS.firstOrNull { it in mappedName }
+                val hit = HARD_RUNTIME_MARKERS.firstOrNull { it in mappedName }
                 if (hit != null) {
-                    _lastReason = "active_hook_map:$hit"
+                    _lastReason = "active_instrumentation_map:$hit"
                     return true
                 }
             }
@@ -75,6 +76,19 @@ object Guard {
         }
         _lastReason = ""
         return false
+    }
+
+    private fun softHookSignal(): String? {
+        return try {
+            for (line in File("/proc/self/maps").readLines()) {
+                val fields = line.trim().split(Regex("\\s+"), limit = 6)
+                if (fields.size < 2 || 'x' !in fields[1]) continue
+                val mappedName = fields.getOrNull(5)?.lowercase().orEmpty()
+                val hit = SOFT_HOOK_MARKERS.firstOrNull { it in mappedName }
+                if (hit != null) return "executable_hook_library:$hit"
+            }
+            null
+        } catch (_: Exception) { null }
     }
 
     fun runtimeHostile(ctx: Context): Boolean =
