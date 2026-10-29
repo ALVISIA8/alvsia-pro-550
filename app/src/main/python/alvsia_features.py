@@ -945,6 +945,10 @@ def run_obb_extract(input_path, out_dir):
                 target = (root / member).resolve()
                 if target != root and root not in target.parents:
                     return {"ok": False, "error": "unsafe archive path rejected: %s" % info.filename}
+                # Do not materialize archive symlinks; they can redirect later writes.
+                mode = (info.external_attr >> 16) & 0o170000
+                if mode == 0o120000:
+                    return {"ok": False, "error": "symlink archive entry rejected: %s" % info.filename}
                 validated.append((info, target))
 
             count = 0
