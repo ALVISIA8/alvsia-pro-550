@@ -73,11 +73,22 @@ object AssetVault {
         var n = 0
         for ((name, bytes) in loadSealedMap(ctx)) {
             val dest = safeJarTarget(jarsDir, name) ?: continue
-            if (dest.exists() && dest.length() == bytes.size.toLong()) {
+            // Length alone is not integrity: an attacker could alter a JAR without changing its size.
+            val alreadyValid = try {
+                dest.isFile && dest.length() == bytes.size.toLong() &&
+                    dest.readBytes().contentEquals(bytes)
+            } catch (_: Exception) {
+                false
+            }
+            if (alreadyValid) {
                 n++
                 continue
             }
-            dest.writeBytes(bytes)
+            try {
+                dest.writeBytes(bytes)
+            } catch (_: Exception) {
+                continue
+            }
             try {
                 dest.setReadable(true, true)
                 dest.setWritable(true, true)
