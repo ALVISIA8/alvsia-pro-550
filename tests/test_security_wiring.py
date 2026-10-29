@@ -26,6 +26,26 @@ class SecurityWiringTests(unittest.TestCase):
         for pin in pins:
             self.assertEqual(len(base64.b64decode(pin, validate=True)), 32)
 
+    def test_sensitive_screens_enable_capture_and_tapjacking_protection(self):
+        activity = read("app/src/main/java/com/alvsia/pro/MainActivity.kt")
+        self.assertIn("FLAG_SECURE", activity)
+        self.assertIn("filterTouchesWhenObscured = true", activity)
+
+    def test_pinned_panel_transport_does_not_follow_redirects(self):
+        client = read("app/src/main/java/com/alvsia/pro/panel/PanelClient.kt")
+        self.assertIn(".followRedirects(false)", client)
+        self.assertIn(".followSslRedirects(false)", client)
+
+    def test_backup_and_device_transfer_are_explicitly_excluded(self):
+        manifest = read("app/src/main/AndroidManifest.xml")
+        self.assertIn('android:fullBackupContent="@xml/backup_rules"', manifest)
+        self.assertIn('android:dataExtractionRules="@xml/data_extraction_rules"', manifest)
+        rules = read("app/src/main/res/xml/backup_rules.xml")
+        extraction = read("app/src/main/res/xml/data_extraction_rules.xml")
+        self.assertIn('<exclude domain="sharedpref" path="." />', rules)
+        self.assertIn('<device-transfer>', extraction)
+        self.assertIn('<exclude domain="sharedpref" path="." />', extraction)
+
     def test_runtime_security_bootstrap_is_wired(self):
         app = read("app/src/main/java/com/alvsia/pro/AlvisiaApp.kt")
         self.assertIn("RaspEngine.start(this)", app)
