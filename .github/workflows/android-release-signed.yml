@@ -146,102 +146,21 @@ jobs:
           python3 tools/audit_release_apk.py "$APK"
           python3 tools/audit_release_metadata.py "$APK"
 
-      - name: Build pinned XopProtector packer and native shell
+      - name: Select unwrapped APK for external protector compatibility
         shell: bash
         run: |
           set -euo pipefail
-          XOP_ROOT="$RUNNER_TEMP/XopProtector"
-          git clone --filter=blob:none https://github.com/xopJack/XopProtector.git "$XOP_ROOT"
-          git -C "$XOP_ROOT" checkout --detach b4b3c8ab3c47e536adb324cfafeb5e24964cc2bd
-          # This pinned upstream revision includes a Windows-only SDK path in settings.gradle.kts.
-          # Remove that optional path on Linux CI; ANDROID_HOME remains the authoritative SDK.
-          python3 - "$XOP_ROOT/settings.gradle.kts" <<'PY'
-          import sys
-          from pathlib import Path
-          path = Path(sys.argv[1])
-          lines = path.read_text().splitlines()
-          filtered = [
-              line for line in lines
-              if not (
-                  "file(" in line
-                  and (
-                      "E:/Android/" in line
-                      or "SDK-Android@5.14-20260706" in line
-                  )
-              )
-          ]
-          removed = len(lines) - len(filtered)
-          if removed < 1:
-              raise SystemExit("Expected hard-coded UniMP SDK paths not found")
-          cleaned = "\n".join(filtered) + "\n"
-          if "E:/Android/" in cleaned or "SDK-Android@5.14-20260706" in cleaned:
-              raise SystemExit("Hard-coded Windows SDK path remains")
-          path.write_text(cleaned)
-          print(f"PASS: removed {removed} hard-coded SDK path line(s)")
-          PY
-          chmod +x "$XOP_ROOT/gradlew"
-          (
-            cd "$XOP_ROOT"
-            ./gradlew --no-daemon -Punimp.sdk.libs=/tmp/alvsia-no-unimp-sdk :packer:jar exportShellFiles
-          )
-          PACKER_JAR="$(find "$XOP_ROOT/packer/build/libs" -maxdepth 1 -type f -name 'protector-packer-*.jar' | sort -V | tail -n 1)"
-          test -s "$PACKER_JAR"
-          test -s "$XOP_ROOT/executable/shell-files/dex/classes.dex"
-          test -s "$XOP_ROOT/executable/shell-files/libs/arm64-v8a/libprotector.so"
-          echo "PASS: pinned XopProtector packer and arm64 shell built"
-          echo "XOP_ROOT=$XOP_ROOT" >> "$GITHUB_ENV"
-          echo "XOP_PACKER_JAR=$PACKER_JAR" >> "$GITHUB_ENV"
-
-      - name: Apply XopProtector to ALVSIA APK
-        shell: bash
-        run: |
-          set -euo pipefail
+          # Keep the release APK unwrapped by XopProtector so the owner can apply
+          # Reark Protector PRO separately without nested-shell/component-factory conflicts.
           INPUT_APK="$(find app/build/outputs/apk/release -type f -name '*.apk' | head -n 1)"
-          OUTPUT_APK="$RUNNER_TEMP/ALVSIA_PRO_5.5.2-hardened_xop_unsigned.apk"
           test -s "$INPUT_APK"
-          java -jar "$XOP_PACKER_JAR" "$INPUT_APK" -o "$OUTPUT_APK" \
-            --shell-dir "$XOP_ROOT/executable/shell-files" \
-            --profile industry \
-            --cert-sha256 99b33815c88a17abbcfe22be15250363f6dfc79c11ffc980e71b62b74b1f295c \
-            --risk-flags 0 \
-            --rasp-action 0
-          test -s "$OUTPUT_APK"
-          # Ensure packer actually transformed the APK and added its runtime payload.
-          python3 - "$OUTPUT_APK" <<'PY'
-          import sys, zipfile
-          from pathlib import Path
-          apk = Path(sys.argv[1])
-          with zipfile.ZipFile(apk) as z:
-              names = set(z.namelist())
-              required = {
-                  "assets/protector/dexes.zip",
-                  "assets/protector/code.bin",
-                  "assets/protector/config.json",
-              }
-              missing = sorted(required - names)
-              if missing:
-                  raise SystemExit("FAIL XopProtector payload missing: " + ", ".join(missing))
-              if "lib/arm64-v8a/libprotector.so" not in names:
-                  raise SystemExit("FAIL XopProtector native shell missing for arm64-v8a")
-              with z.open("assets/protector/dexes.zip") as stream:
-                  if stream.read(4) != b"PDX1":
-                      raise SystemExit("FAIL XopProtector DEX payload is not PDX1 encrypted")
-              if not any(n.startswith("assets/protector/") for n in names):
-                  raise SystemExit("FAIL XopProtector runtime assets not found")
-          print("PASS: XopProtector runtime payload verified in transformed APK")
-          PY
-          # Guardrails: preserve package identity, launcher entry point, and every declared permission.
+          python3 tools/audit_release_apk.py "$INPUT_APK"
           AAPT="$ANDROID_HOME/build-tools/34.0.0/aapt"
-          "$AAPT" dump permissions "$INPUT_APK" | sed -E '/^package:/d' | sort -u > "$RUNNER_TEMP/original-permissions.txt"
-          "$AAPT" dump permissions "$OUTPUT_APK" | sed -E '/^package:/d' | sort -u > "$RUNNER_TEMP/xop-permissions.txt"
-          diff -u "$RUNNER_TEMP/original-permissions.txt" "$RUNNER_TEMP/xop-permissions.txt"
-          BADGING="$("$AAPT" dump badging "$OUTPUT_APK")"
-          printf '%s\n' "$BADGING" | grep -Fq "package: name='com.alvsia.pro' versionCode='98' versionName='5.5.2-hardened'"
-          printf '%s\n' "$BADGING" | grep -Fq "launchable-activity: name='com.alvsia.pro.MainActivity'"
-          echo "PASS: package, launcher and declared permissions preserved by XopProtector"
-          python3 tools/audit_release_apk.py "$OUTPUT_APK"
-          echo "ALVSIA_XOP_UNSIGNED_APK=$OUTPUT_APK" >> "$GITHUB_ENV"
-          echo "PASS: XopProtector candidate created; output will be signed only after audits"
+          BADGING="$("$AAPT" dump badging "$INPUT_APK")"
+          printf '%s\\n' "$BADGING" | grep -Fq "package: name='com.alvsia.pro' versionCode='98' versionName='5.5.2-hardened'"
+          printf '%s\\n' "$BADGING" | grep -Fq "launchable-activity: name='com.alvsia.pro.MainActivity'"
+          echo "ALVSIA_XOP_UNSIGNED_APK=$INPUT_APK" >> "$GITHUB_ENV"
+          echo "PASS: using plain ALVSIA APK; no XopProtector shell is nested into the artifact"
 
       - name: Restore sealed Python sources in workspace
         if: always()
@@ -278,7 +197,7 @@ jobs:
           # Validate the configured key password first; if this keystore uses the
           # store password for its private key too, retry without exposing secrets.
           if ! "$BUILD_TOOLS/apksigner" sign \
-            --v1-signing-enabled true \
+            --v1-signing-enabled false \
             --v2-signing-enabled true \
             --v3-signing-enabled true \
             --ks "$KS" \
@@ -321,7 +240,7 @@ jobs:
           BADGING="$("$BUILD_TOOLS/aapt" dump badging "$SIGNED_APK")"
           printf '%s\n' "$BADGING" | grep -Fq "package: name='com.alvsia.pro' versionCode='98' versionName='5.5.2-hardened'"
           sha256sum "$SIGNED_APK" | tee "$GITHUB_WORKSPACE/SHA256SUMS.txt"
-          echo "PASS: XopProtector-protected APK, v2/v3 signatures, certificate pin, zip alignment, package and version verified"
+          echo "PASS: plain APK for external protector, v2/v3 signatures, certificate pin, zip alignment, package and version verified"
           rm -f "$KS"
 
       - name: Publish verified APK as a private draft release
@@ -336,7 +255,7 @@ jobs:
           fail_on_unmatched_files: true
           body: |
             Automated private draft release for the verified ALVSIA PRO 5.5.2-hardened build.
-            APK must pass CI signing, certificate, XopProtector payload, alignment, package/version, and manifest audits before publishing.
+            APK must pass CI signing, certificate, unwrapped APK compatibility, alignment, package/version, and manifest audits before publishing.
             Do not mark this release public until on-device smoke tests pass.
           files: |
             ALVSIA_PRO_5.5.2-hardened_signed.apk
