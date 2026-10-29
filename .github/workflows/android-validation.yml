@@ -174,7 +174,7 @@ jobs:
           test -n "$PACKER_JAR" && test -s "$PACKER_JAR"
           test -d "$XOP_DIR/executable/shell-files"
           CANDIDATE="$RUNNER_TEMP/ALVISIA_PRO_5.5.2-xop_candidate_unsigned.apk"
-          java -jar "$XOP_DIR/$PACKER_JAR" "$BASE_APK" \
+          java -jar "$PACKER_JAR" "$BASE_APK" \
             -o "$CANDIDATE" \
             --shell-dir "$XOP_DIR/executable/shell-files" \
             --profile industry \
