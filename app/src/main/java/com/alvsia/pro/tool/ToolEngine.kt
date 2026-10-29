@@ -47,19 +47,30 @@ class ToolEngine(private val context: Context) {
     fun hasRamEngine(): Boolean = ramEngine != null && ramEngine!!.isNotEmpty()
 
     fun installJarsFromAssets() {
-        // 1. Release path: sealed/randomized assets (preferred — verified by cert)
-        try {
-            val n = AssetVault.materializeJars(context, jarsDir)
-            if (n > 0) return
-        } catch (_: Exception) {
-        }
-        // 2. Debug/CI fallback: copy plaintext jars from assets/unluac/ if sealed path gave nothing
         val jarNames = listOf(
             "unluac_2025_12_23.jar",  // newest — try first
             "unluac_pro.jar",
             "unluac_patched.jar",
             "unluac.jar",
         )
+
+        // Release builds must never fall back to plaintext bundled JARs. Remove legacy
+        // copies first so an upgrade cannot keep using a previously materialized fallback.
+        if (!com.alvsia.pro.BuildConfig.DEBUG) {
+            for (name in jarNames) {
+                try { File(jarsDir, name).delete() } catch (_: Exception) { }
+            }
+        }
+
+        // Sealed assets are the only accepted source in release builds.
+        val sealedCount = try {
+            AssetVault.materializeJars(context, jarsDir)
+        } catch (_: Exception) {
+            0
+        }
+        if (sealedCount > 0 || !com.alvsia.pro.BuildConfig.DEBUG) return
+
+        // Debug/CI only fallback for unsealed development assets.
         for (name in jarNames) {
             val dest = File(jarsDir, name)
             if (dest.exists() && dest.length() > 1000L) continue
