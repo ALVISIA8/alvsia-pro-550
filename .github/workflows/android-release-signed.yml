@@ -160,15 +160,24 @@ jobs:
           from pathlib import Path
           path = Path(sys.argv[1])
           lines = path.read_text().splitlines()
-          marker = "SDK-Android@5.14-20260706"
-          filtered = [line for line in lines if marker not in line]
-          if len(filtered) == len(lines):
-              raise SystemExit("Expected optional Windows SDK path not found")
+          filtered = [
+              line for line in lines
+              if not (
+                  "file(" in line
+                  and (
+                      "E:/Android/" in line
+                      or "SDK-Android@5.14-20260706" in line
+                  )
+              )
+          ]
+          removed = len(lines) - len(filtered)
+          if removed < 1:
+              raise SystemExit("Expected hard-coded UniMP SDK paths not found")
           cleaned = "\n".join(filtered) + "\n"
-          if marker in cleaned:
-              raise SystemExit("Windows SDK path still remains")
+          if "E:/Android/" in cleaned or "SDK-Android@5.14-20260706" in cleaned:
+              raise SystemExit("Hard-coded Windows SDK path remains")
           path.write_text(cleaned)
-          print("PASS: removed optional Windows-only SDK candidates")
+          print(f"PASS: removed {removed} hard-coded SDK path line(s)")
           PY
           chmod +x "$XOP_ROOT/gradlew"
           (
