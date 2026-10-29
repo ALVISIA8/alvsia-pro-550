@@ -224,10 +224,10 @@ jobs:
           name: ALVISIA PRO validation build ${{ github.run_number }}
           draft: true
           prerelease: true
+          # Publish one APK only: the XopProtector candidate for the ReArk handoff.
+          # The baseline APK is an internal CI input and is not attached to the release.
           files: |
-            validation-artifacts/ALVISIA_PRO_5.5.2-hardened_release_unsigned.apk
             validation-artifacts/ALVISIA_PRO_5.5.2-xop_candidate_unsigned.apk
-            validation-artifacts/release_security_audit.txt
             validation-artifacts/xop_candidate_security_audit.txt
           fail_on_unmatched_files: true
 
