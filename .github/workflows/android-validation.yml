@@ -156,10 +156,9 @@ jobs:
           start = s.find("val unimpLibsProp =")
           if start < 0:
               raise SystemExit("ERROR: expected unimpLibsProp block not found; refusing unknown upstream layout")
-          end = s.find("if (unimpLibsCandidates.any", start)
-          if end < 0:
-              raise SystemExit("ERROR: expected unimpLibsCandidates block terminator not found")
-          s = s[:start] + 'val unimpLibsCandidates = listOf(\n    file("../SDK-Android@5.14-20260706/SDK/libs"),\n)\n' + s[end:]
+          # This block is the final section of settings.gradle.kts at the pinned upstream commit.
+          # Drop the entire optional UniMP host section, including its machine-specific warning text.
+          s = s[:start] + '// Optional UniMP host omitted in CI: the packer does not require its local SDK AARs.\n'
           p.write_text(s)
           check = p.read_text()
           if "unimpLibsProp" in check or "unimp.sdk.libs" in check or "E:/Android/" in check:
