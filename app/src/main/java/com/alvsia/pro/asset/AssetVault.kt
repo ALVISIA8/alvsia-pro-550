@@ -15,8 +15,8 @@ object AssetVault {
     private fun isSafeAssetName(name: String): Boolean =
         name.isNotBlank() &&
             name != "." && name != ".." &&
-            '\\u0000' !in name &&
-            '/' !in name && '\\\\' !in name
+            '\u0000' !in name &&
+            '/' !in name && '\\' !in name
 
     private fun safeJarTarget(root: File, name: String): File? {
         if (!isSafeAssetName(name) || !name.endsWith(".jar")) return null
@@ -55,7 +55,7 @@ object AssetVault {
                 if (parts.size != 2) continue
                 val logical = parts[0].trim()
                 val file = parts[1].trim()
-                if (logical.isEmpty() || file.isEmpty()) continue
+                if (logical.isEmpty() || !isSafeAssetName(file)) continue
                 val blob = am.open("nx/$file").use { it.readBytes() }
                 val plain = openBlob(blob, k) ?: continue
                 out[logical] = plain
@@ -72,8 +72,7 @@ object AssetVault {
         jarsDir.mkdirs()
         var n = 0
         for ((name, bytes) in loadSealedMap(ctx)) {
-            if (!name.endsWith(".jar")) continue
-            val dest = File(jarsDir, name)
+            val dest = safeJarTarget(jarsDir, name) ?: continue
             if (dest.exists() && dest.length() == bytes.size.toLong()) {
                 n++
                 continue
