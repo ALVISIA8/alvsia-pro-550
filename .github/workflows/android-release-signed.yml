@@ -170,7 +170,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          UNSIGNED="${ALVSIA_XOP_UNSIGNED_APK:?XopProtector candidate path missing}"
+          UNSIGNED="${ALVSIA_XOP_UNSIGNED_APK:?plain release APK path missing}"
           test -s "$UNSIGNED"
 
           KS="$RUNNER_TEMP/alvsia-release.keystore"
@@ -208,7 +208,7 @@ jobs:
             rm -f "$SIGNED_APK"
             echo "Configured private-key password failed; trying keystore password for the private key."
             "$BUILD_TOOLS/apksigner" sign \
-              --v1-signing-enabled true \
+              --v1-signing-enabled false \
               --v2-signing-enabled true \
               --v3-signing-enabled true \
               --ks "$KS" \
