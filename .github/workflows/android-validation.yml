@@ -159,7 +159,7 @@ jobs:
           end = s.find("if (unimpLibsCandidates.any", start)
           if end < 0:
               raise SystemExit("ERROR: expected unimpLibsCandidates block terminator not found")
-          s = s[:start] + 'val unimpLibsCandidates = listOf(\\n    file("../SDK-Android@5.14-20260706/SDK/libs"),\\n)\\n' + s[end:]
+          s = s[:start] + 'val unimpLibsCandidates = listOf(\n    file("../SDK-Android@5.14-20260706/SDK/libs"),\n)\n' + s[end:]
           p.write_text(s)
           check = p.read_text()
           if "unimpLibsProp" in check or "unimp.sdk.libs" in check or "E:/Android/" in check:
@@ -172,10 +172,10 @@ jobs:
           test -n "$PACKER_JAR" && test -s "$PACKER_JAR"
           test -d "$XOP_DIR/executable/shell-files"
           CANDIDATE="$RUNNER_TEMP/ALVISIA_PRO_5.5.2-xop_candidate_unsigned.apk"
-          java -jar "$XOP_DIR/$PACKER_JAR" "$BASE_APK" \\
-            -o "$CANDIDATE" \\
-            --shell-dir "$XOP_DIR/executable/shell-files" \\
-            --profile industry \\
+          java -jar "$XOP_DIR/$PACKER_JAR" "$BASE_APK" \
+            -o "$CANDIDATE" \
+            --shell-dir "$XOP_DIR/executable/shell-files" \
+            --profile industry \
             --protect-so
           test -s "$CANDIDATE"
           python3 - "$BASE_APK" "$CANDIDATE" <<'PY'
@@ -199,7 +199,7 @@ jobs:
           test -n "$BASE_BADGING" && test "$BASE_BADGING" = "$CAND_BADGING" || { echo "ERROR: package/version changed"; exit 1; }
           BASE_PERMS="$("$AAPT" dump permissions "$BASE_APK" | sort)"
           CAND_PERMS="$("$AAPT" dump permissions "$CANDIDATE" | sort)"
-          test "$BASE_PERMS" = "$CAND_PERMS" || { echo "ERROR: manifest permission set changed"; diff -u <(printf '%s\\n' "$BASE_PERMS") <(printf '%s\\n' "$CAND_PERMS") || true; exit 1; }
+          test "$BASE_PERMS" = "$CAND_PERMS" || { echo "ERROR: manifest permission set changed"; diff -u <(printf '%s\n' "$BASE_PERMS") <(printf '%s\n' "$CAND_PERMS") || true; exit 1; }
           python3 tools/audit_release_apk.py "$CANDIDATE"
           cp release_security_audit.txt validation-artifacts/xop_candidate_security_audit.txt
           cp "$CANDIDATE" validation-artifacts/ALVISIA_PRO_5.5.2-xop_candidate_unsigned.apk
