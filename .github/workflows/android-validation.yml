@@ -139,6 +139,73 @@ jobs:
           cp release_security_audit.txt validation-artifacts/
           sha256sum validation-artifacts/*.apk
 
+      - name: Build XopProtector candidate for ReArk handoff
+        run: |
+          set -euo pipefail
+          BASE_APK="validation-artifacts/ALVISIA_PRO_5.5.2-hardened_release_unsigned.apk"
+          test -s "$BASE_APK"
+          XOP_DIR="$RUNNER_TEMP/xopprotector-src"
+          rm -rf "$XOP_DIR"
+          git clone --filter=blob:none https://github.com/xopJack/XopProtector.git "$XOP_DIR"
+          git -C "$XOP_DIR" checkout --detach 5990c31
+          # Disable optional machine-specific UniMP SDK lookup in upstream settings.
+          python3 - "$XOP_DIR/settings.gradle.kts" <<'PY'
+          import pathlib, sys
+          p = pathlib.Path(sys.argv[1])
+          s = p.read_text()
+          start = s.find("val unimpLibsProp =")
+          if start < 0:
+              raise SystemExit("ERROR: expected unimpLibsProp block not found; refusing unknown upstream layout")
+          end = s.find("if (unimpLibsCandidates.any", start)
+          if end < 0:
+              raise SystemExit("ERROR: expected unimpLibsCandidates block terminator not found")
+          s = s[:start] + 'val unimpLibsCandidates = listOf(\\n    file("../SDK-Android@5.14-20260706/SDK/libs"),\\n)\\n' + s[end:]
+          p.write_text(s)
+          check = p.read_text()
+          if "unimpLibsProp" in check or "unimp.sdk.libs" in check or "E:/Android/" in check:
+              raise SystemExit("ERROR: machine-specific SDK lookup remains")
+          print("PASS: optional machine-specific UniMP SDK lookup removed")
+          PY
+          chmod +x "$XOP_DIR/gradlew"
+          (cd "$XOP_DIR" && ./gradlew --no-daemon :packer:jar exportShellFiles)
+          PACKER_JAR="$(find "$XOP_DIR/packer/build/libs" -maxdepth 1 -type f -name 'protector-packer-*.jar' ! -name '*-sources.jar' | head -n 1)"
+          test -n "$PACKER_JAR" && test -s "$PACKER_JAR"
+          test -d "$XOP_DIR/executable/shell-files"
+          CANDIDATE="$RUNNER_TEMP/ALVISIA_PRO_5.5.2-xop_candidate_unsigned.apk"
+          java -jar "$XOP_DIR/$PACKER_JAR" "$BASE_APK" \\
+            -o "$CANDIDATE" \\
+            --shell-dir "$XOP_DIR/executable/shell-files" \\
+            --profile industry \\
+            --protect-so
+          test -s "$CANDIDATE"
+          python3 - "$BASE_APK" "$CANDIDATE" <<'PY'
+          import sys, zipfile
+          base, candidate = sys.argv[1:3]
+          base_required = {"lib/arm64-v8a/librasp_guard.so", "assets/chaquopy/app.imy", "assets/nx/i.dat"}
+          candidate_required = base_required | {"lib/arm64-v8a/libprotector.so", "assets/protector/dexes.zip"}
+          with zipfile.ZipFile(base) as a, zipfile.ZipFile(candidate) as b:
+              for label, z, required in (("baseline", a, base_required), ("Xop candidate", b, candidate_required)):
+                  missing = sorted(required - set(z.namelist()))
+                  if missing:
+                      raise SystemExit(f"{label} missing required entries: {missing}")
+                  if z.testzip() is not None:
+                      raise SystemExit(f"{label} ZIP integrity check failed")
+          print("PASS: ZIP integrity, Chaquopy payload, RASP library and Xop DEX container")
+          PY
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          test -x "$AAPT"
+          BASE_BADGING="$("$AAPT" dump badging "$BASE_APK" | grep '^package:' | head -n 1)"
+          CAND_BADGING="$("$AAPT" dump badging "$CANDIDATE" | grep '^package:' | head -n 1)"
+          test -n "$BASE_BADGING" && test "$BASE_BADGING" = "$CAND_BADGING" || { echo "ERROR: package/version changed"; exit 1; }
+          BASE_PERMS="$("$AAPT" dump permissions "$BASE_APK" | sort)"
+          CAND_PERMS="$("$AAPT" dump permissions "$CANDIDATE" | sort)"
+          test "$BASE_PERMS" = "$CAND_PERMS" || { echo "ERROR: manifest permission set changed"; diff -u <(printf '%s\\n' "$BASE_PERMS") <(printf '%s\\n' "$CAND_PERMS") || true; exit 1; }
+          python3 tools/audit_release_apk.py "$CANDIDATE"
+          cp release_security_audit.txt validation-artifacts/xop_candidate_security_audit.txt
+          cp "$CANDIDATE" validation-artifacts/ALVISIA_PRO_5.5.2-xop_candidate_unsigned.apk
+          sha256sum validation-artifacts/ALVISIA_PRO_5.5.2-xop_candidate_unsigned.apk
+          echo "PASS: unsigned XopProtector candidate ready for ReArk handoff; device/ReArk runtime testing still required."
+
       - name: Report release APK fingerprint and size
         run: |
           set -euo pipefail
@@ -159,7 +226,9 @@ jobs:
           prerelease: true
           files: |
             validation-artifacts/ALVISIA_PRO_5.5.2-hardened_release_unsigned.apk
+            validation-artifacts/ALVISIA_PRO_5.5.2-xop_candidate_unsigned.apk
             validation-artifacts/release_security_audit.txt
+            validation-artifacts/xop_candidate_security_audit.txt
           fail_on_unmatched_files: true
 
       - name: Restore source files after sealed build
