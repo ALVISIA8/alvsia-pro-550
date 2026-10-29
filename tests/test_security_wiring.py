@@ -46,6 +46,13 @@ class SecurityWiringTests(unittest.TestCase):
         self.assertIn('<device-transfer>', extraction)
         self.assertIn('<exclude domain="sharedpref" path="." />', extraction)
 
+    def test_zip_extraction_rejects_path_traversal(self):
+        engine = read("app/src/main/java/com/alvsia/pro/tool/ToolEngine.kt")
+        self.assertIn("private fun safeZipTarget(root: File, entryName: String): File?", engine)
+        self.assertGreaterEqual(engine.count("safeZipTarget(dest,"), 2)
+        self.assertIn('target.path.startsWith(prefix)', engine)
+        self.assertIn('WARN skipped unsafe archive path', engine)
+
     def test_runtime_security_bootstrap_is_wired(self):
         app = read("app/src/main/java/com/alvsia/pro/AlvisiaApp.kt")
         self.assertIn("RaspEngine.start(this)", app)
