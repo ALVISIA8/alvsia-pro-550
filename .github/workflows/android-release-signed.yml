@@ -182,7 +182,7 @@ jobs:
           chmod +x "$XOP_ROOT/gradlew"
           (
             cd "$XOP_ROOT"
-            ./gradlew --no-daemon :packer:jar exportShellFiles
+            ./gradlew --no-daemon -Punimp.sdk.libs=/tmp/alvsia-no-unimp-sdk :packer:jar exportShellFiles
           )
           PACKER_JAR="$(find "$XOP_ROOT/packer/build/libs" -maxdepth 1 -type f -name 'protector-packer-*.jar' | sort -V | tail -n 1)"
           test -s "$PACKER_JAR"
