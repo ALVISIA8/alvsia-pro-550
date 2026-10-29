@@ -65,6 +65,8 @@ class SecurityWiringTests(unittest.TestCase):
         self.assertIn("target.parentFile == canonicalRoot", vault)
         self.assertIn("!isSafeAssetName(file)", vault)
         self.assertIn("safeJarTarget(jarsDir, name) ?: continue", vault)
+        self.assertIn("dest.readBytes().contentEquals(bytes)", vault)
+        self.assertIn("Length alone is not integrity", vault)
 
     def test_runtime_security_bootstrap_is_wired(self):
         app = read("app/src/main/java/com/alvsia/pro/AlvisiaApp.kt")
