@@ -61,7 +61,7 @@ android {
                     // storePassword = System.getenv("CM_KEYSTORE_PASSWORD")
                     // keyAlias = System.getenv("CM_KEY_ALIAS")
                     // keyPassword = System.getenv("CM_KEY_PASSWORD")
-                    enableV1Signing = true   // Compatibility fallback for Android package installers
+                    enableV1Signing = false  // minSdk 26; retain v2/v3 only for release hardening
                     enableV2Signing = true   // V2 covers whole APK — enforce
                     enableV3Signing = true   // V3 adds key rotation support
                 }
