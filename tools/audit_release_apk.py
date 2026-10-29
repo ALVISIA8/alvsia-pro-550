@@ -44,6 +44,84 @@ PROTECTED_MODULES = {
 SEAL_MAGIC = b"ALVSEAL2"
 ASSET_MAGIC = b"ALVSA1\x00"
 
+def _axml_strings(data: bytes) -> list[str]:
+    """Read Android binary XML string-pool entries without relying on raw string-pool hits."""
+    import struct
+    pos = 8
+    while pos + 8 <= len(data):
+        chunk_type, header_size, chunk_size = struct.unpack_from("<HHI", data, pos)
+        if chunk_size < header_size or pos + chunk_size > len(data):
+            return []
+        if chunk_type == 0x0001 and header_size >= 28:  # RES_STRING_POOL_TYPE
+            string_count, style_count, flags, strings_start, _styles_start = struct.unpack_from("<IIIII", data, pos + 8)
+            if string_count > 200000 or pos + header_size + string_count * 4 > pos + chunk_size:
+                return []
+            offsets = struct.unpack_from("<" + "I" * string_count, data, pos + header_size) if string_count else ()
+            utf8 = bool(flags & 0x100)
+            base = pos + strings_start
+            result = []
+            for off in offsets:
+                p = base + off
+                try:
+                    if utf8:
+                        def read_len(q):
+                            n = data[q]
+                            if n & 0x80:
+                                return ((n & 0x7f) << 8) | data[q + 1], q + 2
+                            return n, q + 1
+                        _u16len, p = read_len(p)
+                        n, p = read_len(p)
+                        result.append(data[p:p+n].decode("utf-8", "replace"))
+                    else:
+                        n = data[p]
+                        p += 1
+                        if n & 0x80:
+                            n = ((n & 0x7f) << 8) | data[p]
+                            p += 1
+                        result.append(data[p:p + n * 2].decode("utf-16le", "replace"))
+                except (IndexError, UnicodeError):
+                    result.append("")
+            return result
+        pos += chunk_size
+    return []
+
+
+def _manifest_declares_permission(data: bytes, permission: str) -> bool:
+    """Check actual uses-permission XML nodes, not orphaned strings in a binary XML pool."""
+    import struct
+    strings = _axml_strings(data)
+    if not strings:
+        # Fail closed if this isn't a valid Android binary XML document.
+        return True
+    pos = 8
+    while pos + 8 <= len(data):
+        chunk_type, header_size, chunk_size = struct.unpack_from("<HHI", data, pos)
+        if chunk_size < header_size or pos + chunk_size > len(data):
+            return True
+        if chunk_type == 0x0102 and chunk_size >= 36:  # RES_XML_START_ELEMENT_TYPE
+            name_idx = struct.unpack_from("<I", data, pos + 20)[0]
+            element = strings[name_idx] if name_idx < len(strings) else ""
+            if element in {"uses-permission", "uses-permission-sdk-23", "uses-permission-sdk-m"}:
+                attr_start, attr_size, attr_count = struct.unpack_from("<HHH", data, pos + 24)
+                first = pos + 16 + attr_start
+                if attr_size < 20 or attr_count > 4096 or first + attr_size * attr_count > pos + chunk_size:
+                    return True
+                for i in range(attr_count):
+                    off = first + i * attr_size
+                    attr_name_idx, raw_value_idx = struct.unpack_from("<II", data, off + 4)
+                    attr_name = strings[attr_name_idx] if attr_name_idx < len(strings) else ""
+                    value = strings[raw_value_idx] if raw_value_idx != 0xffffffff and raw_value_idx < len(strings) else ""
+                    if not value and off + 20 <= pos + chunk_size:
+                        value_type = data[off + 15]
+                        value_data = struct.unpack_from("<I", data, off + 16)[0]
+                        if value_type == 0x03 and value_data < len(strings):
+                            value = strings[value_data]
+                    if attr_name == "name" and value == permission:
+                        return True
+        pos += chunk_size
+    return False
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print("usage: audit_release_apk.py <release.apk>", file=sys.stderr)
@@ -93,7 +171,8 @@ def main() -> int:
             check(audio_present, "background audio resource packaged" if audio_present else "background audio resource missing from APK")
             for audio_name in audio_entries:
                 check(outer.getinfo(audio_name).file_size > 0, f"non-empty media asset: {audio_name}")
-            check(b"android.permission.DUMP" not in manifest,
+            has_dump_permission = _manifest_declares_permission(manifest, "android.permission.DUMP")
+            check(not has_dump_permission,
                   "compiled manifest excludes android.permission.DUMP")
             check(b"android.permission.DELETE_PACKAGES" not in manifest,
                   "compiled manifest excludes unused DELETE_PACKAGES")
