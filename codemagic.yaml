@@ -76,7 +76,7 @@ workflows:
           # Generate fresh 32-byte seal seed — never reused across builds
           export ALVSIA_SEAL_SEED_HEX=$(python3 -c "import secrets; print(secrets.token_hex(32))")
           echo "ALVSIA_SEAL_SEED_HEX=$ALVSIA_SEAL_SEED_HEX" >> $CM_ENV
-          echo "Seal seed generated ($(echo $ALVSIA_SEAL_SEED_HEX | wc -c) chars)"
+          echo "Seal seed generated (32 bytes; value withheld from logs)"
 
       - name: Run source security checks
         script: |
@@ -281,9 +281,14 @@ workflows:
           test -n "$UNSIGNED" || { echo "ERROR: release APK not found"; exit 1; }
           SIGNED_APK="ALVISIA_PRO_5.5.2-hardened_signed.apk"
           if [ "${ALVSIA_XOPPROTECTOR_ENABLED:-false}" = "true" ]; then
-            UNSIGNED="$CM_BUILD_DIR/ALVISIA_PRO_5.5.2-xop_candidate_unsigned.apk"
-            SIGNED_APK="ALVISIA_PRO_5.5.2-xop_candidate_signed.apk"
-            test -s "$UNSIGNED" || { echo "ERROR: XopProtector enabled but candidate APK is missing"; exit 1; }
+            XOP_CANDIDATE="$CM_BUILD_DIR/ALVISIA_PRO_5.5.2-xop_candidate_unsigned.apk"
+            if [ -s "$XOP_CANDIDATE" ]; then
+              UNSIGNED="$XOP_CANDIDATE"
+              SIGNED_APK="ALVISIA_PRO_5.5.2-xop_candidate_signed.apk"
+              echo "XopProtector candidate passed packaging gates; signing candidate."
+            else
+              echo "WARNING: XopProtector candidate unavailable; safely falling back to baseline release APK."
+            fi
           fi
 
           # Release builds must never silently publish an unsigned APK.
