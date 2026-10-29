@@ -177,8 +177,10 @@ if "DualVmGuard.inspect(ctx)" not in session:
 if "fun isNativeLoaded(): Boolean = nativeLoaded" not in native_guard:
     fail.append("NativeGuard load-state API is missing; release cannot detect JNI downgrade")
 guard = read(JAVA / "sec/Guard.kt")
-if "fun runtimeHostile(ctx: Context)" not in guard or "private val RUNTIME_MARKERS" not in guard:
-    fail.append("Guard must distinguish active runtime instrumentation from root-only markers")
+if ("fun runtimeHostile(ctx: Context)" not in guard
+        or "private val HARD_RUNTIME_MARKERS" not in guard
+        or "private val SOFT_HOOK_MARKERS" not in guard):
+    fail.append("Guard must distinguish hard active-instrumentation signals from soft hook-library signals")
 ultimate = read(PY / "alvsia_ultimate.py")
 if "alvsiapro.cc.cd" in ultimate or "api.alvsiapro.cc.cd" in ultimate:
     fail.append("bundled ultimate engine still references the retired panel host")
