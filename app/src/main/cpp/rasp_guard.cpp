@@ -58,12 +58,11 @@ static int check_tracer_pid() {
 // ─────────────────────────────────────────────────────────────────────
 // 2. /proc/self/maps — Frida / hook library markers
 // ─────────────────────────────────────────────────────────────────────
+// Only high-confidence injector names trigger native hard-block flags.
+// Generic hook-bridge libraries are reported by Kotlin as soft signals.
 static const char* MAP_NEEDLES[] = {
-    "frida-agent", "frida-gadget", "frida_agent", "libfrida",
-    "libgadget", "xposed", "lsposed", "edxposed",
-    "substrate", "libsubstrate", "libsandhook", "libepic",
-    "linjector", "libdobby", "dobby",
-    "shadowhook", "bhook", "bytehook",
+    "frida-agent", "frida-gadget", "frida_agent", "frida_gadget",
+    "libfrida", "libgadget", "linjector",
     nullptr
 };
 
@@ -277,10 +276,8 @@ static int check_wchan_ptrace() {
 //     Sprint 1: Scan /proc/self/maps for libs loaded after JNI_OnLoad
 // ─────────────────────────────────────────────────────────────────────
 static const char* LATE_LIB_NEEDLES[] = {
-    "libfrida", "libgadget", "libsubstrate", "liblsposed",
-    "libxposed", "libsubstrate-dvm", "libsubstrate-art",
-    "libdobby", "libshadowhook", "libbhook", "libbytehook",
-    "libnative_hook", "libwhale", "libepic",
+    "libfrida", "libgadget", "frida-agent", "frida-gadget",
+    "linjector",
     nullptr
 };
 

@@ -65,33 +65,22 @@ object AntiHook {
      * /proc/self/maps markers for hook libraries injected into our process.
      * These are STRONG signals — the lib is loaded into OUR address space.
      */
-    private val MAP_MARKERS = listOf(
-        // Frida
+    private val HARD_MAP_MARKERS = listOf(
         "frida-agent", "frida-gadget", "frida_agent", "frida_gadget",
-        "libfrida", "libgadget",
-        // Xposed / LSPosed / EdXposed
+        "libfrida", "libgadget", "linjector"
+    )
+    private val SOFT_HOOK_LIBRARY_MARKERS = listOf(
         "xposed", "lsposed", "edxposed", "de.robv.android.xposed",
         "libxposed_art", "libxposed",
-        // Substrate
         "com.saurik.substrate", "libsubstrate", "substrate32", "substrate64",
         "libsubstrate-dvm", "libsubstrate-art",
-        // SandHook / EpicHook
         "libsandhook", "libepic", "epic-arm", "epic-arm64",
-        // Dobby / ShadowHook / bhook / ByteHook
         "libdobby", "dobby", "libandroid_inline_hook",
-        "shadowhook", "shadow_hook", "bhook", "bytehook",
-        "libbytehook",
-        // Whale / Riru / Zygisk
+        "shadowhook", "shadow_hook", "bhook", "bytehook", "libbytehook",
         "libwhale", "riru", "zygisk", "libnative_hook",
-        // Linjector
-        "linjector",
-        // TaiChi
-        "com.taichi.hookprovider",
-        // VirtualApp / Parallel Space (clone)
-        "libvirtual",
-        // Hooking providers (App-based hook wrappers)
-        "libhookprovider"
+        "com.taichi.hookprovider", "libvirtual", "libhookprovider"
     )
+    private val MAP_MARKERS = HARD_MAP_MARKERS + SOFT_HOOK_LIBRARY_MARKERS
 
     /**
      * /proc/self/cgroup virtualization markers — VirtualApp, Parallel Space,
@@ -164,7 +153,8 @@ object AntiHook {
                 if (fields.size < 2 || 'x' !in fields[1]) continue
                 val mappedName = fields.getOrNull(5)?.lowercase().orEmpty()
                 if (mappedName.isBlank()) continue
-                MAP_MARKERS.filter { it in mappedName }.forEach { out += "maps:$it" }
+                HARD_MAP_MARKERS.filter { it in mappedName }.forEach { out += "maps:$it" }
+                SOFT_HOOK_LIBRARY_MARKERS.filter { it in mappedName }.forEach { out += "hooklib:$it" }
             }
         } catch (_: Exception) {
             // /proc unavailable — not proof of tampering
@@ -210,7 +200,7 @@ object AntiHook {
      * Quick boolean: is any STRONG signal present? (active injection via maps)
      */
     fun isHardHookPresent(): Boolean {
-        return scanProcMaps().isNotEmpty()
+        return scanProcMaps().any { it.startsWith("maps:") }
     }
 
     /**

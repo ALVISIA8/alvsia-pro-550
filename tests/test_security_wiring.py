@@ -110,6 +110,27 @@ class SecurityWiringTests(unittest.TestCase):
         self.assertNotIn("if (strstr(buf, MAP_NEEDLES[i]))", native)
         self.assertNotIn("if (strstr(buf, LATE_LIB_NEEDLES[i]))", native)
 
+    def test_hook_marker_severity_avoids_protector_self_block(self):
+        guard = read("app/src/main/java/com/alvsia/pro/sec/Guard.kt")
+        frida = read("app/src/main/java/com/alvsia/pro/sec/FridaProbe.kt")
+        anti_hook = read("app/src/main/java/com/alvsia/pro/sec/AntiHook.kt")
+        native_guard = read("app/src/main/java/com/alvsia/pro/sec/NativeGuard.kt")
+        rasp = read("app/src/main/java/com/alvsia/pro/sec/RaspEngine.kt")
+        native = read("app/src/main/cpp/rasp_guard.cpp")
+
+        self.assertIn("HARD_RUNTIME_MARKERS", guard)
+        self.assertIn("SOFT_HOOK_MARKERS", guard)
+        self.assertIn("SOFT_HOOK_LIBRARY_MARKERS", frida)
+        self.assertIn('out += "hooklib:$it"', frida)
+        self.assertIn('out += "hooklib:$it"', anti_hook)
+        self.assertIn('if (signal.startsWith("hooklib:")) soft += signal', rasp)
+        self.assertIn('"linjector"', native_guard)
+        maps_block = native.split("static const char* MAP_NEEDLES[] = {", 1)[1].split("};", 1)[0]
+        late_block = native.split("static const char* LATE_LIB_NEEDLES[] = {", 1)[1].split("};", 1)[0]
+        for soft_marker in ("shadowhook", "bytehook", "libdobby", "xposed"):
+            self.assertNotIn(soft_marker, maps_block)
+            self.assertNotIn(soft_marker, late_block)
+
     def test_rasp_layers_include_debug_hook_memory_and_integrity(self):
         rasp = read("app/src/main/java/com/alvsia/pro/sec/RaspEngine.kt")
         for marker in ("Debug.isDebuggerConnected()", "FridaProbe.signals()",

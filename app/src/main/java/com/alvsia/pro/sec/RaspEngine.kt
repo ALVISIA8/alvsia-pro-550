@@ -59,7 +59,10 @@ object RaspEngine {
         if (Debug.isDebuggerConnected() || Debug.waitingForDebugger()) hard += "jdwp_connected"
 
         // ② Frida / hook libs
-        FridaProbe.signals().forEach { hard += it }
+        FridaProbe.signals().forEach { signal ->
+            if (signal.startsWith("hooklib:")) soft += signal
+            else hard += signal
+        }
 
         // ③ Memory dump
         MemoryGuard.detectPtrace()?.let { hard += it }

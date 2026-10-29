@@ -166,10 +166,7 @@ object NativeGuard {
             // maps dump can match unrelated non-executable mapping metadata.
             val markers = listOf(
                 "frida-agent", "frida-gadget", "frida_agent", "frida_gadget",
-                "libfrida", "libgadget", "xposed", "lsposed", "edxposed",
-                "substrate", "libsandhook", "libepic", "linjector",
-                "libdobby", "shadowhook", "shadow_hook", "bhook", "bytehook",
-                "libandroid_inline_hook"
+                "libfrida", "libgadget", "linjector"
             )
             for (line in File("/proc/self/maps").readLines()) {
                 val fields = line.trim().split(Regex("\\s+"), limit = 6)
