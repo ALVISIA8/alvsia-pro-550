@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: alvsia-pro-signed-release-${{ github.sha }}
@@ -324,14 +324,21 @@ jobs:
           echo "PASS: XopProtector-protected APK, v2/v3 signatures, certificate pin, zip alignment, package and version verified"
           rm -f "$KS"
 
-      - name: Upload signed release APK and audit logs
+      - name: Publish verified APK as a private draft release
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: softprops/action-gh-release@v2
         with:
-          name: ALVSIA_PRO_5.5.2-hardened-signed
-          if-no-files-found: error
-          retention-days: 14
-          path: |
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: alvsia-pro-5.5.2-build-${{ github.run_number }}
+          name: ALVSIA PRO 5.5.2-hardened — Build ${{ github.run_number }}
+          draft: true
+          prerelease: true
+          fail_on_unmatched_files: true
+          body: |
+            Automated private draft release for the verified ALVSIA PRO 5.5.2-hardened build.
+            APK must pass CI signing, certificate, XopProtector payload, alignment, package/version, and manifest audits before publishing.
+            Do not mark this release public until on-device smoke tests pass.
+          files: |
             ALVSIA_PRO_5.5.2-hardened_signed.apk
             SHA256SUMS.txt
             build_full.log
