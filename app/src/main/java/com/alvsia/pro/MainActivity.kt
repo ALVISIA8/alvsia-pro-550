@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -55,6 +56,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Reject obscured/tapjacked touches at the activity root.
+        window.decorView.filterTouchesWhenObscured = true
         enableEdgeToEdge()
         com.alvsia.pro.panel.PanelHolder.client = panel
         if (Build.VERSION.SDK_INT >= 33 &&
@@ -81,6 +84,18 @@ class MainActivity : ComponentActivity() {
                 var running by remember { mutableStateOf(false) }
                 val ctx = LocalContext.current
                 val hwid = remember { Hwid.deviceId(ctx) }
+
+                // Keep workspace/profile content out of screenshots and Recents previews.
+                LaunchedEffect(screen) {
+                    if (screen == "tool" || screen == "profile") {
+                        window.setFlags(
+                            WindowManager.LayoutParams.FLAG_SECURE,
+                            WindowManager.LayoutParams.FLAG_SECURE
+                        )
+                    } else {
+                        window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                    }
+                }
 
                 LaunchedEffect(screen, license, hwid) {
                     if (screen == "home" && license.isNotBlank() && panel.sessionToken.length == 64) {

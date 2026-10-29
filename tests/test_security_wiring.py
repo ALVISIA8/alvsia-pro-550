@@ -26,6 +26,63 @@ class SecurityWiringTests(unittest.TestCase):
         for pin in pins:
             self.assertEqual(len(base64.b64decode(pin, validate=True)), 32)
 
+    def test_sensitive_screens_enable_capture_and_tapjacking_protection(self):
+        activity = read("app/src/main/java/com/alvsia/pro/MainActivity.kt")
+        self.assertIn("FLAG_SECURE", activity)
+        self.assertIn("filterTouchesWhenObscured = true", activity)
+
+    def test_pinned_panel_transport_does_not_follow_redirects(self):
+        client = read("app/src/main/java/com/alvsia/pro/panel/PanelClient.kt")
+        self.assertIn(".followRedirects(false)", client)
+        self.assertIn(".followSslRedirects(false)", client)
+
+    def test_backup_and_device_transfer_are_explicitly_excluded(self):
+        manifest = read("app/src/main/AndroidManifest.xml")
+        self.assertIn('android:fullBackupContent="@xml/backup_rules"', manifest)
+        self.assertIn('android:dataExtractionRules="@xml/data_extraction_rules"', manifest)
+        rules = read("app/src/main/res/xml/backup_rules.xml")
+        extraction = read("app/src/main/res/xml/data_extraction_rules.xml")
+        self.assertIn('<exclude domain="sharedpref" path="." />', rules)
+        self.assertIn('<device-transfer>', extraction)
+        self.assertIn('<exclude domain="sharedpref" path="." />', extraction)
+
+    def test_release_never_falls_back_to_plaintext_jars(self):
+        engine = read("app/src/main/java/com/alvsia/pro/tool/ToolEngine.kt")
+        self.assertIn("if (!com.alvsia.pro.BuildConfig.DEBUG)", engine)
+        self.assertIn("sealedCount > 0 || !com.alvsia.pro.BuildConfig.DEBUG", engine)
+        self.assertIn("Debug/CI only fallback", engine)
+
+    def test_file_provider_is_limited_to_output_files(self):
+        paths = read("app/src/main/res/xml/file_paths.xml")
+        self.assertIn('path="ALVSIA/OUT/"', paths)
+        self.assertIn('path="Download/ALVSIA/OUT/"', paths)
+        self.assertNotIn('path="."', paths)
+        self.assertNotIn("<cache-path", paths)
+        manifest = read("app/src/main/AndroidManifest.xml")
+        self.assertIn('android:exported="false"', manifest)
+
+    def test_zip_extraction_rejects_path_traversal(self):
+        engine = read("app/src/main/java/com/alvsia/pro/tool/ToolEngine.kt")
+        self.assertIn("private fun safeZipTarget(root: File, entryName: String): File?", engine)
+        self.assertGreaterEqual(engine.count("safeZipTarget(dest,"), 2)
+        self.assertIn('target.path.startsWith(prefix)', engine)
+        self.assertIn('WARN skipped unsafe archive path', engine)
+
+    def test_obb_extractor_rejects_symlink_entries(self):
+        features = read("app/src/main/python/alvsia_features.py")
+        self.assertIn("mode == 0o120000", features)
+        self.assertIn("symlink archive entry rejected", features)
+
+    def test_sealed_asset_materialization_rejects_path_segments(self):
+        vault = read("app/src/main/java/com/alvsia/pro/asset/AssetVault.kt")
+        self.assertIn("private fun isSafeAssetName(name: String): Boolean", vault)
+        self.assertIn("private fun safeJarTarget(root: File, name: String): File?", vault)
+        self.assertIn("target.parentFile == canonicalRoot", vault)
+        self.assertIn("!isSafeAssetName(file)", vault)
+        self.assertIn("safeJarTarget(jarsDir, name) ?: continue", vault)
+        self.assertIn("dest.readBytes().contentEquals(bytes)", vault)
+        self.assertIn("Length alone is not integrity", vault)
+
     def test_runtime_security_bootstrap_is_wired(self):
         app = read("app/src/main/java/com/alvsia/pro/AlvisiaApp.kt")
         self.assertIn("RaspEngine.start(this)", app)
