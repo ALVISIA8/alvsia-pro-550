@@ -162,8 +162,24 @@ object NativeGuard {
             if (tpid > 0) flags = flags or 0x01
         } catch (_: Exception) {}
         try {
-            val maps = File("/proc/self/maps").readText().lowercase()
-            if ("frida" in maps || "gadget" in maps || "xposed" in maps) flags = flags or 0x02
+            // Match hook markers only in executable mappings. Searching the entire
+            // maps dump can match unrelated non-executable mapping metadata.
+            val markers = listOf(
+                "frida-agent", "frida-gadget", "frida_agent", "frida_gadget",
+                "libfrida", "libgadget", "xposed", "lsposed", "edxposed",
+                "substrate", "libsandhook", "libepic", "linjector",
+                "libdobby", "shadowhook", "shadow_hook", "bhook", "bytehook",
+                "libandroid_inline_hook"
+            )
+            for (line in File("/proc/self/maps").readLines()) {
+                val fields = line.trim().split(Regex("\\s+"), limit = 6)
+                if (fields.size < 2 || 'x' !in fields[1]) continue
+                val mappedName = fields.getOrNull(5)?.lowercase().orEmpty()
+                if (markers.any { it in mappedName }) {
+                    flags = flags or 0x02
+                    break
+                }
+            }
         } catch (_: Exception) {}
         return flags
     }
