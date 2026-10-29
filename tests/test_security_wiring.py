@@ -58,6 +58,14 @@ class SecurityWiringTests(unittest.TestCase):
         self.assertIn("mode == 0o120000", features)
         self.assertIn("symlink archive entry rejected", features)
 
+    def test_sealed_asset_materialization_rejects_path_segments(self):
+        vault = read("app/src/main/java/com/alvsia/pro/asset/AssetVault.kt")
+        self.assertIn("private fun isSafeAssetName(name: String): Boolean", vault)
+        self.assertIn("private fun safeJarTarget(root: File, name: String): File?", vault)
+        self.assertIn("target.parentFile == canonicalRoot", vault)
+        self.assertIn("!isSafeAssetName(file)", vault)
+        self.assertIn("safeJarTarget(jarsDir, name) ?: continue", vault)
+
     def test_runtime_security_bootstrap_is_wired(self):
         app = read("app/src/main/java/com/alvsia/pro/AlvisiaApp.kt")
         self.assertIn("RaspEngine.start(this)", app)
