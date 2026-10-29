@@ -98,6 +98,18 @@ class SecurityWiringTests(unittest.TestCase):
         self.assertIn("if (!sessionOk)", gate)
         self.assertIn("SESSION_TTL", gate)
 
+    def test_hook_scanners_only_block_executable_map_paths(self):
+        guard = read("app/src/main/java/com/alvsia/pro/sec/Guard.kt")
+        frida = read("app/src/main/java/com/alvsia/pro/sec/FridaProbe.kt")
+        anti_hook = read("app/src/main/java/com/alvsia/pro/sec/AntiHook.kt")
+        native = read("app/src/main/cpp/rasp_guard.cpp")
+        for source in (guard, frida, anti_hook):
+            self.assertIn("'x' !in fields[1]", source)
+            self.assertIn('getOrNull(5)', source)
+        self.assertIn("map_line_has_exec_marker", native)
+        self.assertNotIn("if (strstr(buf, MAP_NEEDLES[i]))", native)
+        self.assertNotIn("if (strstr(buf, LATE_LIB_NEEDLES[i]))", native)
+
     def test_rasp_layers_include_debug_hook_memory_and_integrity(self):
         rasp = read("app/src/main/java/com/alvsia/pro/sec/RaspEngine.kt")
         for marker in ("Debug.isDebuggerConnected()", "FridaProbe.signals()",

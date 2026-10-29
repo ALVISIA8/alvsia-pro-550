@@ -67,6 +67,59 @@ static const char* MAP_NEEDLES[] = {
     nullptr
 };
 
+// Match marker names only in the pathname of an executable mapping. Searching
+// the entire maps dump can match non-executable mappings or unrelated metadata.
+static bool map_space(char c) {
+    return c == ' ' || c == '\\t' || c == '\\r' || c == '\\n';
+}
+
+static bool map_line_has_exec_marker(const char* rawLine, const char* const* needles) {
+    if (rawLine == nullptr || needles == nullptr) return false;
+    char line[8192] = {};
+    size_t len = strlen(rawLine);
+    if (len >= sizeof(line)) len = sizeof(line) - 1;
+    memcpy(line, rawLine, len);
+    line[len] = '\\0';
+    for (size_t i = 0; i < len; ++i) {
+        if (line[i] >= 'A' && line[i] <= 'Z') line[i] += 32;
+    }
+
+    char* p = line;
+    while (*p && !map_space(*p)) ++p; // address range
+    while (map_space(*p)) ++p;
+    char* perms = p;
+    while (*p && !map_space(*p)) ++p;
+    bool executable = false;
+    for (char* q = perms; q < p; ++q) if (*q == 'x') executable = true;
+    if (!executable) return false;
+
+    // Skip offset, device and inode fields; everything after them is pathname.
+    for (int field = 0; field < 3; ++field) {
+        while (map_space(*p)) ++p;
+        while (*p && !map_space(*p)) ++p;
+    }
+    while (map_space(*p)) ++p;
+    if (*p == '\\0') return false;
+
+    for (int i = 0; needles[i]; ++i) {
+        if (strstr(p, needles[i])) return true;
+    }
+    return false;
+}
+
+static bool maps_buffer_has_exec_marker(char* buf, const char* const* needles) {
+    if (buf == nullptr || needles == nullptr) return false;
+    char* line = buf;
+    while (*line) {
+        char* end = strchr(line, '\\n');
+        if (end) *end = '\\0';
+        if (map_line_has_exec_marker(line, needles)) return true;
+        if (!end) break;
+        line = end + 1;
+    }
+    return false;
+}
+
 static int check_maps_frida() {
     int fd = open("/proc/self/maps", O_RDONLY);
     if (fd < 0) return 0;
@@ -74,14 +127,7 @@ static int check_maps_frida() {
     ssize_t n = read(fd, buf, sizeof(buf) - 1);
     close(fd);
     if (n <= 0) return 0;
-    // lowercase in-place
-    for (ssize_t i = 0; i < n; i++) {
-        if (buf[i] >= 'A' && buf[i] <= 'Z') buf[i] += 32;
-    }
-    for (int i = 0; MAP_NEEDLES[i]; i++) {
-        if (strstr(buf, MAP_NEEDLES[i])) return FLAG_MAPS_FRIDA;
-    }
-    return 0;
+    return maps_buffer_has_exec_marker(buf, MAP_NEEDLES) ? FLAG_MAPS_FRIDA : 0;
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -245,13 +291,7 @@ static int check_late_loaded_libs() {
     ssize_t n = read(fd, buf, sizeof(buf) - 1);
     close(fd);
     if (n <= 0) return 0;
-    for (ssize_t i = 0; i < n; i++) {
-        if (buf[i] >= 'A' && buf[i] <= 'Z') buf[i] += 32;
-    }
-    for (int i = 0; LATE_LIB_NEEDLES[i]; i++) {
-        if (strstr(buf, LATE_LIB_NEEDLES[i])) return FLAG_LATE_LIB;
-    }
-    return 0;
+    return maps_buffer_has_exec_marker(buf, LATE_LIB_NEEDLES) ? FLAG_LATE_LIB : 0;
 }
 
 extern "C" {

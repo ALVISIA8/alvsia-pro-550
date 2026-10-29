@@ -155,9 +155,16 @@ object AntiHook {
     private fun scanProcMaps(): List<String> {
         val out = mutableListOf<String>()
         try {
-            val maps = File("/proc/self/maps").readText().lowercase()
-            MAP_MARKERS.forEach { marker ->
-                if (marker in maps) out += "maps:$marker"
+            val maps = File("/proc/self/maps").readLines()
+            for (line in maps) {
+                // Linux maps columns include an address range, permissions, offset,
+                // device, inode and an optional mapping pathname. Only executable
+                // mappings indicate that a native hook library is active in-process.
+                val fields = line.trim().split(Regex("\\s+"), limit = 6)
+                if (fields.size < 2 || 'x' !in fields[1]) continue
+                val mappedName = fields.getOrNull(5)?.lowercase().orEmpty()
+                if (mappedName.isBlank()) continue
+                MAP_MARKERS.filter { it in mappedName }.forEach { out += "maps:$it" }
             }
         } catch (_: Exception) {
             // /proc unavailable — not proof of tampering
