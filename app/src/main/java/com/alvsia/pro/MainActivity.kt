@@ -58,6 +58,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // Reject obscured/tapjacked touches at the activity root.
         window.decorView.filterTouchesWhenObscured = true
+        // Never expose app content in Android Recents previews (API 33+).
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            setRecentsScreenshotEnabled(false)
+        }
         enableEdgeToEdge()
         com.alvsia.pro.panel.PanelHolder.client = panel
         if (Build.VERSION.SDK_INT >= 33 &&
@@ -85,9 +89,11 @@ class MainActivity : ComponentActivity() {
                 val ctx = LocalContext.current
                 val hwid = remember { Hwid.deviceId(ctx) }
 
-                // Keep workspace/profile content out of screenshots and Recents previews.
+                // Protect credentials and private data on sensitive screens.
+                // Login contains a license key; tool/profile contain workspace data.
                 LaunchedEffect(screen) {
-                    if (screen == "tool" || screen == "profile") {
+                    if (screen == "login" || screen == "loading" ||
+                        screen == "tool" || screen == "profile") {
                         window.setFlags(
                             WindowManager.LayoutParams.FLAG_SECURE,
                             WindowManager.LayoutParams.FLAG_SECURE
