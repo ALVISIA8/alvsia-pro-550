@@ -53,6 +53,11 @@ class SecurityWiringTests(unittest.TestCase):
         self.assertIn('target.path.startsWith(prefix)', engine)
         self.assertIn('WARN skipped unsafe archive path', engine)
 
+    def test_obb_extractor_rejects_symlink_entries(self):
+        features = read("app/src/main/python/alvsia_features.py")
+        self.assertIn("mode == 0o120000", features)
+        self.assertIn("symlink archive entry rejected", features)
+
     def test_runtime_security_bootstrap_is_wired(self):
         app = read("app/src/main/java/com/alvsia/pro/AlvisiaApp.kt")
         self.assertIn("RaspEngine.start(this)", app)
