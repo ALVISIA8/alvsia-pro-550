@@ -11,6 +11,24 @@ import javax.crypto.spec.SecretKeySpec
 object AssetVault {
     private val MAGIC = byteArrayOf(0x41, 0x4C, 0x56, 0x53, 0x41, 0x31, 0x00)
 
+    // Asset index entries are untrusted until validated; keep all names as single path segments.
+    private fun isSafeAssetName(name: String): Boolean =
+        name.isNotBlank() &&
+            name != "." && name != ".." &&
+            '\\u0000' !in name &&
+            '/' !in name && '\\\\' !in name
+
+    private fun safeJarTarget(root: File, name: String): File? {
+        if (!isSafeAssetName(name) || !name.endsWith(".jar")) return null
+        return try {
+            val canonicalRoot = root.canonicalFile
+            val target = File(canonicalRoot, name).canonicalFile
+            if (target.parentFile == canonicalRoot && target.name == name) target else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private fun openBlob(blob: ByteArray, key: ByteArray): ByteArray? {
         return try {
             if (blob.size < 7 + 12 + 16) return null
