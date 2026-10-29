@@ -46,6 +46,15 @@ class SecurityWiringTests(unittest.TestCase):
         self.assertIn('<device-transfer>', extraction)
         self.assertIn('<exclude domain="sharedpref" path="." />', extraction)
 
+    def test_file_provider_is_limited_to_output_files(self):
+        paths = read("app/src/main/res/xml/file_paths.xml")
+        self.assertIn('path="ALVSIA/OUT/"', paths)
+        self.assertIn('path="Download/ALVSIA/OUT/"', paths)
+        self.assertNotIn('path="."', paths)
+        self.assertNotIn("<cache-path", paths)
+        manifest = read("app/src/main/AndroidManifest.xml")
+        self.assertIn('android:exported="false"', manifest)
+
     def test_zip_extraction_rejects_path_traversal(self):
         engine = read("app/src/main/java/com/alvsia/pro/tool/ToolEngine.kt")
         self.assertIn("private fun safeZipTarget(root: File, entryName: String): File?", engine)
