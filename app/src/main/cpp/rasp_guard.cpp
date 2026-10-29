@@ -70,7 +70,7 @@ static const char* MAP_NEEDLES[] = {
 // Match marker names only in the pathname of an executable mapping. Searching
 // the entire maps dump can match non-executable mappings or unrelated metadata.
 static bool map_space(char c) {
-    return c == ' ' || c == '\\t' || c == '\\r' || c == '\\n';
+    return c == 32 || c == 9 || c == 13 || c == 10;
 }
 
 static bool map_line_has_exec_marker(const char* rawLine, const char* const* needles) {
@@ -79,7 +79,7 @@ static bool map_line_has_exec_marker(const char* rawLine, const char* const* nee
     size_t len = strlen(rawLine);
     if (len >= sizeof(line)) len = sizeof(line) - 1;
     memcpy(line, rawLine, len);
-    line[len] = '\\0';
+    line[len] = 0;
     for (size_t i = 0; i < len; ++i) {
         if (line[i] >= 'A' && line[i] <= 'Z') line[i] += 32;
     }
@@ -99,7 +99,7 @@ static bool map_line_has_exec_marker(const char* rawLine, const char* const* nee
         while (*p && !map_space(*p)) ++p;
     }
     while (map_space(*p)) ++p;
-    if (*p == '\\0') return false;
+    if (*p == 0) return false;
 
     for (int i = 0; needles[i]; ++i) {
         if (strstr(p, needles[i])) return true;
@@ -111,8 +111,8 @@ static bool maps_buffer_has_exec_marker(char* buf, const char* const* needles) {
     if (buf == nullptr || needles == nullptr) return false;
     char* line = buf;
     while (*line) {
-        char* end = strchr(line, '\\n');
-        if (end) *end = '\\0';
+        char* end = strchr(line, 10);
+        if (end) *end = 0;
         if (map_line_has_exec_marker(line, needles)) return true;
         if (!end) break;
         line = end + 1;
